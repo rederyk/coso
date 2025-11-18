@@ -1,143 +1,98 @@
 #include <Arduino.h>
+#include <esp_err.h>
+#include <esp_timer.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+#include <lvgl.h>
 #include <TFT_eSPI.h>
-#include "peripheral/gpio_manager.h"
 
-namespace {
-TFT_eSPI tft;
-GPIOPeripheral* button_gpio = nullptr;
-volatile bool button_pressed = false;
-unsigned long last_button_press = 0;
-const unsigned long DEBOUNCE_DELAY = 200; // ms
+#include "core/screen_manager.h"
+#include "screens/dashboard_screen.h"
+#include "utils/lvgl_mutex.h"
 
-// Callback per interrupt del pulsante
-void IRAM_ATTR onButtonPress() {
-  unsigned long now = millis();
-  if (now - last_button_press > DEBOUNCE_DELAY) {
-    button_pressed = true;
-    last_button_press = now;
-  }
-}
+static TFT_eSPI tft;
+static lv_disp_draw_buf_t draw_buf;
+// Ridotto a 20 righe per risparmiare memoria
+static constexpr int32_t DRAW_BUF_PIXELS = LV_HOR_RES_MAX * 20;
+// Buffer statici invece di allocazione dinamica
+static lv_color_t buf1[DRAW_BUF_PIXELS];
 
-void enableBacklight() {
+static void enableBacklight() {
 #ifdef TFT_BL
-  pinMode(TFT_BL, OUTPUT);
-  digitalWrite(TFT_BL, TFT_BACKLIGHT_ON);
+    pinMode(TFT_BL, OUTPUT);
+    digitalWrite(TFT_BL, TFT_BACKLIGHT_ON);
 #endif
 }
 
-void drawHeader() {
-  tft.fillScreen(TFT_BLACK);
-  tft.drawRoundRect(5, 5, tft.width() - 10, tft.height() - 10, 8, TFT_CYAN);
-
-  tft.setTextColor(TFT_CYAN, TFT_BLACK);
-  tft.drawCentreString("ESP32-S3 OS Demo", tft.width() / 2, 15, 4);
-
-  tft.setTextColor(TFT_GREEN, TFT_BLACK);
-  tft.drawCentreString("GPIO Manager Test", tft.width() / 2, 50, 2);
+static void tft_flush_cb(lv_disp_drv_t* drv, const lv_area_t* area, lv_color_t* color_p) {
+    uint32_t width = area->x2 - area->x1 + 1;
+    uint32_t height = area->y2 - area->y1 + 1;
+    tft.startWrite();
+    tft.setAddrWindow(area->x1, area->y1, width, height);
+    tft.pushColors((uint16_t*)color_p, width * height, true);
+    tft.endWrite();
+    lv_disp_flush_ready(drv);
 }
 
-void displayButtonStatus(bool pressed) {
-  static bool last_state = false;
+static void lv_tick_handler(void*) {
+    lv_tick_inc(1);
+}
 
-  if (pressed != last_state) {
-    last_state = pressed;
-
-    // Cancella area stato
-    tft.fillRect(20, 90, tft.width() - 40, 120, TFT_BLACK);
-
-    if (pressed) {
-      tft.setTextColor(TFT_YELLOW, TFT_BLACK);
-      tft.drawCentreString("BUTTON PRESSED!", tft.width() / 2, 100, 4);
-
-      // Mostra contatore presse
-      static int press_count = 0;
-      press_count++;
-      tft.setTextColor(TFT_WHITE, TFT_BLACK);
-      String msg = "Press count: " + String(press_count);
-      tft.drawCentreString(msg, tft.width() / 2, 140, 2);
-    } else {
-      tft.setTextColor(TFT_GREEN, TFT_BLACK);
-      tft.drawCentreString("Waiting for button", tft.width() / 2, 110, 2);
+static void lvgl_task(void*) {
+    while (true) {
+        if (lvgl_mutex_lock(pdMS_TO_TICKS(100))) {
+            lv_task_handler();
+            lvgl_mutex_unlock();
+        }
+        vTaskDelay(pdMS_TO_TICKS(10));
     }
-  }
 }
-
-void displaySystemInfo() {
-  tft.setTextColor(TFT_DARKGREY, TFT_BLACK);
-  tft.drawString("Peripheral Manager:", 15, tft.height() - 60, 2);
-  tft.setTextColor(TFT_WHITE, TFT_BLACK);
-  tft.drawString("Active", 180, tft.height() - 60, 2);
-
-  tft.setTextColor(TFT_DARKGREY, TFT_BLACK);
-  tft.drawString("Free Heap:", 15, tft.height() - 40, 2);
-  tft.setTextColor(TFT_WHITE, TFT_BLACK);
-  String heap = String(ESP.getFreeHeap() / 1024) + " KB";
-  tft.drawString(heap, 120, tft.height() - 40, 2);
-}
-
-}  // namespace
 
 void setup() {
-  Serial.begin(115200);
-  delay(200);
+    Serial.begin(115200);
+    delay(200);
+    Serial.println("\n=== Freenove ESP32-S3 OS Dashboard ===");
 
-  Serial.println("\n=== ESP32-S3 OS Demo - GPIO Manager ===");
+    enableBacklight();
+    tft.init();
+    tft.setRotation(1);
 
-  // Inizializza display
-  enableBacklight();
-  tft.init();
-  tft.setRotation(1);  // Landscape
+    lv_init();
 
-  drawHeader();
-  displaySystemInfo();
+    // Single buffering con buffer statico
+    lv_disp_draw_buf_init(&draw_buf, buf1, nullptr, DRAW_BUF_PIXELS);
 
-  // Ottieni GPIO Manager
-  GPIOManager* gpio_mgr = GPIOManager::getInstance();
+    static lv_disp_drv_t disp_drv;
+    lv_disp_drv_init(&disp_drv);
+    disp_drv.hor_res = LV_HOR_RES_MAX;
+    disp_drv.ver_res = LV_VER_RES_MAX;
+    disp_drv.draw_buf = &draw_buf;
+    disp_drv.flush_cb = tft_flush_cb;
+    lv_disp_drv_register(&disp_drv);
 
-  // GPIO disponibili su ESP32-S3:
-  // Pin liberi comuni: GPIO 1, 2, 3, 4, 5, 6, 7, 8, 9, 14, 15, 16, 17, 18, 21, 47, 48
-  // Pin usati dal display: 10, 11, 12, 13, 45, 46
-  // Usiamo GPIO 0 che è il pulsante BOOT su molti ESP32-S3
-  const uint8_t BUTTON_PIN = 0;
+    // Inizializza mutex PRIMA di usarlo
+    lvgl_mutex_setup();
 
-  // Richiedi GPIO per pulsante con INPUT_PULLUP
-  button_gpio = gpio_mgr->requestGPIO(BUTTON_PIN, PERIPH_GPIO_INPUT_PULLUP, "ButtonDemo");
+    const esp_timer_create_args_t tick_args = {
+        .callback = &lv_tick_handler,
+        .name = "lv_tick"
+    };
+    esp_timer_handle_t tick_handle;
+    if (esp_timer_create(&tick_args, &tick_handle) == ESP_OK) {
+        esp_timer_start_periodic(tick_handle, 1000);
+    } else {
+        Serial.println("[LVGL] Failed to create tick timer");
+    }
 
-  if (button_gpio) {
-    Serial.printf("GPIO %d allocated successfully!\n", BUTTON_PIN);
+    // Allocazione statica invece di dinamica
+    static DashboardScreen dashboard;
+    ScreenManager::getInstance()->pushScreen(&dashboard);
 
-    // Attacca interrupt per pulsante (FALLING = pressione)
-    button_gpio->attachInterrupt(onButtonPress, FALLING);
+    Serial.printf("Free heap: %d bytes\n", ESP.getFreeHeap());
 
-    // Mostra stato GPIO
-    gpio_mgr->printStatus();
-  } else {
-    Serial.printf("Failed to allocate GPIO %d\n", BUTTON_PIN);
-    tft.setTextColor(TFT_RED, TFT_BLACK);
-    tft.drawCentreString("GPIO Init Failed!", tft.width() / 2, 100, 2);
-  }
-
-  // Messaggio iniziale
-  tft.setTextColor(TFT_CYAN, TFT_BLACK);
-  tft.drawCentreString("Press BOOT button", tft.width() / 2, 180, 2);
-  tft.drawCentreString("(GPIO 0)", tft.width() / 2, 200, 2);
-
-  Serial.println("Setup complete. Ready!");
+    xTaskCreatePinnedToCore(lvgl_task, "lvgl", 6144, nullptr, 3, nullptr, 1);
 }
 
 void loop() {
-  // Controlla se il pulsante è stato premuto
-  if (button_pressed) {
-    displayButtonStatus(true);
-
-    // Reset dopo 500ms
-    delay(500);
-    button_pressed = false;
-    displayButtonStatus(false);
-
-    // Aggiorna heap info
-    displaySystemInfo();
-  }
-
-  delay(10);
+    vTaskDelay(portMAX_DELAY);
 }
