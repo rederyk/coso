@@ -10,6 +10,7 @@
 #include <TFT_eSPI.h>
 
 #include "core/app_manager.h"
+#include "core/settings_manager.h"
 #include "drivers/touch_driver.h"
 #include "screens/dashboard_screen.h"
 #include "screens/settings_screen.h"
@@ -24,6 +25,7 @@ static constexpr int32_t DRAW_BUF_PIXELS = LV_HOR_RES_MAX * 20;
 static lv_color_t draw_buf_fallback[DRAW_BUF_PIXELS];
 static lv_color_t* draw_buf_ptr = draw_buf_fallback;
 static bool draw_buf_in_psram = false;
+static constexpr const char* APP_VERSION = "0.5.0";
 
 static void logSystemBanner();
 static void logMemoryStats(const char* stage);
@@ -127,6 +129,13 @@ void setup() {
     logSystemBanner();
     logMemoryStats("Boot");
 
+    SettingsManager& settings_mgr = SettingsManager::getInstance();
+    if (settings_mgr.begin()) {
+        settings_mgr.setVersion(APP_VERSION);
+    } else {
+        Serial.println("[Settings] Initialization failed - persistent settings disabled");
+    }
+
     if (psramFound()) {
         Serial.println("✓ PSRAM detected and enabled!");
     } else {
@@ -214,7 +223,7 @@ void setup() {
     app_manager->registerApp("settings", "⚙️", "Settings", &settings);
     app_manager->registerApp("info", "ℹ️", "Info", &info);
 
-    // Lancia la dashboard come app iniziale
+    // Lancia dashboard come app iniziale
     app_manager->launchApp("dashboard");
     logMemoryStats("UI ready");
 

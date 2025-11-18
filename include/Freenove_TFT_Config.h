@@ -7,9 +7,10 @@
 #define USER_SETUP_LOADED
 #endif
 
-#ifndef USER_SETUP_INFO
-#define USER_SETUP_INFO "Freenove ESP32-S3 Display (2.8in ILI9341)"
-#endif
+//#ifndef USER_SETUP_INFO
+//#define USER_SETUP_INFO "Freenove ESP32-S3 Display (2.8in ILI9341)"
+//#endif
+
 #define TOUCH_CS -1
 #define ILI9341_2_DRIVER
 #define TFT_RGB_ORDER TFT_BGR

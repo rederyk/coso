@@ -12,7 +12,7 @@ AppManager* AppManager::getInstance() {
 
 void AppManager::init(lv_obj_t* parent) {
     root_parent = parent;
-    dock.create(parent);
+    dock.create(lv_layer_top());
 }
 
 void AppManager::registerApp(const char* id, const char* emoji, const char* name, Screen* screen) {
@@ -58,6 +58,5 @@ void AppManager::launchApp(const char* id) {
 
     new_screen->onShow();
     current_screen = new_screen;
-
     Serial.printf("Launched app: %s %s\n", it->second.emoji, it->second.name);
 }
