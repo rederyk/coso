@@ -8,18 +8,18 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
 
-// Modalità GPIO
-enum GPIOMode {
-    GPIO_MODE_INPUT,
-    GPIO_MODE_OUTPUT,
-    GPIO_MODE_INPUT_PULLUP,
-    GPIO_MODE_INPUT_PULLDOWN
+// Modalità GPIO (rinominate per evitare conflitti con ESP32 HAL)
+enum PeriphGPIOMode {
+    PERIPH_GPIO_INPUT,
+    PERIPH_GPIO_OUTPUT,
+    PERIPH_GPIO_INPUT_PULLUP,
+    PERIPH_GPIO_INPUT_PULLDOWN
 };
 
 // Configurazione GPIO
 struct GPIOConfig {
     uint8_t pin;
-    GPIOMode mode;
+    PeriphGPIOMode mode;
     bool initial_state;  // Per output: HIGH/LOW iniziale
 };
 
@@ -27,7 +27,7 @@ struct GPIOConfig {
 class GPIOPeripheral : public Peripheral {
 private:
     uint8_t pin;
-    GPIOMode mode;
+    PeriphGPIOMode mode;
     bool interrupt_enabled = false;
     std::function<void()> isr_callback = nullptr;
 
@@ -56,30 +56,30 @@ public:
 
         // Configura pin
         switch (mode) {
-            case GPIO_MODE_INPUT:
+            case PERIPH_GPIO_INPUT:
                 pinMode(pin, INPUT);
                 break;
-            case GPIO_MODE_OUTPUT:
+            case PERIPH_GPIO_OUTPUT:
                 pinMode(pin, OUTPUT);
                 digitalWrite(pin, gpio_cfg->initial_state);
                 break;
-            case GPIO_MODE_INPUT_PULLUP:
+            case PERIPH_GPIO_INPUT_PULLUP:
                 pinMode(pin, INPUT_PULLUP);
                 break;
-            case GPIO_MODE_INPUT_PULLDOWN:
+            case PERIPH_GPIO_INPUT_PULLDOWN:
                 pinMode(pin, INPUT_PULLDOWN);
                 break;
         }
 
         state = PERIPH_INITIALIZED;
         Serial.printf("[GPIO] Pin %d initialized as %s\n",
-                      pin, mode == GPIO_MODE_OUTPUT ? "OUTPUT" : "INPUT");
+                      pin, mode == PERIPH_GPIO_OUTPUT ? "OUTPUT" : "INPUT");
         return true;
     }
 
     void deinit() override {
         if (interrupt_enabled) {
-            detachInterrupt(digitalPinToInterrupt(pin));
+            detachInterrupt();  // Usa il nostro metodo, non quello globale
             interrupt_enabled = false;
         }
         state = PERIPH_UNINITIALIZED;
@@ -91,7 +91,7 @@ public:
 
     // Operazioni GPIO
     void write(bool value) {
-        if (mode == GPIO_MODE_OUTPUT && state == PERIPH_ALLOCATED) {
+        if (mode == PERIPH_GPIO_OUTPUT && state == PERIPH_ALLOCATED) {
             digitalWrite(pin, value);
         }
     }
@@ -104,7 +104,7 @@ public:
     }
 
     void toggle() {
-        if (mode == GPIO_MODE_OUTPUT && state == PERIPH_ALLOCATED) {
+        if (mode == PERIPH_GPIO_OUTPUT && state == PERIPH_ALLOCATED) {
             digitalWrite(pin, !digitalRead(pin));
         }
     }
@@ -131,7 +131,7 @@ public:
     }
 
     uint8_t getPin() const { return pin; }
-    GPIOMode getMode() const { return mode; }
+    PeriphGPIOMode getMode() const { return mode; }
 };
 
 // GPIO Manager - Gestisce tutti i GPIO con allocazione thread-safe
@@ -156,7 +156,7 @@ public:
 
     // Richiedi GPIO (con allocazione automatica)
     // owner: nome dell'app/servizio che richiede il GPIO
-    GPIOPeripheral* requestGPIO(uint8_t pin, GPIOMode mode,
+    GPIOPeripheral* requestGPIO(uint8_t pin, PeriphGPIOMode mode,
                                 const char* owner, bool initial_state = LOW) {
         if (xSemaphoreTake(mutex, pdMS_TO_TICKS(100)) != pdTRUE) {
             Serial.printf("[GPIOManager] Failed to acquire mutex\n");

@@ -101,7 +101,7 @@ void setup() {
   const uint8_t BUTTON_PIN = 0;
 
   // Richiedi GPIO per pulsante con INPUT_PULLUP
-  button_gpio = gpio_mgr->requestGPIO(BUTTON_PIN, GPIO_MODE_INPUT_PULLUP, "ButtonDemo");
+  button_gpio = gpio_mgr->requestGPIO(BUTTON_PIN, PERIPH_GPIO_INPUT_PULLUP, "ButtonDemo");
 
   if (button_gpio) {
     Serial.printf("GPIO %d allocated successfully!\n", BUTTON_PIN);
