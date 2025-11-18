@@ -2,33 +2,84 @@
 
 #include <lvgl.h>
 #include <functional>
+#include <map>
+#include <string>
+#include <vector>
 
-class DockWidget {
+class DockView {
 public:
-    struct AppIcon {
-        const char* emoji;
-        const char* name;
-        std::function<void()> callback;
-    };
+    DockView();
+    ~DockView();
 
-    DockWidget();
-    ~DockWidget();
+    void create(lv_obj_t* launcher_layer);
+    void destroy();
+    void clearIcons();
+    void addIcon(const char* app_id, const char* emoji, const char* name);
 
-    void create(lv_obj_t* parent);
-    void addApp(const char* emoji, const char* name, std::function<void()> callback);
     void show();
     void hide();
     void toggle();
+    void onOrientationChanged(bool landscape);
+
+    void setHandleCallback(std::function<void()> callback);
+    void setIconTapCallback(std::function<void(const char* app_id)> callback);
+    bool isVisible() const { return is_visible_; }
+    bool isReady() const { return dock_container_ != nullptr; }
 
 private:
-    lv_obj_t* dock_container = nullptr;
-    lv_obj_t* icon_container = nullptr;
-    lv_obj_t* handle_button = nullptr;
-    lv_anim_t show_anim;
-    lv_anim_t hide_anim;
-    bool is_visible = false;
+    struct IconEntry {
+        std::string id;
+        lv_obj_t* button = nullptr;
+    };
 
-    static void swipeUpEventHandler(lv_event_t* e);
-    static void iconClickHandler(lv_event_t* e);
-    static void handleButtonHandler(lv_event_t* e);
+    void ensureCreated(lv_obj_t* launcher_layer);
+    void updateHandlePosition();
+    void destroyIcons();
+    void handleIconTriggered(lv_obj_t* target);
+
+    static void handleButtonEvent(lv_event_t* e);
+    static void iconEvent(lv_event_t* e);
+
+    lv_obj_t* launcher_layer_ = nullptr;
+    lv_obj_t* dock_container_ = nullptr;
+    lv_obj_t* icon_container_ = nullptr;
+    lv_obj_t* handle_button_ = nullptr;
+    lv_anim_t show_anim_;
+    lv_anim_t hide_anim_;
+    bool is_visible_ = false;
+    bool landscape_mode_ = true;
+    std::vector<IconEntry> icons_;
+    std::function<void()> handle_callback_;
+    std::function<void(const char* app_id)> icon_callback_;
+};
+
+class DockController {
+public:
+    DockController();
+    ~DockController();
+
+    void init(lv_obj_t* gesture_surface);
+    void registerLauncherItem(const char* app_id, const char* emoji, const char* name);
+    void onOrientationChanged(bool landscape);
+    void show();
+    void hide();
+    void toggle();
+    void setLaunchHandler(std::function<void(const char* app_id)> handler);
+
+private:
+    struct LauncherItem {
+        std::string emoji;
+        std::string name;
+    };
+
+    void setGestureSurface(lv_obj_t* target);
+    void detachGestureSurface();
+    void handleGesture(lv_event_t* e);
+
+    static void gestureHandler(lv_event_t* e);
+
+    DockView view_;
+    lv_obj_t* gesture_surface_ = nullptr;
+    std::function<void(const char* app_id)> launch_handler_;
+    std::map<std::string, LauncherItem> items_;
 };

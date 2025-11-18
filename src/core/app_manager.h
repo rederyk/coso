@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/display_manager.h"
 #include "core/screen.h"
 #include "widgets/dock_widget.h"
 #include <map>
@@ -12,7 +13,9 @@ public:
     void init(lv_obj_t* root_parent);
     void registerApp(const char* id, const char* emoji, const char* name, Screen* screen);
     void launchApp(const char* id);
-    DockWidget* getDock() { return &dock; }
+    void reloadScreens();
+    void requestReload();
+    DockController* getDock() { return &dock; }
 
 private:
     AppManager() = default;
@@ -25,7 +28,11 @@ private:
     };
 
     lv_obj_t* root_parent = nullptr;
-    DockWidget dock;
+    DockController dock;
     Screen* current_screen = nullptr;
+    std::string current_app_id;
+    bool reload_pending = false;
     std::map<std::string, AppInfo> apps;
+
+    static void handleAsyncReload(void* user_data);
 };

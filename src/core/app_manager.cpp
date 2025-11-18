@@ -1,5 +1,6 @@
 #include "core/app_manager.h"
 #include <Arduino.h>
+#include <lvgl.h>
 
 AppManager* AppManager::instance = nullptr;
 
@@ -12,17 +13,16 @@ AppManager* AppManager::getInstance() {
 
 void AppManager::init(lv_obj_t* parent) {
     root_parent = parent;
-    dock.create(lv_layer_top());
+    dock.init(root_parent);
+    dock.setLaunchHandler([this](const char* app_id) {
+        launchApp(app_id);
+    });
 }
 
 void AppManager::registerApp(const char* id, const char* emoji, const char* name, Screen* screen) {
     apps[id] = {emoji, name, screen};
 
-    // Aggiungi al dock
-    dock.addApp(emoji, name, [this, id]() {
-        launchApp(id);
-        dock.hide();
-    });
+    dock.registerLauncherItem(id, emoji, name);
 }
 
 void AppManager::launchApp(const char* id) {
@@ -54,9 +54,51 @@ void AppManager::launchApp(const char* id) {
     if (new_root) {
         lv_obj_clear_flag(new_root, LV_OBJ_FLAG_HIDDEN);
         lv_obj_move_foreground(new_root);
+        DisplayManager& display = DisplayManager::getInstance();
+        display.getOverlayLayer();
+        display.getLauncherLayer();
     }
 
     new_screen->onShow();
     current_screen = new_screen;
+    current_app_id = id ? id : "";
     Serial.printf("Launched app: %s %s\n", it->second.emoji, it->second.name);
+}
+
+void AppManager::reloadScreens() {
+    if (apps.empty()) {
+        return;
+    }
+
+    std::string previous = current_app_id;
+    for (auto& entry : apps) {
+        Screen* screen = entry.second.screen;
+        if (screen && screen->getRoot()) {
+            screen->onHide();
+            screen->destroyRoot();
+        }
+    }
+
+    current_screen = nullptr;
+
+    if (!previous.empty()) {
+        launchApp(previous.c_str());
+    }
+}
+
+void AppManager::requestReload() {
+    if (reload_pending) {
+        return;
+    }
+    reload_pending = true;
+    lv_async_call(handleAsyncReload, this);
+}
+
+void AppManager::handleAsyncReload(void* user_data) {
+    auto* manager = static_cast<AppManager*>(user_data);
+    if (!manager) {
+        return;
+    }
+    manager->reloadScreens();
+    manager->reload_pending = false;
 }

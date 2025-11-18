@@ -13,6 +13,8 @@ public:
 
 private:
     void applySnapshot(const SettingsSnapshot& snapshot);
+    void applyThemeStyles(const SettingsSnapshot& snapshot);
+    void styleCard(lv_obj_t* card, bool allow_half_width, const SettingsSnapshot& snapshot);
     void updateBrightnessLabel(uint8_t value);
     size_t themeIndexFromId(const std::string& theme_id) const;
     const char* themeIdFromIndex(size_t index) const;
@@ -26,6 +28,12 @@ private:
     lv_obj_t* brightness_slider = nullptr;
     lv_obj_t* brightness_value_label = nullptr;
     lv_obj_t* theme_dropdown = nullptr;
+    lv_obj_t* header_label = nullptr;
+    lv_obj_t* content_container = nullptr;
+    lv_obj_t* wifi_card = nullptr;
+    lv_obj_t* display_card = nullptr;
+    lv_obj_t* theme_card = nullptr;
+    lv_obj_t* info_card = nullptr;
     lv_obj_t* version_label = nullptr;
     lv_obj_t* hint_label = nullptr;
 

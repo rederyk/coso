@@ -1,6 +1,8 @@
 #include "touch_driver.h"
+#include "core/display_manager.h"
 #include <Wire.h>
 #include <Arduino.h>
+#include <algorithm>
 
 #define FT6336_ADDR 0x38
 #define FT6336_REG_NUM_TOUCHES 0x02
@@ -56,17 +58,41 @@ static void transformToDisplay(uint16_t raw_x, uint16_t raw_y, lv_point_t& point
     }
 #endif
 
-    uint16_t denom_x = (max_x > 1) ? (max_x - 1) : 1;
-    uint16_t denom_y = (max_y > 1) ? (max_y - 1) : 1;
+    uint16_t denom_x = (max_x > 1) ? static_cast<uint16_t>(max_x - 1) : 1;
+    uint16_t denom_y = (max_y > 1) ? static_cast<uint16_t>(max_y - 1) : 1;
 
-    uint32_t scaled_x = ((uint32_t)x * (LV_HOR_RES_MAX - 1)) / denom_x;
-    uint32_t scaled_y = ((uint32_t)y * (LV_VER_RES_MAX - 1)) / denom_y;
+    DisplayManager& display = DisplayManager::getInstance();
+    bool landscape = display.isLandscape();
 
-    if (scaled_x >= LV_HOR_RES_MAX) scaled_x = LV_HOR_RES_MAX - 1;
-    if (scaled_y >= LV_VER_RES_MAX) scaled_y = LV_VER_RES_MAX - 1;
+    const lv_coord_t base_width = std::max<lv_coord_t>(1, landscape ? display.getWidth() : display.getHeight());
+    const lv_coord_t base_height = std::max<lv_coord_t>(1, landscape ? display.getHeight() : display.getWidth());
 
-    point.x = static_cast<lv_coord_t>(scaled_x);
-    point.y = static_cast<lv_coord_t>(scaled_y);
+    uint32_t scaled_x = ((uint32_t)x * (base_width - 1)) / denom_x;
+    uint32_t scaled_y = ((uint32_t)y * (base_height - 1)) / denom_y;
+
+    if (scaled_x >= static_cast<uint32_t>(base_width)) scaled_x = base_width - 1;
+    if (scaled_y >= static_cast<uint32_t>(base_height)) scaled_y = base_height - 1;
+
+    lv_coord_t base_x = static_cast<lv_coord_t>(scaled_x);
+    lv_coord_t base_y = static_cast<lv_coord_t>(scaled_y);
+
+    if (landscape) {
+        point.x = base_x;
+        point.y = base_y;
+    } else {
+        const lv_coord_t portrait_width = std::max<lv_coord_t>(1, display.getWidth());
+        const lv_coord_t portrait_height = std::max<lv_coord_t>(1, display.getHeight());
+        lv_coord_t rotated_x = portrait_width - 1 - base_y;
+        lv_coord_t rotated_y = base_x;
+
+        if (rotated_x < 0) rotated_x = 0;
+        if (rotated_x >= portrait_width) rotated_x = portrait_width - 1;
+        if (rotated_y < 0) rotated_y = 0;
+        if (rotated_y >= portrait_height) rotated_y = portrait_height - 1;
+
+        point.x = rotated_x;
+        point.y = rotated_y;
+    }
 }
 
 void touch_driver_init() {

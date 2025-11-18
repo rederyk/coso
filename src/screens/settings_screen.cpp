@@ -57,27 +57,25 @@ void SettingsScreen::build(lv_obj_t* parent) {
 
     root = lv_obj_create(parent);
     lv_obj_set_size(root, lv_pct(100), lv_pct(100));
-    lv_obj_set_style_bg_color(root, lv_color_hex(0x0a0e27), 0);
     lv_obj_clear_flag(root, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_style_pad_all(root, 16, 0);
 
-    lv_obj_t* header = lv_label_create(root);
-    lv_label_set_text(header, "⚙️ Settings");
-    lv_obj_set_style_text_font(header, &lv_font_montserrat_24, 0);
-    lv_obj_set_style_text_color(header, lv_color_hex(0xffffff), 0);
-    lv_obj_align(header, LV_ALIGN_TOP_LEFT, 4, 0);
+    header_label = lv_label_create(root);
+    lv_label_set_text(header_label, "⚙️ Settings");
+    lv_obj_set_style_text_font(header_label, &lv_font_montserrat_24, 0);
+    lv_obj_align(header_label, LV_ALIGN_TOP_LEFT, 4, 0);
 
-    lv_obj_t* content = lv_obj_create(root);
-    lv_obj_set_size(content, lv_pct(100), lv_pct(80));
-    lv_obj_align(content, LV_ALIGN_BOTTOM_MID, 0, -20);
-    lv_obj_set_style_bg_opa(content, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_pad_all(content, 0, 0);
-    lv_obj_set_layout(content, LV_LAYOUT_FLEX);
-    lv_obj_set_flex_flow(content, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_style_pad_row(content, 14, 0);
+    content_container = lv_obj_create(root);
+    lv_obj_set_size(content_container, lv_pct(100), lv_pct(80));
+    lv_obj_align(content_container, LV_ALIGN_BOTTOM_MID, 0, -20);
+    lv_obj_set_style_bg_opa(content_container, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_pad_all(content_container, 0, 0);
+    lv_obj_set_layout(content_container, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(content_container, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_row(content_container, 14, 0);
 
     // WiFi credentials
-    lv_obj_t* wifi_card = create_card(content, "📶 WiFi", "Configura SSID e password della rete");
+    wifi_card = create_card(content_container, "📶 WiFi", "Configura SSID e password della rete");
 
     wifi_ssid_input = lv_textarea_create(wifi_card);
     lv_textarea_set_one_line(wifi_ssid_input, true);
@@ -95,7 +93,7 @@ void SettingsScreen::build(lv_obj_t* parent) {
     lv_obj_add_event_cb(wifi_pass_input, handleTextInput, LV_EVENT_VALUE_CHANGED, this);
 
     // Brightness
-    lv_obj_t* display_card = create_card(content, "💡 Display", "Regola la luminosità del backlight (0-100%)");
+    display_card = create_card(content_container, "💡 Display", "Regola la luminosità del backlight (0-100%)");
     brightness_slider = lv_slider_create(display_card);
     lv_obj_set_width(brightness_slider, lv_pct(100));
     lv_slider_set_range(brightness_slider, 0, 100);
@@ -106,14 +104,14 @@ void SettingsScreen::build(lv_obj_t* parent) {
     lv_obj_set_style_text_color(brightness_value_label, lv_color_hex(0xe0e0e0), 0);
 
     // Theme selector
-    lv_obj_t* theme_card = create_card(content, "🎨 Tema", "Seleziona la palette preferita");
+    theme_card = create_card(content_container, "🎨 Tema", "Seleziona la palette preferita");
     theme_dropdown = lv_dropdown_create(theme_card);
     lv_obj_set_width(theme_dropdown, lv_pct(100));
     lv_dropdown_set_options(theme_dropdown, "Dark\nLight\nAuto");
     lv_obj_add_event_cb(theme_dropdown, handleThemeChanged, LV_EVENT_VALUE_CHANGED, this);
 
     // Version
-    lv_obj_t* info_card = create_card(content, "ℹ️ Sistema", "Versione firmware e suggerimenti UI");
+    info_card = create_card(content_container, "ℹ️ Sistema", "Versione firmware e suggerimenti UI");
     version_label = lv_label_create(info_card);
     lv_obj_set_style_text_font(version_label, &lv_font_montserrat_16, 0);
     lv_obj_set_style_text_color(version_label, lv_color_hex(0xc0c0c0), 0);
@@ -166,7 +164,53 @@ void SettingsScreen::applySnapshot(const SettingsSnapshot& snapshot) {
         lv_label_set_text_fmt(version_label, "Versione firmware: %s", version);
     }
 
+    applyThemeStyles(snapshot);
     updating_from_manager = false;
+}
+
+void SettingsScreen::applyThemeStyles(const SettingsSnapshot& snapshot) {
+    lv_color_t primary = lv_color_hex(snapshot.primaryColor);
+    lv_color_t accent = lv_color_hex(snapshot.accentColor);
+    lv_color_t hint_color = lv_color_mix(accent, lv_color_hex(0xffffff), LV_OPA_40);
+
+    if (root) {
+        lv_obj_set_style_bg_color(root, primary, 0);
+    }
+    if (header_label) {
+        lv_obj_set_style_text_color(header_label, accent, 0);
+    }
+    if (content_container) {
+        lv_obj_set_flex_flow(content_container, snapshot.landscapeLayout ? LV_FLEX_FLOW_ROW_WRAP : LV_FLEX_FLOW_COLUMN);
+        lv_obj_set_style_pad_column(content_container, snapshot.landscapeLayout ? 12 : 0, 0);
+        lv_obj_set_style_pad_row(content_container, snapshot.landscapeLayout ? 12 : 14, 0);
+    }
+    if (hint_label) {
+        lv_obj_set_style_text_color(hint_label, hint_color, 0);
+    }
+
+    styleCard(wifi_card, true, snapshot);
+    styleCard(display_card, true, snapshot);
+    styleCard(theme_card, true, snapshot);
+    styleCard(info_card, false, snapshot);
+}
+
+void SettingsScreen::styleCard(lv_obj_t* card, bool allow_half_width, const SettingsSnapshot& snapshot) {
+    if (!card) {
+        return;
+    }
+    lv_color_t primary = lv_color_hex(snapshot.primaryColor);
+    lv_color_t accent = lv_color_hex(snapshot.accentColor);
+    lv_color_t card_bg = lv_color_mix(accent, primary, LV_OPA_30);
+
+    lv_obj_set_style_bg_color(card, card_bg, 0);
+    lv_obj_set_style_radius(card, snapshot.borderRadius, 0);
+    lv_obj_set_style_border_width(card, 0, 0);
+
+    if (snapshot.landscapeLayout && allow_half_width) {
+        lv_obj_set_width(card, lv_pct(48));
+    } else {
+        lv_obj_set_width(card, lv_pct(100));
+    }
 }
 
 void SettingsScreen::updateBrightnessLabel(uint8_t value) {

@@ -10,11 +10,13 @@
 #include <TFT_eSPI.h>
 
 #include "core/app_manager.h"
+#include "core/display_manager.h"
 #include "core/settings_manager.h"
 #include "drivers/touch_driver.h"
 #include "screens/dashboard_screen.h"
 #include "screens/settings_screen.h"
 #include "screens/info_screen.h"
+#include "screens/theme_settings_screen.h"
 #include "utils/lvgl_mutex.h"
 
 static TFT_eSPI tft;
@@ -130,8 +132,10 @@ void setup() {
     logMemoryStats("Boot");
 
     SettingsManager& settings_mgr = SettingsManager::getInstance();
+    bool initial_landscape = true;
     if (settings_mgr.begin()) {
         settings_mgr.setVersion(APP_VERSION);
+        initial_landscape = settings_mgr.isLandscapeLayout();
     } else {
         Serial.println("[Settings] Initialization failed - persistent settings disabled");
     }
@@ -147,7 +151,6 @@ void setup() {
 
     enableBacklight();
     tft.init();
-    tft.setRotation(1);
 
     lv_init();
     logMemoryStats("After lv_init");
@@ -168,13 +171,9 @@ void setup() {
     logLvglBufferInfo();
     logMemoryStats("After draw buffer");
 
-    static lv_disp_drv_t disp_drv;
-    lv_disp_drv_init(&disp_drv);
-    disp_drv.hor_res = LV_HOR_RES_MAX;
-    disp_drv.ver_res = LV_VER_RES_MAX;
-    disp_drv.draw_buf = &draw_buf;
-    disp_drv.flush_cb = tft_flush_cb;
-    lv_disp_drv_register(&disp_drv);
+    DisplayManager& display_manager = DisplayManager::getInstance();
+    display_manager.begin(&tft, &draw_buf, tft_flush_cb);
+    display_manager.applyOrientation(initial_landscape, true);
 
     static lv_indev_drv_t indev_drv;
     lv_indev_drv_init(&indev_drv);
@@ -212,20 +211,35 @@ void setup() {
     // Inizializza App Manager e crea le app
     AppManager* app_manager = AppManager::getInstance();
     app_manager->init(screen);
+    app_manager->getDock()->onOrientationChanged(initial_landscape);
 
     // Crea le schermate (statiche)
     static DashboardScreen dashboard;
     static SettingsScreen settings;
     static InfoScreen info;
+    static ThemeSettingsScreen theme_settings;
 
     // Registra le app nel dock
     app_manager->registerApp("dashboard", "🏠", "Home", &dashboard);
     app_manager->registerApp("settings", "⚙️", "Settings", &settings);
+    app_manager->registerApp("theme", "🖌️", "Theme", &theme_settings);
     app_manager->registerApp("info", "ℹ️", "Info", &info);
 
     // Lancia dashboard come app iniziale
     app_manager->launchApp("dashboard");
     logMemoryStats("UI ready");
+
+    settings_mgr.addListener([app_manager](SettingsManager::SettingKey key, const SettingsSnapshot& snapshot) {
+        if (key != SettingsManager::SettingKey::LayoutOrientation) {
+            return;
+        }
+        Serial.printf("[Display] Orientation toggle requested: %s\n",
+                      snapshot.landscapeLayout ? "Landscape" : "Portrait");
+        DisplayManager& display = DisplayManager::getInstance();
+        display.applyOrientation(snapshot.landscapeLayout);
+        app_manager->getDock()->onOrientationChanged(snapshot.landscapeLayout);
+        app_manager->requestReload();
+    });
 
     xTaskCreatePinnedToCore(lvgl_task, "lvgl", 6144, nullptr, 3, nullptr, 1);
     logMemoryStats("LVGL task started");
