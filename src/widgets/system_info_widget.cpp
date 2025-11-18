@@ -56,11 +56,18 @@ void SystemInfoWidget::update() {
     snprintf(heap_buf, sizeof(heap_buf), "Heap: %lu KB", free_heap / 1024UL);
     snprintf(uptime_buf, sizeof(uptime_buf), "Up: %02lu:%02lu:%02lu", hours, minutes, seconds);
 
-    // Aggiorna UI con mutex - cattura RIFERIMENTI ai buffer statici
-    if (lvgl_mutex_lock(pdMS_TO_TICKS(50))) {
+    const bool already_owned = lvgl_mutex_is_owned_by_current_task();
+    bool lock_acquired = already_owned;
+    if (!already_owned) {
+        lock_acquired = lvgl_mutex_lock(pdMS_TO_TICKS(50));
+    }
+
+    if (lock_acquired) {
         lv_label_set_text(heap_label, heap_buf);
         lv_label_set_text(uptime_label, uptime_buf);
-        lvgl_mutex_unlock();
+        if (!already_owned) {
+            lvgl_mutex_unlock();
+        }
     }
 }
 

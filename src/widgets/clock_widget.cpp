@@ -44,10 +44,17 @@ void ClockWidget::update() {
     static char buffer[16];
     snprintf(buffer, sizeof(buffer), "%02lu:%02lu:%02lu", hours, minutes, seconds);
 
-    // Aggiorna UI con mutex
-    if (lvgl_mutex_lock(pdMS_TO_TICKS(50))) {
+    const bool already_owned = lvgl_mutex_is_owned_by_current_task();
+    bool lock_acquired = already_owned;
+    if (!already_owned) {
+        lock_acquired = lvgl_mutex_lock(pdMS_TO_TICKS(50));
+    }
+
+    if (lock_acquired) {
         lv_label_set_text(label, buffer);
-        lvgl_mutex_unlock();
+        if (!already_owned) {
+            lvgl_mutex_unlock();
+        }
     }
 }
 
