@@ -26,14 +26,20 @@ uint32_t toHex(lv_color_t color) {
 
 lv_obj_t* create_card(lv_obj_t* parent, const char* title) {
     lv_obj_t* card = lv_obj_create(parent);
-    lv_obj_set_width(card, lv_pct(48));
+    lv_obj_remove_style_all(card);
+    lv_obj_set_width(card, lv_pct(100));
     lv_obj_set_style_bg_color(card, lv_color_hex(0x10182c), 0);
     lv_obj_set_style_bg_opa(card, LV_OPA_COVER, 0);
     lv_obj_set_style_radius(card, 14, 0);
     lv_obj_set_style_border_width(card, 0, 0);
+    lv_obj_set_style_outline_width(card, 0, 0);
     lv_obj_set_style_pad_all(card, 12, 0);
     lv_obj_set_layout(card, LV_LAYOUT_FLEX);
     lv_obj_set_flex_flow(card, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(card,
+                          LV_FLEX_ALIGN_START,
+                          LV_FLEX_ALIGN_CENTER,
+                          LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_pad_row(card, 8, 0);
 
     lv_obj_t* header = lv_label_create(card);
@@ -61,36 +67,63 @@ void ThemeSettingsScreen::build(lv_obj_t* parent) {
     const SettingsSnapshot& snapshot = manager.getSnapshot();
 
     root = lv_obj_create(parent);
+    lv_obj_remove_style_all(root);
     lv_obj_set_size(root, lv_pct(100), lv_pct(100));
     lv_obj_set_style_bg_color(root, lv_color_hex(0x040b18), 0);
-    lv_obj_clear_flag(root, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_style_pad_all(root, 10, 0);
+    lv_obj_set_style_bg_opa(root, LV_OPA_COVER, 0);
+    lv_obj_add_flag(root, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scroll_dir(root, LV_DIR_VER);
+    lv_obj_set_layout(root, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(root, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_all(root, 6, 0);
+    lv_obj_set_style_pad_row(root, 8, 0);
+    lv_obj_set_style_border_width(root, 0, 0);
+    lv_obj_set_style_outline_width(root, 0, 0);
 
     lv_obj_t* title = lv_label_create(root);
     lv_label_set_text(title, "🎨 Theme Studio");
     lv_obj_set_style_text_font(title, &lv_font_montserrat_24, 0);
     lv_obj_set_style_text_color(title, lv_color_hex(0xffffff), 0);
-    lv_obj_align(title, LV_ALIGN_TOP_LEFT, 6, 0);
+    lv_obj_set_width(title, lv_pct(100));
 
     lv_obj_t* content = lv_obj_create(root);
-    lv_obj_set_size(content, lv_pct(100), lv_pct(85));
-    lv_obj_align(content, LV_ALIGN_BOTTOM_MID, 0, 0);
+    lv_obj_remove_style_all(content);
+    lv_obj_set_width(content, lv_pct(100));
+    lv_obj_set_height(content, LV_SIZE_CONTENT);
     lv_obj_set_style_bg_opa(content, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(content, 0, 0);
     lv_obj_set_layout(content, LV_LAYOUT_FLEX);
-    lv_obj_set_flex_flow(content, LV_FLEX_FLOW_ROW_WRAP);
+    lv_obj_set_flex_flow(content, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_style_pad_row(content, 12, 0);
-    lv_obj_set_style_pad_column(content, 10, 0);
+    lv_obj_clear_flag(content, LV_OBJ_FLAG_SCROLLABLE);
 
     // Color wheels
     lv_obj_t* primary_card = create_card(content, "Colore Primario");
-    primary_wheel = lv_colorwheel_create(primary_card, true);
-    lv_obj_set_size(primary_wheel, 110, 110);
+    lv_obj_t* primary_holder = lv_obj_create(primary_card);
+    lv_obj_remove_style_all(primary_holder);
+    lv_obj_set_width(primary_holder, lv_pct(100));
+    lv_obj_set_layout(primary_holder, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(primary_holder, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(primary_holder,
+                          LV_FLEX_ALIGN_CENTER,
+                          LV_FLEX_ALIGN_CENTER,
+                          LV_FLEX_ALIGN_CENTER);
+    primary_wheel = lv_colorwheel_create(primary_holder, true);
+    lv_obj_set_size(primary_wheel, 140, 140);
     lv_obj_add_event_cb(primary_wheel, handlePrimaryColor, LV_EVENT_VALUE_CHANGED, this);
 
     lv_obj_t* accent_card = create_card(content, "Colore Accento");
-    accent_wheel = lv_colorwheel_create(accent_card, true);
-    lv_obj_set_size(accent_wheel, 110, 110);
+    lv_obj_t* accent_holder = lv_obj_create(accent_card);
+    lv_obj_remove_style_all(accent_holder);
+    lv_obj_set_width(accent_holder, lv_pct(100));
+    lv_obj_set_layout(accent_holder, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(accent_holder, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(accent_holder,
+                          LV_FLEX_ALIGN_CENTER,
+                          LV_FLEX_ALIGN_CENTER,
+                          LV_FLEX_ALIGN_CENTER);
+    accent_wheel = lv_colorwheel_create(accent_holder, true);
+    lv_obj_set_size(accent_wheel, 140, 140);
     lv_obj_add_event_cb(accent_wheel, handleAccentColor, LV_EVENT_VALUE_CHANGED, this);
 
     // Border radius
@@ -115,6 +148,7 @@ void ThemeSettingsScreen::build(lv_obj_t* parent) {
     lv_obj_set_flex_flow(palette_card, LV_FLEX_FLOW_ROW_WRAP);
     lv_obj_set_style_pad_row(palette_card, 6, 0);
     lv_obj_set_style_pad_column(palette_card, 6, 0);
+    lv_obj_clear_flag(palette_card, LV_OBJ_FLAG_SCROLLABLE);
 
     for (const auto& preset : PRESETS) {
         lv_obj_t* btn = lv_btn_create(palette_card);
@@ -131,19 +165,21 @@ void ThemeSettingsScreen::build(lv_obj_t* parent) {
 
     // Preview
     preview_card = lv_obj_create(content);
+    lv_obj_remove_style_all(preview_card);
     lv_obj_set_width(preview_card, lv_pct(100));
     lv_obj_set_style_bg_color(preview_card, lv_color_hex(0x10182c), 0);
     lv_obj_set_style_radius(preview_card, 18, 0);
     lv_obj_set_style_pad_all(preview_card, 14, 0);
+    lv_obj_clear_flag(preview_card, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_layout(preview_card, LV_LAYOUT_FLEX);
     lv_obj_set_flex_flow(preview_card, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_style_pad_row(preview_card, 10, 0);
 
     preview_header = lv_label_create(preview_card);
     preview_body = lv_obj_create(preview_card);
+    lv_obj_remove_style_all(preview_body);
     lv_obj_set_size(preview_body, lv_pct(100), 60);
     lv_obj_set_style_bg_color(preview_body, lv_color_hex(0x0f2030), 0);
-    lv_obj_set_style_border_width(preview_body, 0, 0);
 
     applySnapshot(snapshot);
 

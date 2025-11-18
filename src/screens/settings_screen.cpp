@@ -56,23 +56,33 @@ void SettingsScreen::build(lv_obj_t* parent) {
     const SettingsSnapshot& snapshot = manager.getSnapshot();
 
     root = lv_obj_create(parent);
+    lv_obj_remove_style_all(root);
     lv_obj_set_size(root, lv_pct(100), lv_pct(100));
-    lv_obj_clear_flag(root, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_style_pad_all(root, 16, 0);
+    lv_obj_add_flag(root, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scroll_dir(root, LV_DIR_VER);
+    lv_obj_set_layout(root, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(root, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_bg_opa(root, LV_OPA_COVER, 0);
+    lv_obj_set_style_pad_all(root, 6, 0);
+    lv_obj_set_style_pad_row(root, 8, 0);
+    lv_obj_set_style_border_width(root, 0, 0);
+    lv_obj_set_style_outline_width(root, 0, 0);
 
     header_label = lv_label_create(root);
     lv_label_set_text(header_label, "⚙️ Settings");
     lv_obj_set_style_text_font(header_label, &lv_font_montserrat_24, 0);
-    lv_obj_align(header_label, LV_ALIGN_TOP_LEFT, 4, 0);
+    lv_obj_set_width(header_label, lv_pct(100));
 
     content_container = lv_obj_create(root);
-    lv_obj_set_size(content_container, lv_pct(100), lv_pct(80));
-    lv_obj_align(content_container, LV_ALIGN_BOTTOM_MID, 0, -20);
+    lv_obj_remove_style_all(content_container);
+    lv_obj_set_width(content_container, lv_pct(100));
+    lv_obj_set_height(content_container, LV_SIZE_CONTENT);
     lv_obj_set_style_bg_opa(content_container, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_pad_all(content_container, 0, 0);
+    lv_obj_set_style_pad_all(content_container, 4, 0);
     lv_obj_set_layout(content_container, LV_LAYOUT_FLEX);
     lv_obj_set_flex_flow(content_container, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_style_pad_row(content_container, 14, 0);
+    lv_obj_set_style_pad_row(content_container, 12, 0);
+    lv_obj_clear_flag(content_container, LV_OBJ_FLAG_SCROLLABLE);
 
     // WiFi credentials
     wifi_card = create_card(content_container, "📶 WiFi", "Configura SSID e password della rete");

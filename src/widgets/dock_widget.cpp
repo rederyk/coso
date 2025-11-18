@@ -60,9 +60,12 @@ void DockView::ensureCreated(lv_obj_t* launcher_layer) {
     launcher_layer_ = launcher_layer;
 
     dock_container_ = lv_obj_create(launcher_layer_);
+    lv_obj_remove_style_all(dock_container_);
     lv_obj_set_style_bg_color(dock_container_, lv_color_hex(0x1a1a2e), 0);
     lv_obj_set_style_bg_opa(dock_container_, LV_OPA_90, 0);
     lv_obj_set_style_border_width(dock_container_, 0, 0);
+    lv_obj_set_style_outline_width(dock_container_, 0, 0);
+    lv_obj_set_style_shadow_opa(dock_container_, LV_OPA_TRANSP, 0);
     lv_obj_set_style_radius(dock_container_, 16, 0);
     lv_obj_set_style_pad_all(dock_container_, 8, 0);
     lv_obj_add_flag(dock_container_, LV_OBJ_FLAG_FLOATING);
@@ -77,12 +80,14 @@ void DockView::ensureCreated(lv_obj_t* launcher_layer) {
     lv_obj_center(icon_container_);
 
     handle_button_ = lv_btn_create(launcher_layer_);
+    lv_obj_remove_style_all(handle_button_);
     lv_obj_set_size(handle_button_, 80, 24);
     lv_obj_add_flag(handle_button_, LV_OBJ_FLAG_FLOATING);
     lv_obj_set_style_bg_color(handle_button_, lv_color_hex(0x1f2a44), 0);
     lv_obj_set_style_bg_opa(handle_button_, LV_OPA_80, 0);
     lv_obj_set_style_radius(handle_button_, 12, 0);
     lv_obj_set_style_border_width(handle_button_, 0, 0);
+    lv_obj_set_style_outline_width(handle_button_, 0, 0);
     lv_obj_move_foreground(handle_button_);
 
     lv_obj_add_event_cb(handle_button_, handleButtonEvent, LV_EVENT_CLICKED, this);
@@ -118,6 +123,7 @@ void DockView::addIcon(const char* app_id, const char* emoji, const char* name) 
     }
 
     lv_obj_t* app_btn = lv_obj_create(icon_container_);
+    lv_obj_remove_style_all(app_btn);
     lv_obj_set_size(app_btn, 60, 60);
     lv_obj_set_style_bg_color(app_btn, lv_color_hex(0x16213e), 0);
     lv_obj_set_style_bg_opa(app_btn, LV_OPA_COVER, 0);
