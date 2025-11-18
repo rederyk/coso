@@ -1,7 +1,7 @@
 # Stato Attuale del Progetto ESP32-S3 Touch Display
 
 **Data:** 2025-11-18
-**Versione Software:** 0.1.0 (Fase Test Hardware)
+**Versione Software:** 0.5.0 (Fase Core Managers Implementati)
 **Board:** Freenove ESP32-S3 Display 2.8"
 
 ---
@@ -100,84 +100,161 @@ build_flags =
 
 ## 3. Stato Attuale del Software
 
-### 3.1 Fase: Test Hardware TFT Display
+### 3.1 Fase: Core Managers Implementati + Dashboard Funzionante
 
-Il codice attuale (`src/main.cpp`) è un **programma di test** per verificare il funzionamento del display TFT.
-
-**NON è ancora implementato l'OS completo descritto nella documentazione.**
+Il progetto ha **superato la fase di test hardware** e ha implementato con successo:
+- ✅ LVGL 8.4.0 integrato e funzionante
+- ✅ Touch FT6336U operativo
+- ✅ Core Managers (AppManager, ScreenManager, EventRouter)
+- ✅ Widget System (SystemInfoWidget, ClockWidget, DashboardWidget)
+- ✅ Dashboard Screen funzionante con widget attivi
+- ✅ Settings Screen e Info Screen create
+- ✅ Dock widget per navigazione app
 
 ### 3.2 Struttura main.cpp Attuale
 
 ```
-src/main.cpp (130 righe)
-├── Include: Arduino.h, TFT_eSPI.h
-├── Namespace anonimo con funzioni helper:
-│   ├── enableBacklight() - Accende la retroilluminazione
-│   ├── flashSolidColors() - Test colori solidi (rosso, verde, blu, nero, bianco)
-│   ├── drawWelcomeBanner() - Schermata di benvenuto con info display
-│   └── drawRainbowStripes() - Gradient arcobaleno animato
-├── setup()
-│   ├── Serial.begin(115200)
-│   ├── tft.init()
-│   ├── tft.setRotation(1) - Modalità landscape
-│   ├── Test colori + Welcome banner
-│   └── Prima visualizzazione rainbow
+src/main.cpp (228 righe) - Architettura OS Completa
+├── Include: Arduino.h, esp headers, lvgl.h, TFT_eSPI.h
+├── Core Components:
+│   ├── AppManager - Gestione applicazioni
+│   ├── TouchDriver - Driver touch FT6336U
+│   ├── LVGL Mutex - Thread-safety
+│   └── Screens (Dashboard, Settings, Info)
+├── Helper Functions:
+│   ├── logSystemBanner() - Info hardware all'avvio
+│   ├── logMemoryStats() - Monitoring DRAM/PSRAM
+│   ├── logLvglBufferInfo() - Info buffer grafico
+│   ├── allocatePsramBuffer() - Allocazione PSRAM intelligente
+│   ├── enableBacklight() - Controllo retroilluminazione
+│   ├── tft_flush_cb() - Callback LVGL → TFT
+│   └── lv_tick_handler() - Timer tick LVGL
+├── FreeRTOS Tasks:
+│   └── lvgl_task() - Task LVGL su Core 1 (priorità 3)
+├── setup() - ~100 righe
+│   ├── Serial + System banner
+│   ├── Memory stats boot
+│   ├── PSRAM detection
+│   ├── Touch driver init
+│   ├── TFT init (rotation 1)
+│   ├── LVGL init
+│   ├── Draw buffer PSRAM (20 righe, fallback interno)
+│   ├── Display driver registration
+│   ├── Touch input registration
+│   ├── LVGL mutex setup
+│   ├── ESP timer tick (1ms)
+│   ├── AppManager init + registrazione app
+│   ├── Launch dashboard
+│   └── Create LVGL task Core 1
 └── loop()
-    └── Ridisegna rainbow ogni 6 secondi
+    └── vTaskDelay(portMAX_DELAY) - Sistema completamente FreeRTOS-based
 ```
 
 ### 3.3 Funzionalità Attualmente Implementate
 
-✅ **Inizializzazione Display TFT**
-- Controller ILI9341 configurato
-- Rotazione landscape (320x240)
-- Backlight controllato via GPIO 45
+✅ **Sistema Operativo Base**
+- LVGL 8.4.0 integrato e configurato
+- FreeRTOS task management (Core 1 per LVGL)
+- Thread-safety con mutex globale LVGL
+- Memory management PSRAM-aware
 
-✅ **Test Grafici di Base**
-- Riempimento schermo colori solidi
-- Disegno testo centrato
-- Disegno rettangoli arrotondati
-- Linee verticali per gradiente
-- Font multipli (2, 4, 6)
+✅ **Display e Touch**
+- Controller ILI9341 configurato (320x240)
+- Rotazione landscape
+- Touch FT6336U I2C funzionante
+- Backlight controllato via GPIO 45
+- Draw buffer con fallback PSRAM/DRAM
+
+✅ **Core Managers Implementati**
+- **AppManager** (src/core/app_manager.h/cpp)
+  - Registry applicazioni
+  - Dock widget per navigazione
+  - Launch/switch app
+- **ScreenManager** (src/core/screen_manager.h/cpp)
+  - Gestione schermate LVGL
+  - Navigazione stack
+- **EventRouter** (src/core/event_router.h/cpp)
+  - Sistema pub/sub eventi
+  - Thread-safe communication
+
+✅ **Widget System**
+- **DashboardWidget** base class (src/widgets/dashboard_widget.h/cpp)
+- **SystemInfoWidget** (src/widgets/system_info_widget.h/cpp)
+  - Heap free monitor
+  - Uptime counter
+  - Auto-refresh ogni 2s
+- **ClockWidget** (src/widgets/clock_widget.h/cpp)
+  - Display ora/data
+  - Auto-refresh ogni 1s
+- **DockWidget** (src/widgets/dock_widget.h/cpp)
+  - Barra navigazione app
+  - Icone app registrate
+
+✅ **Schermate Implementate**
+- **DashboardScreen** (src/screens/dashboard_screen.h/cpp)
+  - Layout flex column
+  - SystemInfoWidget + ClockWidget integrati
+- **SettingsScreen** (src/screens/settings_screen.h/cpp)
+- **InfoScreen** (src/screens/info_screen.h/cpp)
+
+✅ **Utilities**
+- **LVGL Mutex** (src/utils/lvgl_mutex.h/cpp) - Thread-safety globale
+- **Touch Driver** (src/drivers/touch_driver.h/cpp) - FT6336U I2C
+- **I2C Scanner** (src/utils/i2c_scanner.h/cpp) - Debug I2C devices
+
+✅ **Memory Management**
+- PSRAM detection e logging
+- Draw buffer allocation con fallback
+- Memory stats monitoring (DRAM/PSRAM)
 
 ✅ **Serial Monitor Debug**
 - Comunicazione USB CDC @ 115200 baud
-- Output log di test
+- System banner con chip info
+- Memory stats dettagliati
+- LVGL buffer info
 
 ### 3.4 Cosa NON è Ancora Implementato
 
-❌ **Touch Controller FT6336U**
-- Nessuna libreria touch inclusa
-- Nessun codice di gestione touch
-
-❌ **LVGL (GUI Framework)**
-- Libreria non presente nel progetto
-- Nessuna UI interattiva
-
-❌ **Architettura OS**
-- Nessun Screen Manager
-- Nessun App Manager
-- Nessun Service Layer
-- Nessun Event Router
-- Nessun Settings Manager
-
-❌ **FreeRTOS Task Management**
-- Nessun task FreeRTOS creato
-- Nessun core pinning
-- Loop singolo Arduino-style
-
-❌ **Servizi di Sistema**
+❌ **Service Layer**
 - Nessun WiFi Service
 - Nessun BLE Service
 - Nessun NTP Service
+- Nessun MQTT Service
+- Nessun ServiceManager
 
-❌ **Widget System**
-- Nessun widget implementato
-- Nessuna dashboard
+❌ **Settings Manager**
+- Nessuna persistenza NVS
+- Nessun SettingsManager
+- Settings Screen vuota (solo placeholder)
 
-❌ **Gestione Memoria**
-- PSRAM disponibile ma non utilizzato
-- Nessun memory manager
+❌ **Peripheral Manager**
+- Nessun GPIO Manager
+- Nessun I2C Manager (solo scanner debug)
+- Nessun SPI Manager
+- Nessun ADC Manager
+- Nessun PWM Manager
+
+❌ **Ottimizzazioni PSRAM**
+- Heap LVGL ancora in DRAM (256KB)
+- Nessun custom allocator LVGL
+- Nessun double buffering PSRAM
+- Nessun wrapper `ui_alloc()`
+- Nessun monitoring PSRAM nel widget
+
+❌ **Widget Avanzati**
+- Nessun WiFiStatusWidget
+- Nessun BatteryWidget
+- Nessun ChartWidget
+- Nessun NotificationWidget
+
+❌ **File System**
+- Nessun SPIFFS/LittleFS
+- Nessuna gestione risorse (icone, font, temi)
+
+❌ **Theme System**
+- Nessun sistema temi JSON
+- Nessun Asset Manager
+- Nessun cambio tema runtime
 
 ---
 
@@ -246,54 +323,54 @@ src/
 
 ## 6. Roadmap Implementazione OS Completo
 
-### Fase 1: Setup Base LVGL (1-2 giorni)
-**Obiettivo:** Far funzionare LVGL con il display esistente
+### ~~Fase 1: Setup Base LVGL~~ ✅ **COMPLETATA**
+~~**Obiettivo:** Far funzionare LVGL con il display esistente~~
 
-- [ ] Installare libreria LVGL 8.4.0
-- [ ] Configurare lv_conf.h per ESP32-S3
-- [ ] Creare driver LVGL per TFT_eSPI
-- [ ] Implementare LVGL tick handler
-- [ ] Test: Display "Hello World" con LVGL
-- [ ] Configurare PSRAM per buffer LVGL
+- [x] Installare libreria LVGL 8.4.0
+- [x] Configurare lv_conf.h per ESP32-S3
+- [x] Creare driver LVGL per TFT_eSPI
+- [x] Implementare LVGL tick handler
+- [x] Test: Display funzionante con LVGL
+- [x] Configurare PSRAM per buffer LVGL (con fallback)
 
-### Fase 2: Touch Controller (1 giorno)
-**Obiettivo:** Integrare il touch FT6336U
+### ~~Fase 2: Touch Controller~~ ✅ **COMPLETATA**
+~~**Obiettivo:** Integrare il touch FT6336U~~
 
-- [ ] Installare libreria FT6336U
-- [ ] Configurare I2C per touch controller
-- [ ] Creare driver LVGL per touch input
-- [ ] Test: Touch callback e coordinate
-- [ ] Calibrazione touch (se necessaria)
+- [x] Implementare driver FT6336U I2C
+- [x] Configurare I2C per touch controller
+- [x] Creare driver LVGL per touch input
+- [x] Test: Touch callback e coordinate
+- [x] Debug I2C scanner per troubleshooting
 
-### Fase 3: Core Managers (2-3 giorni)
-**Obiettivo:** Implementare i manager fondamentali
+### ~~Fase 3: Core Managers~~ ✅ **COMPLETATA**
+~~**Obiettivo:** Implementare i manager fondamentali~~
 
-#### EventRouter
-- [ ] Implementare classe EventRouter
-- [ ] Sistema pub/sub thread-safe
-- [ ] Test: Pubblicazione e sottoscrizione eventi
+#### ~~EventRouter~~ ✅
+- [x] Implementare classe EventRouter
+- [x] Sistema pub/sub thread-safe
+- [x] File: src/core/event_router.h/cpp
 
-#### ScreenManager
-- [ ] Implementare classe ScreenManager
-- [ ] Stack di navigazione screen
-- [ ] Transizioni animate (slide, fade)
-- [ ] Test: Navigazione tra 2 screen
+#### ~~ScreenManager~~ ✅
+- [x] Implementare classe ScreenManager
+- [x] Gestione schermate LVGL
+- [x] File: src/core/screen_manager.h/cpp
 
-#### SettingsManager
+#### ~~AppManager~~ ✅
+- [x] Implementare classe AppManager
+- [x] Registry applicazioni con dock
+- [x] App lifecycle management
+- [x] Registrazione e lancio app
+- [x] File: src/core/app_manager.h/cpp
+
+#### SettingsManager ⚠️ **DA COMPLETARE**
 - [ ] Implementare classe SettingsManager
 - [ ] Persistenza NVS (Preferences)
 - [ ] Type-safe getters/setters
 - [ ] Callback onChange
 - [ ] Test: Salvataggio e caricamento settings
+- [ ] Integrare con SettingsScreen
 
-#### AppManager
-- [ ] Implementare classe AppManager
-- [ ] Registry applicazioni
-- [ ] App lifecycle (create, start, stop, destroy)
-- [ ] Factory pattern per app
-- [ ] Test: Registrazione e lancio app dummy
-
-### Fase 4: Service Layer (3-4 giorni)
+### Fase 4: Service Layer
 **Obiettivo:** Creare servizi di background thread-safe
 
 #### Service Base Class
@@ -328,35 +405,51 @@ src/
 - [ ] Status monitoring
 - [ ] Test: Gestione multipli servizi
 
-### Fase 5: Widget System (2-3 giorni)
-**Obiettivo:** Creare widget riutilizzabili per UI
+### ~~Fase 5: Widget System Base~~ ✅ **COMPLETATA**
+~~**Obiettivo:** Creare widget riutilizzabili per UI~~
 
-#### Widget Base Class
-- [ ] Classe base Widget astratta
-- [ ] Thread-safe update methods
-- [ ] Event subscription
-- [ ] Layout support (flex/grid)
-- [ ] Test: Widget dummy
+#### ~~Widget Base Class~~ ✅
+- [x] Classe base DashboardWidget astratta
+- [x] Thread-safe update methods
+- [x] Layout support
+- [x] File: src/widgets/dashboard_widget.h/cpp
+
+#### ~~SystemInfoWidget~~ ✅
+- [x] Memory usage (Heap free)
+- [x] Uptime counter
+- [x] Auto-refresh ogni 2s con timer
+- [x] File: src/widgets/system_info_widget.h/cpp
+
+#### ~~ClockWidget~~ ✅
+- [x] Time/date display
+- [x] Auto-refresh ogni 1s
+- [x] File: src/widgets/clock_widget.h/cpp
+
+#### ~~DockWidget~~ ✅
+- [x] Barra navigazione app
+- [x] Icone app registrate
+- [x] File: src/widgets/dock_widget.h/cpp
+
+### Fase 5B: Widget Avanzati ⚠️ **PRIORITÀ MEDIA**
+**Obiettivo:** Aggiungere widget specifici per servizi
 
 #### WiFiStatusWidget
 - [ ] RSSI signal bar
 - [ ] IP address display
 - [ ] State colors (connecting/connected/error)
-- [ ] Test: Integrazione con WiFiService
+- [ ] Test: Integrazione con WiFiService (da creare)
 
-#### SystemInfoWidget
-- [ ] CPU usage indicator
-- [ ] Memory usage bar (RAM/PSRAM)
-- [ ] Uptime counter
-- [ ] Test: Aggiornamento real-time
+#### BatteryWidget (opzionale)
+- [ ] Voltage indicator
+- [ ] Charging status
+- [ ] Percentage display
 
-#### ClockWidget (opzionale)
-- [ ] Time/date display
-- [ ] NTP sync indicator
-- [ ] Format customization
-- [ ] Test: Integrazione con NTPService
+#### ChartWidget (opzionale)
+- [ ] Line chart per history dati
+- [ ] Buffer circolare in PSRAM
+- [ ] Auto-scroll
 
-### Fase 6: Peripheral Manager Layer (3-4 giorni)
+### Fase 6: Peripheral Manager Layer
 **Obiettivo:** Gestione centralizzata periferiche hardware
 
 #### Peripheral Base Class
@@ -387,27 +480,70 @@ src/
 - [ ] Status printing
 - [ ] Test: Allocation multipli GPIO
 
-### Fase 7: Dashboard Application (2 giorni)
-**Obiettivo:** Creare la dashboard principale
+### ~~Fase 7: Dashboard Application~~ ✅ **COMPLETATA**
+~~**Obiettivo:** Creare la dashboard principale~~
 
-- [ ] Implementare DashboardScreen
-- [ ] Layout grid per widgets
-- [ ] Integrare WiFiStatusWidget
-- [ ] Integrare SystemInfoWidget
-- [ ] Integrare ClockWidget (se fatto)
-- [ ] Test: Dashboard completa
+- [x] Implementare DashboardScreen
+- [x] Layout flex column per widgets
+- [x] Integrare SystemInfoWidget
+- [x] Integrare ClockWidget
+- [x] File: src/screens/dashboard_screen.h/cpp
+- [x] Test: Dashboard funzionante
 
-### Fase 8: Settings Application (2 giorni)
-**Obiettivo:** Schermata impostazioni
+### Fase 8: Settings & Info Applications ⚠️ **IN PROGRESS**
+**Obiettivo:** Completare schermate settings e info
 
-- [ ] Implementare SettingsScreen
-- [ ] WiFi SSID/Password input
+#### SettingsScreen (DA COMPLETARE)
+- [x] Creare file base SettingsScreen
+- [ ] WiFi SSID/Password input UI
 - [ ] Display brightness slider
-- [ ] Theme selector (light/dark)
-- [ ] About section
+- [ ] Theme selector (se implementato)
+- [ ] About section con versione
+- [ ] Integrazione con SettingsManager (da creare)
 - [ ] Test: Modifica e salvataggio settings
 
-### Fase 9: Testing & Ottimizzazione (2-3 giorni)
+#### InfoScreen
+- [x] Creare file base InfoScreen
+- [ ] Mostrare info hardware (chip, flash, PSRAM)
+- [ ] Mostrare versione firmware
+- [ ] Credits e licenze
+- [ ] Test: Display info complete
+
+### Fase 8B: Ottimizzazione PSRAM 🔥 **PRIORITÀ ALTA**
+**Obiettivo:** Implementare strategia PSRAM per liberare DRAM
+
+**Riferimento:** [OTTIMIZZAZIONE_PSRAM_LVGL.md](OTTIMIZZAZIONE_PSRAM_LVGL.md)
+
+- [ ] **FASE 1:** Custom allocator LVGL in PSRAM (512KB)
+  - [ ] Modificare lv_conf.h → LV_MEM_CUSTOM=1
+  - [ ] Creare src/utils/psram_allocator.h/cpp
+  - [ ] Implementare lvgl_malloc/free/realloc
+  - [ ] Test: LVGL heap in PSRAM
+- [ ] **FASE 2:** Double buffering in PSRAM (30 righe)
+  - [ ] Modificare main.cpp draw buffer setup
+  - [ ] Allocare 2 buffer PSRAM
+  - [ ] Test: Rendering fluido
+- [ ] **FASE 3:** Wrapper ui_alloc() intelligente
+  - [ ] Implementare ui_alloc/ui_free in psram_allocator.cpp
+  - [ ] Implementare sprite_alloc per TFT_eSPI
+  - [ ] Test: Allocazione widget pesanti
+- [ ] **FASE 4:** Memory monitoring dashboard
+  - [ ] Estendere SystemInfoWidget con label PSRAM
+  - [ ] Aggiungere LVGL heap usage %
+  - [ ] Warning frammentazione >20%
+  - [ ] Colori dinamici threshold
+- [ ] **FASE 5:** Testing e validazione
+  - [ ] Test stress allocazione (2MB)
+  - [ ] Memory leak detection (run 24h)
+  - [ ] Profiling frame rate
+  - [ ] Documentazione risultati
+
+**Benefici attesi:**
+- DRAM libera: +125% (da 200KB a 450KB)
+- LVGL heap: 2x capacità (512KB PSRAM vs 256KB DRAM)
+- Draw buffer: 3x dimensione (38KB vs 13KB)
+
+### Fase 9: Testing & Ottimizzazione
 **Obiettivo:** Stabilità e performance
 
 - [ ] Memory profiling (leak detection)
@@ -418,7 +554,7 @@ src/
 - [ ] Touch responsiveness tuning
 - [ ] Performance optimization
 
-### Fase 10: Documentazione Codice (1-2 giorni)
+### Fase 10: Documentazione Codice
 **Obiettivo:** Documentare il codice sorgente
 
 - [ ] Doxygen comments per classi pubbliche
@@ -429,56 +565,51 @@ src/
 
 ---
 
-## 7. Stima Tempi Totale
+## 7. Priorità e Milestone (Aggiornate)
 
-| Fase | Giorni | Giorni Cumulativi |
-|------|--------|-------------------|
-| **Fase 1:** Setup LVGL | 1-2 | 2 |
-| **Fase 2:** Touch Controller | 1 | 3 |
-| **Fase 3:** Core Managers | 2-3 | 6 |
-| **Fase 4:** Service Layer | 3-4 | 10 |
-| **Fase 5:** Widget System | 2-3 | 13 |
-| **Fase 6:** Peripheral Manager | 3-4 | 17 |
-| **Fase 7:** Dashboard App | 2 | 19 |
-| **Fase 8:** Settings App | 2 | 21 |
-| **Fase 9:** Testing | 2-3 | 24 |
-| **Fase 10:** Docs | 1-2 | 26 |
+### ~~Milestone 1: "Hello LVGL"~~ ✅ **RAGGIUNTA**
+- ✅ Display TFT funzionante
+- ✅ LVGL operativo con schermata base
+- ✅ Touch funzionante
+- ✅ **Demo:** Dashboard interattiva con widget
 
-**Totale stimato:** 20-26 giorni lavorativi (4-5 settimane a tempo pieno)
+### ~~Milestone 2: "Core Sistema"~~ ✅ **RAGGIUNTA**
+- ✅ EventRouter funzionante
+- ✅ ScreenManager con navigazione
+- ✅ AppManager con app registry e dock
+- ⚠️ SettingsManager con NVS (DA FARE)
+- ✅ **Demo:** Navigazione tra 3 schermate (Dashboard, Settings, Info)
 
----
+### Milestone 3: "Ottimizzazione PSRAM" 🔥 **IN CORSO - PRIORITÀ ALTA**
+- [ ] Custom allocator LVGL in PSRAM (512KB)
+- [ ] Double buffering PSRAM (30 righe)
+- [ ] Wrapper ui_alloc() intelligente
+- [ ] Memory monitoring esteso in SystemInfoWidget
+- [ ] Testing stress allocazione
+- **Demo:** Dashboard con monitoring DRAM/PSRAM/LVGL real-time
+- **Target:** +125% DRAM libera, 2x heap LVGL
+- **Riferimento:** [DOC/OTTIMIZZAZIONE_PSRAM_LVGL.md](OTTIMIZZAZIONE_PSRAM_LVGL.md)
 
-## 8. Priorità e Milestone
+### Milestone 4: "Servizi Connessi" 🎯 **PROSSIMA**
+- [ ] SettingsManager con NVS operativo
+- [ ] WiFiService funzionante
+- [ ] ServiceManager attivo
+- [ ] WiFiStatusWidget creato
+- [ ] Settings Screen completa (WiFi config)
+- **Demo:** Dashboard con WiFi status live + configurazione WiFi da Settings
 
-### Milestone 1: "Hello LVGL" (Fine settimana 1)
-- ✅ Display TFT funzionante (FATTO)
-- 🎯 LVGL operativo con schermata base
-- 🎯 Touch funzionante
-- **Demo:** Pulsante cliccabile su schermo
-
-### Milestone 2: "Core Sistema" (Fine settimana 2)
-- 🎯 EventRouter funzionante
-- 🎯 ScreenManager con navigazione
-- 🎯 SettingsManager con NVS
-- 🎯 AppManager con app registry
-- **Demo:** Navigazione tra 3 schermate
-
-### Milestone 3: "Servizi Attivi" (Fine settimana 3)
-- 🎯 WiFiService connesso
-- 🎯 ServiceManager attivo
-- 🎯 Widget base creati
-- **Demo:** Dashboard con WiFi status live
-
-### Milestone 4: "Sistema Completo" (Fine settimana 4-5)
-- 🎯 Dashboard completa
-- 🎯 Settings funzionanti
-- 🎯 Peripheral Manager operativo
-- 🎯 Testing completato
-- **Demo:** OS completo pronto per deployment
+### Milestone 5: "Sistema Production-Ready" 📋 **FUTURO**
+- [ ] Testing completato (24h stress test)
+- [ ] Memory leak verificati assenti
+- [ ] Performance profiling
+- [ ] Documentazione codice
+- [ ] Peripheral Manager (opzionale)
+- [ ] Service Layer esteso (BLE, NTP) (opzionale)
+- **Demo:** OS stabile pronto per deployment IoT
 
 ---
 
-## 9. Dipendenze Critiche
+## 8. Dipendenze Critiche
 
 ### Hardware
 ✅ **Disponibili:**
@@ -502,7 +633,7 @@ src/
 
 ---
 
-## 10. Rischi e Mitigazioni
+## 9. Rischi e Mitigazioni
 
 ### Rischio 1: Performance LVGL
 **Problema:** LVGL potrebbe essere lento senza ottimizzazioni
@@ -535,15 +666,15 @@ src/
 
 ---
 
-## 11. Note Tecniche Importanti
+## 10. Note Tecniche Importanti
 
-### 11.1 USB CDC Serial
+### 10.1 USB CDC Serial
 Il progetto usa **USB CDC nativo** per la seriale, NON il classico UART.
 - Porta seriale: `/dev/ttyACM0` (Linux) o `COM*` (Windows)
 - Baudrate: 115200 (ma è ignorato, USB è sempre full speed)
 - Attivo all'avvio grazie a `ARDUINO_USB_CDC_ON_BOOT=1`
 
-### 11.2 PSRAM Disponibile ma Non Usato
+### 10.2 PSRAM Disponibile ma Non Usato
 La board ha PSRAM attivo (flag `-DBOARD_HAS_PSRAM`), ma il codice test TFT NON lo utilizza ancora.
 
 Per usare PSRAM con LVGL:
@@ -554,7 +685,7 @@ Per usare PSRAM con LVGL:
 #define LV_MEM_CUSTOM_FREE free
 ```
 
-### 11.3 Partizioni Flash 16MB
+### 10.3 Partizioni Flash 16MB
 Il file `default_16MB.csv` definisce le partizioni per i 16MB di flash disponibili.
 
 Tipicamente:
@@ -562,14 +693,14 @@ Tipicamente:
 - **OTA Update:** ~3MB (per aggiornamenti OTA)
 - **SPIFFS/LittleFS:** ~9MB (file system per risorse UI)
 
-### 11.4 Fix PSRAM Cache Issue
+### 10.4 Fix PSRAM Cache Issue
 Il flag `-mfix-esp32-psram-cache-issue` risolve un bug hardware noto dell'ESP32-S3 con accesso PSRAM e cache.
 
 **Sempre lasciarlo attivo** per evitare crash randomici.
 
 ---
 
-## 12. Comandi Utili PlatformIO
+## 11. Comandi Utili PlatformIO
 
 ```bash
 # Build del progetto
@@ -596,7 +727,7 @@ pio pkg list
 
 ---
 
-## 13. Link Documentazione Ufficiale
+## 12. Link Documentazione Ufficiale
 
 ### ESP32-S3
 - [ESP32-S3 Datasheet](https://www.espressif.com/sites/default/files/documentation/esp32-s3_datasheet_en.pdf)
@@ -615,7 +746,7 @@ pio pkg list
 
 ---
 
-## 14. Conclusioni
+## 13. Conclusioni
 
 ### Stato Attuale
 📍 **Siamo in Fase 0:** Test hardware TFT completato con successo

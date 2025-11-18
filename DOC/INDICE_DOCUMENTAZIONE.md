@@ -7,11 +7,93 @@
 | **[README_DOCUMENTAZIONE.md](README_DOCUMENTAZIONE.md)** | Guida | ⭐ INIZIA QUI | Guida navigazione e quick start |
 | **[STATO_ATTUALE_PROGETTO.md](STATO_ATTUALE_PROGETTO.md)** | Status | 🎯 CORRENTE | Stato reale progetto e roadmap |
 | **[REPORT_COMPLETO_OS_ESP32.md](REPORT_COMPLETO_OS_ESP32.md)** | Principale | 📋 PIANIFICATO | Architettura completa OS (target) |
+| **[OTTIMIZZAZIONE_PSRAM_LVGL.md](OTTIMIZZAZIONE_PSRAM_LVGL.md)** | Tecnico | ⚡ NUOVO | Strategia PSRAM 8MB per LVGL e grafica |
 | **[ARCHITETTURA_UI_THEME_SYSTEM.md](ARCHITETTURA_UI_THEME_SYSTEM.md)** | UI/UX | 📋 PIANIFICATO | Sistema temi JSON e asset manager |
 | **[ESTENSIONE_PERIPHERAL_MANAGER.md](ESTENSIONE_PERIPHERAL_MANAGER.md)** | Estensione | 📋 PIANIFICATO | Gestione periferiche hardware |
 | **[CHANGELOG_DOCUMENTAZIONE.md](CHANGELOG_DOCUMENTAZIONE.md)** | Changelog | ℹ️ Info | Cronologia modifiche |
 | [REPORT_ARCHITETTURA_OS_ESP32.md](REPORT_ARCHITETTURA_OS_ESP32.md) | Riferimento | ⛔ DEPRECATO | Architettura base (v1.0) |
 | [ESTENSIONI_ARCHITETTURA_SERVIZI.md](ESTENSIONI_ARCHITETTURA_SERVIZI.md) | Riferimento | ⛔ DEPRECATO | Estensioni servizi (v1.0) |
+
+---
+
+## ⚡ OTTIMIZZAZIONE_PSRAM_LVGL.md
+
+### Informazioni Contenute
+- **Strategia PSRAM:** Piano completo per ottimizzare 8MB PSRAM ESP32-S3
+- **Custom Allocator LVGL:** Spostare heap LVGL da DRAM a PSRAM
+- **Double Buffering:** 30 righe in PSRAM per rendering fluido
+- **Memory Monitoring:** Dashboard real-time DRAM/PSRAM/LVGL
+- **Wrapper ui_alloc():** Allocazione intelligente con fallback
+- **Best Practices:** Latenza, cache coherency, thread safety
+
+### Sezioni Principali
+1. Executive Summary (obiettivi e benefici attesi)
+2. **Analisi Stato Attuale** (configurazione corrente + problemi)
+3. **Strategia Ottimizzazione** (architettura target)
+4. **Piano Implementazione** (6 fasi dettagliate)
+   - FASE 1: Custom Allocator LVGL in PSRAM
+   - FASE 2: Double Buffering in PSRAM
+   - FASE 3: Wrapper ui_alloc() per Widget
+   - FASE 4: Memory Monitoring Dashboard
+   - FASE 5: Sprite Pool (opzionale futuro)
+   - FASE 6: Testing e Validazione
+5. **Checklist Implementazione** (priorità alta/media/bassa)
+6. **Benefici e Trade-off** (tabelle comparative)
+7. **Note Tecniche** (latenza, cache coherency, overhead)
+8. **Troubleshooting** (4 problemi comuni + soluzioni)
+9. **Esempi Completi** (codice ready-to-use)
+10. **Conclusioni** (risultati attesi + manutenzione)
+11. **Roadmap** (3 settimane implementazione)
+12. **Appendici** (riferimenti + codice sprite pool)
+
+### Caratteristiche Chiave
+
+**Custom Allocator LVGL:**
+- `LV_MEM_CUSTOM=1` con funzioni `lvgl_malloc/free/realloc`
+- Priorità PSRAM con fallback automatico DRAM
+- Logging dettagliato allocazioni per debug
+- Monitoring frammentazione heap interno LVGL
+
+**Memory Layout Ottimizzato:**
+```
+DRAM (~520KB)           PSRAM (8MB)
+├─ FreeRTOS (~250KB)    ├─ LVGL Heap (512KB) ← NUOVO
+├─ Stack Tasks (~100KB) ├─ Draw Buffer 1 (19KB) ← NUOVO
+├─ Static/BSS (~100KB)  ├─ Draw Buffer 2 (19KB) ← NUOVO
+└─ LIBERA (~450KB) ✅   ├─ Widget Pool (dinamico)
+                         └─ LIBERA (~7MB) ✅
+```
+
+**Wrapper Intelligente:**
+- `ui_alloc(size, label)` - Prova PSRAM → fallback DRAM
+- `sprite_alloc(size)` - Allocazione aligned per TFT_eSPI sprite
+- Logging automatico con etichette debug
+
+**Dashboard Monitoring:**
+- Label real-time: DRAM free, PSRAM free/total, LVGL heap usage
+- Warning visivo se frammentazione >20%
+- Colori dinamici basati su threshold utilizzo
+- Refresh ogni 1 secondo
+
+**Benefici Attesi:**
+| Metrica | Prima | Dopo | Miglioramento |
+|---------|-------|------|---------------|
+| DRAM libera | ~200KB | ~450KB | +125% |
+| LVGL heap | 256KB DRAM | 512KB PSRAM | 2x capacità |
+| Draw buffer | 12.5KB DRAM | 37.5KB PSRAM | 3x dimensione |
+
+**File da Creare:**
+- `src/utils/psram_allocator.h` (header API)
+- `src/utils/psram_allocator.cpp` (implementazione)
+- `src/utils/sprite_pool.h` (opzionale futuro)
+
+**File da Modificare:**
+- `src/config/lv_conf.h` → `LV_MEM_CUSTOM=1`
+- `src/main.cpp` → double buffering setup
+- `src/widgets/system_info_widget.h` → nuove label
+- `src/widgets/system_info_widget.cpp` → monitoring PSRAM/LVGL
+
+**📋 Status:** PRONTO PER IMPLEMENTAZIONE - Piano dettagliato con codice completo
 
 ---
 

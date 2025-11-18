@@ -8,7 +8,48 @@ Questo progetto contiene la documentazione completa per implementare un sistema 
 
 ## 🚀 Documenti Principali (LEGGI QUESTI!)
 
-### 1. [REPORT_COMPLETO_OS_ESP32.md](REPORT_COMPLETO_OS_ESP32.md) ⭐ **DOCUMENTO PRINCIPALE**
+### 0. [STATO_ATTUALE_PROGETTO.md](STATO_ATTUALE_PROGETTO.md) 🎯 **INIZIA QUI - STATO REALE**
+
+**Stato reale del progetto e roadmap aggiornata.**
+
+Contiene:
+- ✅ Hardware specs Freenove ESP32-S3 2.8" (ILI9341 + FT6336U)
+- ✅ Versione software: 0.5.0 (Core Managers Implementati)
+- ✅ Funzionalità implementate (LVGL, Touch, Managers, Widgets, Dashboard)
+- ✅ Struttura main.cpp completa (228 righe OS)
+- ✅ Roadmap aggiornata con fasi completate
+- ✅ Milestone raggiunte e prossimi step
+- ✅ Stima tempi rimanente: 11-24 giorni
+- ✅ Priorità: Ottimizzazione PSRAM → Service Layer → Testing
+
+**👉 Leggi questo per capire DOVE SIAMO e COSA FARE DOPO!**
+
+---
+
+### 1. [OTTIMIZZAZIONE_PSRAM_LVGL.md](OTTIMIZZAZIONE_PSRAM_LVGL.md) ⚡ **PRIORITÀ ALTA - STRATEGIA PSRAM**
+
+**Piano completo per ottimizzare 8MB PSRAM ESP32-S3.**
+
+Contiene:
+- ✅ Custom allocator LVGL in PSRAM (512KB vs 256KB DRAM)
+- ✅ Double buffering in PSRAM (30 righe)
+- ✅ Wrapper `ui_alloc()` intelligente con fallback
+- ✅ Memory monitoring dashboard real-time
+- ✅ 6 fasi implementazione dettagliate
+- ✅ Troubleshooting 4 problemi comuni
+- ✅ Esempi codice completi ready-to-use
+- ✅ Roadmap 3 settimane
+
+**Benefici:**
+- DRAM libera: +125% (da 200KB a 450KB)
+- LVGL heap: 2x capacità (512KB PSRAM)
+- Draw buffer: 3x dimensione (38KB vs 13KB)
+
+**👉 Leggi questo per massimizzare capacità grafica e liberare DRAM!**
+
+---
+
+### 2. [REPORT_COMPLETO_OS_ESP32.md](REPORT_COMPLETO_OS_ESP32.md) ⭐ **DOCUMENTO PRINCIPALE**
 
 **Documento unificato e completo dell'architettura.**
 
@@ -29,7 +70,7 @@ Contiene:
 
 ---
 
-### 2. [ESTENSIONE_PERIPHERAL_MANAGER.md](ESTENSIONE_PERIPHERAL_MANAGER.md) ⭐ **GESTIONE HARDWARE**
+### 3. [ESTENSIONE_PERIPHERAL_MANAGER.md](ESTENSIONE_PERIPHERAL_MANAGER.md) ⭐ **GESTIONE HARDWARE**
 
 **Estensione per gestione periferiche hardware (GPIO, I2C, SPI, ADC, PWM, UART).**
 
@@ -69,7 +110,15 @@ Contiene:
 ```
 Documentazione OS ESP32 S3
 │
-├── 📘 REPORT_COMPLETO_OS_ESP32.md ← INIZIA QUI!
+├── ⚡ OTTIMIZZAZIONE_PSRAM_LVGL.md ← NUOVO! Strategia PSRAM
+│   ├── Custom allocator LVGL (512KB PSRAM)
+│   ├── Double buffering (30 righe)
+│   ├── Memory monitoring dashboard
+│   ├── Wrapper ui_alloc()
+│   ├── 6 fasi implementazione
+│   └── Troubleshooting + esempi
+│
+├── 📘 REPORT_COMPLETO_OS_ESP32.md ← INIZIA QUI! Architettura
 │   ├── Architettura completa
 │   ├── Core Managers
 │   ├── Service Layer

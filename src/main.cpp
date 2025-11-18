@@ -1,6 +1,9 @@
 #include <Arduino.h>
 #include <esp_err.h>
 #include <esp_timer.h>
+#include <esp_chip_info.h>
+#include <esp_heap_caps.h>
+#include <esp_system.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <lvgl.h>
@@ -17,8 +20,75 @@ static TFT_eSPI tft;
 static lv_disp_draw_buf_t draw_buf;
 // Ridotto a 20 righe per risparmiare memoria
 static constexpr int32_t DRAW_BUF_PIXELS = LV_HOR_RES_MAX * 20;
-// Buffer statici invece di allocazione dinamica
-static lv_color_t buf1[DRAW_BUF_PIXELS];
+// Buffer statico di fallback in RAM interna
+static lv_color_t draw_buf_fallback[DRAW_BUF_PIXELS];
+static lv_color_t* draw_buf_ptr = draw_buf_fallback;
+static bool draw_buf_in_psram = false;
+
+static void logSystemBanner();
+static void logMemoryStats(const char* stage);
+static void logLvglBufferInfo();
+static void* allocatePsramBuffer(size_t size, const char* label);
+
+static void logSystemBanner() {
+    esp_chip_info_t chip_info;
+    esp_chip_info(&chip_info);
+
+    Serial.println("\n=== Freenove ESP32-S3 OS Dashboard ===");
+    Serial.printf("[Build] %s %s | IDF %s\n", __DATE__, __TIME__, esp_get_idf_version());
+    Serial.printf("[Chip] ESP32-S3 rev %d | %d core(s) @ %d MHz\n",
+                  chip_info.revision,
+                  chip_info.cores,
+                  getCpuFrequencyMhz());
+    Serial.printf("[Flash] %u MB QIO | [PSRAM] %u MB\n",
+                  static_cast<unsigned>(ESP.getFlashChipSize() / (1024 * 1024)),
+                  static_cast<unsigned>(ESP.getPsramSize() / (1024 * 1024)));
+}
+
+static void logMemoryStats(const char* stage) {
+    const size_t dram_total = heap_caps_get_total_size(MALLOC_CAP_DEFAULT);
+    const size_t dram_free = heap_caps_get_free_size(MALLOC_CAP_DEFAULT);
+    const size_t dram_largest = heap_caps_get_largest_free_block(MALLOC_CAP_DEFAULT);
+    const size_t psram_total = heap_caps_get_total_size(MALLOC_CAP_SPIRAM);
+    const size_t psram_free = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
+    const size_t psram_largest = heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM);
+
+    Serial.printf("\n[Memory] Stage: %s\n", stage);
+    Serial.printf("  DRAM  free %7u / %7u bytes | largest block %7u\n",
+                  static_cast<unsigned>(dram_free),
+                  static_cast<unsigned>(dram_total),
+                  static_cast<unsigned>(dram_largest));
+    if (psram_total > 0) {
+        Serial.printf("  PSRAM free %7u / %7u bytes | largest block %7u\n",
+                      static_cast<unsigned>(psram_free),
+                      static_cast<unsigned>(psram_total),
+                      static_cast<unsigned>(psram_largest));
+    } else {
+        Serial.println("  PSRAM not detected");
+    }
+}
+
+static void logLvglBufferInfo() {
+    const size_t bytes = DRAW_BUF_PIXELS * sizeof(lv_color_t);
+    Serial.printf("[LVGL] Draw buffer: %ld px (%u bytes) @ %p [%s]\n",
+                  static_cast<long>(DRAW_BUF_PIXELS),
+                  static_cast<unsigned>(bytes),
+                  draw_buf_ptr,
+                  draw_buf_in_psram ? "PSRAM" : "internal RAM");
+}
+
+static void* allocatePsramBuffer(size_t size, const char* label) {
+    if (!psramFound()) {
+        return nullptr;
+    }
+    void* ptr = heap_caps_malloc(size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (ptr) {
+        Serial.printf("[PSRAM] %s allocated %u bytes @ %p\n", label, static_cast<unsigned>(size), ptr);
+    } else {
+        Serial.printf("[PSRAM] %s allocation FAILED (%u bytes)\n", label, static_cast<unsigned>(size));
+    }
+    return ptr;
+}
 
 static void enableBacklight() {
 #ifdef TFT_BL
@@ -54,16 +124,10 @@ static void lvgl_task(void*) {
 void setup() {
     Serial.begin(115200);
     delay(200);
-    Serial.println("\n=== Freenove ESP32-S3 OS Dashboard ===");
+    logSystemBanner();
+    logMemoryStats("Boot");
 
-    // Diagnostica memoria
-    Serial.println("\n[Memory Info]");
-    Serial.printf("Total heap: %d bytes\n", ESP.getHeapSize());
-    Serial.printf("Free heap: %d bytes\n", ESP.getFreeHeap());
-    Serial.printf("PSRAM total: %d bytes\n", ESP.getPsramSize());
-    Serial.printf("PSRAM free: %d bytes\n", ESP.getFreePsram());
-
-    if (ESP.getPsramSize() > 0) {
+    if (psramFound()) {
         Serial.println("✓ PSRAM detected and enabled!");
     } else {
         Serial.println("⚠ PSRAM not available - using internal RAM only");
@@ -77,9 +141,23 @@ void setup() {
     tft.setRotation(1);
 
     lv_init();
+    logMemoryStats("After lv_init");
 
-    // Single buffering con buffer statico
-    lv_disp_draw_buf_init(&draw_buf, buf1, nullptr, DRAW_BUF_PIXELS);
+    const size_t draw_buf_bytes = DRAW_BUF_PIXELS * sizeof(lv_color_t);
+    lv_color_t* allocated = static_cast<lv_color_t*>(allocatePsramBuffer(draw_buf_bytes, "LVGL draw buffer"));
+    if (allocated) {
+        draw_buf_ptr = allocated;
+        draw_buf_in_psram = true;
+    } else {
+        draw_buf_ptr = draw_buf_fallback;
+        draw_buf_in_psram = false;
+        Serial.printf("[PSRAM] Using internal fallback buffer (%u bytes)\n", static_cast<unsigned>(draw_buf_bytes));
+    }
+
+    // Single buffering con buffer in PSRAM (fallback statico se necessario)
+    lv_disp_draw_buf_init(&draw_buf, draw_buf_ptr, nullptr, DRAW_BUF_PIXELS);
+    logLvglBufferInfo();
+    logMemoryStats("After draw buffer");
 
     static lv_disp_drv_t disp_drv;
     lv_disp_drv_init(&disp_drv);
@@ -138,10 +216,10 @@ void setup() {
 
     // Lancia la dashboard come app iniziale
     app_manager->launchApp("dashboard");
-
-    Serial.printf("Free heap: %d bytes\n", ESP.getFreeHeap());
+    logMemoryStats("UI ready");
 
     xTaskCreatePinnedToCore(lvgl_task, "lvgl", 6144, nullptr, 3, nullptr, 1);
+    logMemoryStats("LVGL task started");
 }
 
 void loop() {

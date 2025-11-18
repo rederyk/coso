@@ -1,5 +1,163 @@
 # Changelog Documentazione - OS ESP32 S3 Display Touch
 
+## [2.2.0] - 2025-11-18
+
+### 📊 Aggiornamento Stato Progetto
+
+- **STATO_ATTUALE_PROGETTO.md** - Aggiornamento maggiore stato reale implementazione
+  - Versione software aggiornata: 0.1.0 → 0.5.0
+  - Stato: Fase Test Hardware → Fase Core Managers Implementati
+  - Documenta architettura OS realmente implementata:
+    - ✅ LVGL 8.4.0 integrato e funzionante
+    - ✅ Touch FT6336U operativo
+    - ✅ Core Managers (AppManager, ScreenManager, EventRouter)
+    - ✅ Widget System (SystemInfoWidget, ClockWidget, DashboardWidget, DockWidget)
+    - ✅ Dashboard Screen funzionante
+    - ✅ Settings/Info Screen create (placeholder)
+    - ✅ FreeRTOS task LVGL su Core 1
+    - ✅ Thread-safety con LVGL mutex
+    - ✅ Memory management PSRAM-aware
+
+  - Aggiornata struttura main.cpp: da 130 righe test → 228 righe OS completo
+  - Nuova sezione "Funzionalità Implementate" dettagliata con riferimenti file
+  - Aggiornata sezione "Cosa NON Implementato":
+    - Service Layer (WiFi, BLE, NTP, MQTT)
+    - SettingsManager con NVS
+    - Peripheral Manager Layer
+    - Ottimizzazioni PSRAM (heap LVGL in DRAM, no double buffer)
+    - Widget avanzati (WiFiStatus, Battery, Chart)
+    - File System (SPIFFS/LittleFS)
+    - Theme System
+
+  - Roadmap completamente rivista con stato reale:
+    - ~~Fase 1-3, 5, 7~~ marcate ✅ COMPLETATA
+    - Fase 8B: Ottimizzazione PSRAM aggiunta come 🔥 PRIORITÀ ALTA
+    - Ogni fase con checklist dettagliata e status
+
+  - Tempi aggiornati:
+    - Stato attuale: ~50% completato
+    - Tempo rimanente: 11-24 giorni (2-5 settimane)
+    - Core features prioritarie: 11-12 giorni
+    - Features opzionali: +8-12 giorni
+
+  - Milestone riviste:
+    - ~~Milestone 1-2~~ marcate ✅ RAGGIUNTA
+    - Milestone 3: "Ottimizzazione PSRAM" - 🔥 IN CORSO
+    - Milestone 4: "Servizi Connessi" - 🎯 PROSSIMA
+    - Milestone 5: "Production-Ready" - 📋 FUTURO
+
+### 🎯 Highlights Stato Progetto
+
+**Completato (~50%):**
+- Sistema operativo base funzionante
+- Architettura core implementata
+- UI interattiva con touch
+- Widget system operativo
+- Dashboard navigabile
+
+**In Corso:**
+- Ottimizzazione PSRAM (priorità alta)
+- Settings/Info Screen (UI da completare)
+
+**Prossimi Passi:**
+1. Ottimizzazione PSRAM (2-3 giorni) - Liberare +125% DRAM
+2. SettingsManager + NVS (1-2 giorni)
+3. WiFiService (2-3 giorni)
+4. Testing (2-3 giorni)
+
+**Riferimenti:**
+- [STATO_ATTUALE_PROGETTO.md](STATO_ATTUALE_PROGETTO.md) - Status reale dettagliato
+- [OTTIMIZZAZIONE_PSRAM_LVGL.md](OTTIMIZZAZIONE_PSRAM_LVGL.md) - Piano PSRAM prioritario
+
+---
+
+## [2.1.0] - 2025-11-18
+
+### ✨ Nuovi Documenti
+
+- **OTTIMIZZAZIONE_PSRAM_LVGL.md** - Strategia completa ottimizzazione PSRAM
+  - Piano dettagliato custom allocator LVGL in PSRAM (512KB)
+  - Double buffering 30 righe in PSRAM (vs 20 righe DRAM)
+  - Wrapper `ui_alloc()` intelligente con fallback DRAM
+  - Memory monitoring dashboard real-time (DRAM/PSRAM/LVGL heap)
+  - Troubleshooting 4 problemi comuni + soluzioni
+  - 6 fasi implementazione con codice completo
+  - Roadmap 3 settimane
+  - Appendici: riferimenti tecnici + sprite pool
+
+### 📝 Modifiche Documenti Esistenti
+
+- **INDICE_DOCUMENTAZIONE.md**
+  - Aggiunta sezione OTTIMIZZAZIONE_PSRAM_LVGL.md
+  - Descrizione dettagliata caratteristiche chiave
+  - Tabelle benefici attesi (DRAM +125%, LVGL heap 2x, buffer 3x)
+  - File da creare/modificare per implementazione
+
+### 🎯 Contenuti Aggiunti
+
+**Memory Management:**
+- Custom allocator LVGL con `LV_MEM_CUSTOM=1`
+- Funzioni `lvgl_malloc/free/realloc` con priorità PSRAM
+- Wrapper `ui_alloc(size, label)` per oggetti UI pesanti
+- Wrapper `sprite_alloc(size)` per TFT_eSPI sprite pool
+- Funzione `lvgl_heap_monitor_print()` per diagnostica
+
+**Dashboard Monitoring:**
+- Widget `SystemInfoWidget` esteso con 3 nuove label:
+  - PSRAM free/total con colori dinamici
+  - LVGL heap usage con percentuale
+  - Warning frammentazione se >20%
+- Refresh rate aumentato a 1 secondo (da 2s)
+
+**Testing & Validation:**
+- Test stress allocazione (32 blocchi x 64KB = 2MB)
+- Monitoring periodico ogni 60s
+- Memory leak detection pattern
+- Profiling frame rate
+
+**Troubleshooting:**
+1. "PSRAM not detected" → board config + test manuale
+2. "lvgl_malloc allocation failed" → debug frammentazione
+3. "UI freeze dopo un po'" → memory leak detection
+4. "Double buffering lento" → tuning buffer size
+
+**Esempi Codice:**
+- Setup completo `main.cpp` con custom allocator
+- Widget `HistoryPlotWidget` con buffer PSRAM (1000 sample)
+- Sprite pool completo per animazioni
+- Test stress allocazione con verifica integrità
+
+### 📊 Statistiche
+
+**Righe di Codice Documentate:**
+- `psram_allocator.h`: ~80 righe (API completa)
+- `psram_allocator.cpp`: ~200 righe (implementazione)
+- `system_info_widget.cpp` modifiche: ~60 righe
+- Esempi completi: ~150 righe
+- **Totale nuovo codice:** ~490 righe
+
+**Dimensione Documento:**
+- OTTIMIZZAZIONE_PSRAM_LVGL.md: ~1200 righe
+- 12 sezioni principali
+- 6 fasi implementazione dettagliate
+- 2 appendici tecniche
+- 4 problemi troubleshooting
+- 3 esempi completi ready-to-use
+
+### 🔗 Collegamenti
+
+**Documenti Correlati:**
+- [ESTENSIONI_ARCHITETTURA_SERVIZI.md](ESTENSIONI_ARCHITETTURA_SERVIZI.md) - Sezione 1.3 Memory Management
+- [REPORT_COMPLETO_OS_ESP32.md](REPORT_COMPLETO_OS_ESP32.md) - Sezione 12.1 Memory Management
+- [STATO_ATTUALE_PROGETTO.md](STATO_ATTUALE_PROGETTO.md) - Hardware specs ESP32-S3
+
+**Riferimenti Esterni:**
+- ESP32-S3 Technical Reference Manual - Sezione PSRAM
+- LVGL v8.4 Custom Memory Documentation
+- ESP-IDF Heap Capabilities API
+
+---
+
 ## [2.0.0] - 2025-11-14
 
 ### ✨ Aggiunte Principali
