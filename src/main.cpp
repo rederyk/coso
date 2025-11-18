@@ -6,8 +6,11 @@
 #include <lvgl.h>
 #include <TFT_eSPI.h>
 
-#include "core/screen_manager.h"
+#include "core/app_manager.h"
+#include "drivers/touch_driver.h"
 #include "screens/dashboard_screen.h"
+#include "screens/settings_screen.h"
+#include "screens/info_screen.h"
 #include "utils/lvgl_mutex.h"
 
 static TFT_eSPI tft;
@@ -53,6 +56,22 @@ void setup() {
     delay(200);
     Serial.println("\n=== Freenove ESP32-S3 OS Dashboard ===");
 
+    // Diagnostica memoria
+    Serial.println("\n[Memory Info]");
+    Serial.printf("Total heap: %d bytes\n", ESP.getHeapSize());
+    Serial.printf("Free heap: %d bytes\n", ESP.getFreeHeap());
+    Serial.printf("PSRAM total: %d bytes\n", ESP.getPsramSize());
+    Serial.printf("PSRAM free: %d bytes\n", ESP.getFreePsram());
+
+    if (ESP.getPsramSize() > 0) {
+        Serial.println("✓ PSRAM detected and enabled!");
+    } else {
+        Serial.println("⚠ PSRAM not available - using internal RAM only");
+    }
+
+    touch_driver_init();
+    bool has_touch = touch_driver_available();
+
     enableBacklight();
     tft.init();
     tft.setRotation(1);
@@ -70,6 +89,21 @@ void setup() {
     disp_drv.flush_cb = tft_flush_cb;
     lv_disp_drv_register(&disp_drv);
 
+    static lv_indev_drv_t indev_drv;
+    lv_indev_drv_init(&indev_drv);
+    indev_drv.type = LV_INDEV_TYPE_POINTER;
+    indev_drv.read_cb = touch_driver_read;
+    lv_indev_drv_register(&indev_drv);
+
+    Serial.println("\n[INFO] Board: Freenove FNK0104 (2.8\" ILI9341 + FT6336)");
+    Serial.printf("[INFO] Touch controller: %s\n", has_touch ? "FT6336 detected" : "NOT detected - check wiring/pins");
+    if (has_touch) {
+        Serial.println("[INFO] Capacitive touch enabled (LVGL pointer input).");
+    } else {
+        Serial.println("[WARN] Touch input registered but controller did not respond.");
+        Serial.println("       Use Serial logs or src/utils/i2c_scanner.cpp to verify SDA/SCL pins.");
+    }
+
     // Inizializza mutex PRIMA di usarlo
     lvgl_mutex_setup();
 
@@ -84,9 +118,26 @@ void setup() {
         Serial.println("[LVGL] Failed to create tick timer");
     }
 
-    // Allocazione statica invece di dinamica
+    // Crea il display principale di LVGL
+    lv_obj_t* screen = lv_scr_act();
+    lv_obj_clear_flag(screen, LV_OBJ_FLAG_SCROLLABLE);
+
+    // Inizializza App Manager e crea le app
+    AppManager* app_manager = AppManager::getInstance();
+    app_manager->init(screen);
+
+    // Crea le schermate (statiche)
     static DashboardScreen dashboard;
-    ScreenManager::getInstance()->pushScreen(&dashboard);
+    static SettingsScreen settings;
+    static InfoScreen info;
+
+    // Registra le app nel dock
+    app_manager->registerApp("dashboard", "🏠", "Home", &dashboard);
+    app_manager->registerApp("settings", "⚙️", "Settings", &settings);
+    app_manager->registerApp("info", "ℹ️", "Info", &info);
+
+    // Lancia la dashboard come app iniziale
+    app_manager->launchApp("dashboard");
 
     Serial.printf("Free heap: %d bytes\n", ESP.getFreeHeap());
 

@@ -1,0 +1,162 @@
+#include "touch_driver.h"
+#include <Wire.h>
+#include <Arduino.h>
+
+#define FT6336_ADDR 0x38
+#define FT6336_REG_NUM_TOUCHES 0x02
+#define FT6336_REG_TOUCH1_XH 0x03
+#define FT6336_REG_TOUCH1_XL 0x04
+#define FT6336_REG_TOUCH1_YH 0x05
+#define FT6336_REG_TOUCH1_YL 0x06
+
+static bool touch_detected = false;
+static bool touch_available = false;
+static uint16_t last_x = 0;
+static uint16_t last_y = 0;
+static lv_point_t last_point = {0, 0};
+
+static uint8_t readRegister(uint8_t reg) {
+    Wire.beginTransmission(FT6336_ADDR);
+    Wire.write(reg);
+    if (Wire.endTransmission() != 0) {
+        return 0;
+    }
+
+    Wire.requestFrom(FT6336_ADDR, 1);
+    if (Wire.available()) {
+        return Wire.read();
+    }
+    return 0;
+}
+
+static void transformToDisplay(uint16_t raw_x, uint16_t raw_y, lv_point_t& point) {
+    uint16_t x = raw_x;
+    uint16_t y = raw_y;
+    uint16_t max_x = TOUCH_MAX_RAW_X;
+    uint16_t max_y = TOUCH_MAX_RAW_Y;
+
+#if TOUCH_SWAP_XY
+    uint16_t tmp = x;
+    x = y;
+    y = tmp;
+    tmp = max_x;
+    max_x = max_y;
+    max_y = tmp;
+#endif
+
+#if TOUCH_INVERT_X
+    if (max_x > 0) {
+        x = (x <= max_x) ? (max_x - x) : 0;
+    }
+#endif
+
+#if TOUCH_INVERT_Y
+    if (max_y > 0) {
+        y = (y <= max_y) ? (max_y - y) : 0;
+    }
+#endif
+
+    uint16_t denom_x = (max_x > 1) ? (max_x - 1) : 1;
+    uint16_t denom_y = (max_y > 1) ? (max_y - 1) : 1;
+
+    uint32_t scaled_x = ((uint32_t)x * (LV_HOR_RES_MAX - 1)) / denom_x;
+    uint32_t scaled_y = ((uint32_t)y * (LV_VER_RES_MAX - 1)) / denom_y;
+
+    if (scaled_x >= LV_HOR_RES_MAX) scaled_x = LV_HOR_RES_MAX - 1;
+    if (scaled_y >= LV_VER_RES_MAX) scaled_y = LV_VER_RES_MAX - 1;
+
+    point.x = static_cast<lv_coord_t>(scaled_x);
+    point.y = static_cast<lv_coord_t>(scaled_y);
+}
+
+void touch_driver_init() {
+    Serial.println("\n[Touch] === Touch Controller Initialization ===");
+
+    touch_available = false;
+
+#if TOUCH_RST >= 0
+    pinMode(TOUCH_RST, OUTPUT);
+    digitalWrite(TOUCH_RST, HIGH);
+#endif
+#if TOUCH_INT >= 0
+    pinMode(TOUCH_INT, INPUT_PULLUP);
+#endif
+
+    // Reset hardware se disponibile
+#if TOUCH_RST >= 0
+    digitalWrite(TOUCH_RST, LOW);
+    delay(10);
+    digitalWrite(TOUCH_RST, HIGH);
+    delay(50);
+#endif
+
+    // Prova prima con clock più basso per compatibilità
+    Wire.begin(TOUCH_I2C_SDA, TOUCH_I2C_SCL);
+    Wire.setClock(100000); // 100kHz per maggiore compatibilità
+    delay(200);
+
+    Serial.printf("[Touch] I2C pins: SDA=%d, SCL=%d\n", TOUCH_I2C_SDA, TOUCH_I2C_SCL);
+    Serial.println("[Touch] Attempting communication with FT6336 at 0x38...");
+
+    // Test connessione base
+    Wire.beginTransmission(FT6336_ADDR);
+    uint8_t error = Wire.endTransmission();
+    Serial.printf("[Touch] Transmission result: %d ", error);
+    if (error == 0) Serial.println("(OK)");
+    else if (error == 2) Serial.println("(NACK on address)");
+    else if (error == 3) Serial.println("(NACK on data)");
+    else Serial.println("(Other error)");
+
+    if (error == 0) {
+        // Prova a leggere registri
+        delay(50);
+        uint8_t vendorID = readRegister(0xA8);
+        uint8_t chipID = readRegister(0xA3);
+        uint8_t fwVer = readRegister(0xA6);
+
+        Serial.printf("[Touch] Vendor ID: 0x%02X\n", vendorID);
+        Serial.printf("[Touch] Chip ID: 0x%02X\n", chipID);
+        Serial.printf("[Touch] FW Version: 0x%02X\n", fwVer);
+        Serial.println("[Touch] ✓ FT6336 detected and ready!");
+        touch_available = true;
+    } else {
+        Serial.println("[Touch] ✗ Touch controller NOT responding!");
+        Serial.println("[Touch] This board may not have touch capability,");
+        Serial.println("[Touch] or touch may use different pins/protocol.");
+        Serial.println("[Touch] Touch input will remain registered for debugging.");
+    }
+
+    Serial.println("[Touch] ======================================\n");
+}
+
+bool touch_driver_available() {
+    return touch_available;
+}
+
+void touch_driver_read(lv_indev_drv_t* indev_drv, lv_indev_data_t* data) {
+    uint8_t num_touches = readRegister(FT6336_REG_NUM_TOUCHES);
+
+    if (num_touches > 0) {
+        // Leggi coordinate
+        uint8_t xh = readRegister(FT6336_REG_TOUCH1_XH);
+        uint8_t xl = readRegister(FT6336_REG_TOUCH1_XL);
+        uint8_t yh = readRegister(FT6336_REG_TOUCH1_YH);
+        uint8_t yl = readRegister(FT6336_REG_TOUCH1_YL);
+
+        last_x = ((xh & 0x0F) << 8) | xl;
+        last_y = ((yh & 0x0F) << 8) | yl;
+
+        lv_point_t point;
+        transformToDisplay(last_x, last_y, point);
+
+        data->point = point;
+        data->state = LV_INDEV_STATE_PRESSED;
+        last_point = point;
+
+        touch_detected = true;
+    } else {
+        data->point = last_point;
+        data->state = LV_INDEV_STATE_RELEASED;
+        touch_detected = false;
+    }
+}
