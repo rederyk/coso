@@ -8,6 +8,7 @@ namespace {
 constexpr lv_coord_t DOCK_MARGIN = 5;
 constexpr lv_coord_t DOCK_THICKNESS = 88;
 constexpr lv_coord_t HANDLE_OFFSET = 6;
+constexpr lv_coord_t ICON_SIZE = 48;
 
 lv_coord_t get_display_width() {
     return DisplayManager::getInstance().getWidth();
@@ -124,10 +125,10 @@ void DockView::addIcon(const char* app_id, const char* emoji, const char* name) 
 
     lv_obj_t* app_btn = lv_obj_create(icon_container_);
     lv_obj_remove_style_all(app_btn);
-    lv_obj_set_size(app_btn, 60, 60);
+    lv_obj_set_size(app_btn, ICON_SIZE, ICON_SIZE);
     lv_obj_set_style_bg_color(app_btn, lv_color_hex(0x16213e), 0);
     lv_obj_set_style_bg_opa(app_btn, LV_OPA_COVER, 0);
-    lv_obj_set_style_radius(app_btn, 12, 0);
+    lv_obj_set_style_radius(app_btn, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_border_width(app_btn, 1, 0);
     lv_obj_set_style_border_color(app_btn, lv_color_hex(0x0f3460), 0);
     lv_obj_add_flag(app_btn, LV_OBJ_FLAG_CLICKABLE);
