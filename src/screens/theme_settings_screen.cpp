@@ -138,9 +138,9 @@ void ThemeSettingsScreen::build(lv_obj_t* parent) {
     lv_obj_set_size(color_content, lv_pct(100), LV_SIZE_CONTENT);
     lv_obj_set_layout(color_content, LV_LAYOUT_GRID);
 
-    // Griglia 2 colonne responsive per le ruote colore
+    // Griglia 2x2 per 4 ruote colore
     static lv_coord_t col_dsc[] = {LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST};
-    static lv_coord_t row_dsc[] = {LV_SIZE_CONTENT, 8, LV_SIZE_CONTENT, LV_GRID_TEMPLATE_LAST};
+    static lv_coord_t row_dsc[] = {LV_SIZE_CONTENT, 12, LV_SIZE_CONTENT, LV_GRID_TEMPLATE_LAST};
     lv_obj_set_grid_dsc_array(color_content, col_dsc, row_dsc);
 
     lv_obj_set_style_pad_row(color_content, 0, 0);
@@ -151,7 +151,8 @@ void ThemeSettingsScreen::build(lv_obj_t* parent) {
 
     // Lambda per creare sezioni ruota colore con grid positioning
     int grid_col = 0;
-    auto makeWheelSection = [&grid_col](lv_obj_t* parent, const char* title,
+    int grid_row = 0;
+    auto makeWheelSection = [&grid_col, &grid_row](lv_obj_t* parent, const char* title,
                                         lv_obj_t** target,
                                         lv_event_cb_t handler,
                                         void* user_data) {
@@ -166,7 +167,7 @@ void ThemeSettingsScreen::build(lv_obj_t* parent) {
 
         // Posizionamento grid automatico
         lv_obj_set_grid_cell(section, LV_GRID_ALIGN_CENTER, grid_col, 1,
-                                      LV_GRID_ALIGN_START, 0, 1);
+                                      LV_GRID_ALIGN_START, grid_row, 1);
 
         lv_obj_t* lbl = lv_label_create(section);
         lv_label_set_text(lbl, title);
@@ -178,11 +179,17 @@ void ThemeSettingsScreen::build(lv_obj_t* parent) {
         lv_obj_add_event_cb(*target, handler, LV_EVENT_VALUE_CHANGED, user_data);
 
         grid_col++;
+        if (grid_col >= 2) {
+            grid_col = 0;
+            grid_row += 2;  // Skip the spacing row
+        }
     };
 
-    // Ruote colore posizionate automaticamente in griglia
+    // Ruote colore posizionate automaticamente in griglia 2x2
     makeWheelSection(color_content, "Primario", &primary_wheel, handlePrimaryColor, this);
     makeWheelSection(color_content, "Accento", &accent_wheel, handleAccentColor, this);
+    makeWheelSection(color_content, "Card", &card_wheel, handleCardColor, this);
+    makeWheelSection(color_content, "Dock", &dock_wheel, handleDockColor, this);
 
     // Brightness slider for primary color
     lv_obj_t* brightness_card = create_card(color_palette_card, "Luminosità Primario");
@@ -243,6 +250,7 @@ void ThemeSettingsScreen::build(lv_obj_t* parent) {
     lv_obj_remove_style_all(preview_card);
     lv_obj_set_width(preview_card, lv_pct(100));
     lv_obj_set_style_bg_color(preview_card, lv_color_hex(0x10182c), 0);
+    lv_obj_set_style_bg_opa(preview_card, LV_OPA_COVER, 0);
     lv_obj_set_style_radius(preview_card, 18, 0);
     lv_obj_set_style_pad_all(preview_card, 14, 0);
     lv_obj_clear_flag(preview_card, LV_OBJ_FLAG_SCROLLABLE);
@@ -251,10 +259,41 @@ void ThemeSettingsScreen::build(lv_obj_t* parent) {
     lv_obj_set_style_pad_row(preview_card, 10, 0);
 
     preview_header = lv_label_create(preview_card);
+
     preview_body = lv_obj_create(preview_card);
     lv_obj_remove_style_all(preview_body);
     lv_obj_set_size(preview_body, lv_pct(100), 60);
     lv_obj_set_style_bg_color(preview_body, lv_color_hex(0x0f2030), 0);
+    lv_obj_set_style_bg_opa(preview_body, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(preview_body, 8, 0);
+
+    // Card color demo
+    preview_card_demo = lv_obj_create(preview_card);
+    lv_obj_remove_style_all(preview_card_demo);
+    lv_obj_set_size(preview_card_demo, lv_pct(100), 40);
+    lv_obj_set_style_bg_color(preview_card_demo, lv_color_hex(0x10182c), 0);
+    lv_obj_set_style_bg_opa(preview_card_demo, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(preview_card_demo, 8, 0);
+    lv_obj_set_style_pad_all(preview_card_demo, 6, 0);
+
+    lv_obj_t* card_label = lv_label_create(preview_card_demo);
+    lv_label_set_text(card_label, "Card");
+    lv_obj_set_style_text_color(card_label, lv_color_hex(0xaaaaaa), 0);
+    lv_obj_set_style_text_font(card_label, &lv_font_montserrat_14, 0);
+
+    // Dock color demo
+    preview_dock_demo = lv_obj_create(preview_card);
+    lv_obj_remove_style_all(preview_dock_demo);
+    lv_obj_set_size(preview_dock_demo, lv_pct(100), 40);
+    lv_obj_set_style_bg_color(preview_dock_demo, lv_color_hex(0x1a2332), 0);
+    lv_obj_set_style_bg_opa(preview_dock_demo, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(preview_dock_demo, 8, 0);
+    lv_obj_set_style_pad_all(preview_dock_demo, 6, 0);
+
+    lv_obj_t* dock_label = lv_label_create(preview_dock_demo);
+    lv_label_set_text(dock_label, "Dock");
+    lv_obj_set_style_text_color(dock_label, lv_color_hex(0xaaaaaa), 0);
+    lv_obj_set_style_text_font(dock_label, &lv_font_montserrat_14, 0);
 
     if (settings_listener_id == 0) {
         settings_listener_id = manager.addListener([this](SettingsManager::SettingKey, const SettingsSnapshot& snap) {
@@ -309,6 +348,12 @@ void ThemeSettingsScreen::applySnapshot(const SettingsSnapshot& snapshot) {
     if (accent_wheel) {
         lv_colorwheel_set_rgb(accent_wheel, toLvColor(snapshot.accentColor));
     }
+    if (card_wheel) {
+        lv_colorwheel_set_rgb(card_wheel, toLvColor(snapshot.cardColor));
+    }
+    if (dock_wheel) {
+        lv_colorwheel_set_rgb(dock_wheel, toLvColor(snapshot.dockColor));
+    }
     if (border_slider) {
         lv_slider_set_value(border_slider, snapshot.borderRadius, LV_ANIM_OFF);
     }
@@ -328,6 +373,8 @@ void ThemeSettingsScreen::updatePreview(const SettingsSnapshot& snapshot) {
     if (!preview_card) return;
     lv_color_t primary = toLvColor(snapshot.primaryColor);
     lv_color_t accent = toLvColor(snapshot.accentColor);
+    lv_color_t card = toLvColor(snapshot.cardColor);
+    lv_color_t dock = toLvColor(snapshot.dockColor);
 
     lv_obj_set_style_bg_color(preview_card, primary, 0);
     if (preview_header) {
@@ -338,6 +385,14 @@ void ThemeSettingsScreen::updatePreview(const SettingsSnapshot& snapshot) {
     if (preview_body) {
         lv_obj_set_style_bg_color(preview_body, accent, 0);
         lv_obj_set_style_radius(preview_body, snapshot.borderRadius, 0);
+    }
+    if (preview_card_demo) {
+        lv_obj_set_style_bg_color(preview_card_demo, card, 0);
+        lv_obj_set_style_radius(preview_card_demo, snapshot.borderRadius, 0);
+    }
+    if (preview_dock_demo) {
+        lv_obj_set_style_bg_color(preview_dock_demo, dock, 0);
+        lv_obj_set_style_radius(preview_dock_demo, snapshot.borderRadius, 0);
     }
 }
 
@@ -384,6 +439,34 @@ void ThemeSettingsScreen::handleAccentColor(lv_event_t* e) {
 
     screen->updating_from_manager = true;  // Prevent feedback loop
     SettingsManager::getInstance().setAccentColor(hex);
+    screen->updating_from_manager = false;
+}
+
+void ThemeSettingsScreen::handleCardColor(lv_event_t* e) {
+    auto* screen = static_cast<ThemeSettingsScreen*>(lv_event_get_user_data(e));
+    if (!screen || screen->updating_from_manager) return;
+
+    lv_color_t color = lv_colorwheel_get_rgb(screen->card_wheel);
+    uint32_t hex = toHex(color);
+
+    Serial.printf("🎨 Card color changed: 0x%06X\n", hex);
+
+    screen->updating_from_manager = true;  // Prevent feedback loop
+    SettingsManager::getInstance().setCardColor(hex);
+    screen->updating_from_manager = false;
+}
+
+void ThemeSettingsScreen::handleDockColor(lv_event_t* e) {
+    auto* screen = static_cast<ThemeSettingsScreen*>(lv_event_get_user_data(e));
+    if (!screen || screen->updating_from_manager) return;
+
+    lv_color_t color = lv_colorwheel_get_rgb(screen->dock_wheel);
+    uint32_t hex = toHex(color);
+
+    Serial.printf("🎨 Dock color changed: 0x%06X\n", hex);
+
+    screen->updating_from_manager = true;  // Prevent feedback loop
+    SettingsManager::getInstance().setDockColor(hex);
     screen->updating_from_manager = false;
 }
 

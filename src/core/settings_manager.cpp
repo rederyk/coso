@@ -48,6 +48,8 @@ void SettingsManager::reset() {
     current_.version = DEFAULT_VERSION;
     current_.primaryColor = DEFAULT_PRIMARY_COLOR;
     current_.accentColor = DEFAULT_ACCENT_COLOR;
+    current_.cardColor = DEFAULT_CARD_COLOR;
+    current_.dockColor = DEFAULT_DOCK_COLOR;
     current_.borderRadius = DEFAULT_BORDER_RADIUS;
     current_.landscapeLayout = DEFAULT_LANDSCAPE;
 
@@ -58,6 +60,8 @@ void SettingsManager::reset() {
     persistString(KEY_VERSION, current_.version);
     prefs_.putUInt(KEY_PRIMARY_COLOR, current_.primaryColor);
     prefs_.putUInt(KEY_ACCENT_COLOR, current_.accentColor);
+    prefs_.putUInt(KEY_CARD_COLOR, current_.cardColor);
+    prefs_.putUInt(KEY_DOCK_COLOR, current_.dockColor);
     prefs_.putUChar(KEY_BORDER_RADIUS, current_.borderRadius);
     prefs_.putBool(KEY_LAYOUT_ORIENT, current_.landscapeLayout);
 
@@ -68,6 +72,8 @@ void SettingsManager::reset() {
     notify(SettingKey::Version);
     notify(SettingKey::ThemePrimaryColor);
     notify(SettingKey::ThemeAccentColor);
+    notify(SettingKey::ThemeCardColor);
+    notify(SettingKey::ThemeDockColor);
     notify(SettingKey::ThemeBorderRadius);
     notify(SettingKey::LayoutOrientation);
 }
@@ -159,6 +165,30 @@ void SettingsManager::setAccentColor(uint32_t color) {
     notify(SettingKey::ThemeAccentColor);
 }
 
+void SettingsManager::setCardColor(uint32_t color) {
+    if (!initialized_) {
+        return;
+    }
+    if (color == current_.cardColor) {
+        return;
+    }
+    current_.cardColor = color;
+    prefs_.putUInt(KEY_CARD_COLOR, current_.cardColor);
+    notify(SettingKey::ThemeCardColor);
+}
+
+void SettingsManager::setDockColor(uint32_t color) {
+    if (!initialized_) {
+        return;
+    }
+    if (color == current_.dockColor) {
+        return;
+    }
+    current_.dockColor = color;
+    prefs_.putUInt(KEY_DOCK_COLOR, current_.dockColor);
+    notify(SettingKey::ThemeDockColor);
+}
+
 void SettingsManager::setBorderRadius(uint8_t radius) {
     if (!initialized_) {
         return;
@@ -206,6 +236,8 @@ void SettingsManager::loadFromStorage() {
     current_.version = prefs_.getString(KEY_VERSION, DEFAULT_VERSION).c_str();
     current_.primaryColor = prefs_.getUInt(KEY_PRIMARY_COLOR, DEFAULT_PRIMARY_COLOR);
     current_.accentColor = prefs_.getUInt(KEY_ACCENT_COLOR, DEFAULT_ACCENT_COLOR);
+    current_.cardColor = prefs_.getUInt(KEY_CARD_COLOR, DEFAULT_CARD_COLOR);
+    current_.dockColor = prefs_.getUInt(KEY_DOCK_COLOR, DEFAULT_DOCK_COLOR);
     current_.borderRadius = prefs_.getUChar(KEY_BORDER_RADIUS, DEFAULT_BORDER_RADIUS);
     current_.landscapeLayout = prefs_.getBool(KEY_LAYOUT_ORIENT, DEFAULT_LANDSCAPE);
     current_.brightness = std::min<uint8_t>(100, std::max<uint8_t>(0, current_.brightness));

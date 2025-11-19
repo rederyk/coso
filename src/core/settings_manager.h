@@ -14,6 +14,8 @@ struct SettingsSnapshot {
     std::string version;
     uint32_t primaryColor = 0x0b2035;
     uint32_t accentColor = 0x5df4ff;
+    uint32_t cardColor = 0x10182c;
+    uint32_t dockColor = 0x1a2332;
     uint8_t borderRadius = 12;
     bool landscapeLayout = true;
 };
@@ -28,6 +30,8 @@ public:
         Version,
         ThemePrimaryColor,
         ThemeAccentColor,
+        ThemeCardColor,
+        ThemeDockColor,
         ThemeBorderRadius,
         LayoutOrientation
     };
@@ -61,6 +65,12 @@ public:
 
     uint32_t getAccentColor() const { return current_.accentColor; }
     void setAccentColor(uint32_t color);
+
+    uint32_t getCardColor() const { return current_.cardColor; }
+    void setCardColor(uint32_t color);
+
+    uint32_t getDockColor() const { return current_.dockColor; }
+    void setDockColor(uint32_t color);
 
     uint8_t getBorderRadius() const { return current_.borderRadius; }
     void setBorderRadius(uint8_t radius);
@@ -97,6 +107,8 @@ private:
     static constexpr const char* KEY_VERSION = "version";
     static constexpr const char* KEY_PRIMARY_COLOR = "theme_primary";
     static constexpr const char* KEY_ACCENT_COLOR = "theme_accent";
+    static constexpr const char* KEY_CARD_COLOR = "theme_card";
+    static constexpr const char* KEY_DOCK_COLOR = "theme_dock";
     static constexpr const char* KEY_BORDER_RADIUS = "theme_radius";
     static constexpr const char* KEY_LAYOUT_ORIENT = "layout_orient";
     static constexpr uint8_t DEFAULT_BRIGHTNESS = 80;
@@ -104,6 +116,8 @@ private:
     static constexpr const char* DEFAULT_VERSION = "0.5.0";
     static constexpr uint32_t DEFAULT_PRIMARY_COLOR = 0x0b2035;
     static constexpr uint32_t DEFAULT_ACCENT_COLOR = 0x5df4ff;
+    static constexpr uint32_t DEFAULT_CARD_COLOR = 0x10182c;
+    static constexpr uint32_t DEFAULT_DOCK_COLOR = 0x1a2332;
     static constexpr uint8_t DEFAULT_BORDER_RADIUS = 12;
     static constexpr bool DEFAULT_LANDSCAPE = true;
 };
