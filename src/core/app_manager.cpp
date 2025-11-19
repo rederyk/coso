@@ -1,4 +1,5 @@
 #include "core/app_manager.h"
+#include "core/settings_manager.h"
 #include <Arduino.h>
 #include <lvgl.h>
 
@@ -17,6 +18,18 @@ void AppManager::init(lv_obj_t* parent) {
     dock.setLaunchHandler([this](const char* app_id) {
         launchApp(app_id);
     });
+
+    // Register settings listener to update dock colors
+    SettingsManager& settings = SettingsManager::getInstance();
+    if (settings_listener_id == 0) {
+        settings_listener_id = settings.addListener(
+            [this](SettingsManager::SettingKey key, const SettingsSnapshot& snapshot) {
+                if (key == SettingsManager::SettingKey::ThemeDockColor ||
+                    key == SettingsManager::SettingKey::ThemeBorderRadius) {
+                    dock.updateColors(snapshot.dockColor, snapshot.borderRadius);
+                }
+            });
+    }
 }
 
 void AppManager::registerApp(const char* id, const char* emoji, const char* name, Screen* screen) {

@@ -33,6 +33,7 @@ private:
     std::string current_app_id;
     bool reload_pending = false;
     std::map<std::string, AppInfo> apps;
+    uint32_t settings_listener_id = 0;
 
     static void handleAsyncReload(void* user_data);
 };

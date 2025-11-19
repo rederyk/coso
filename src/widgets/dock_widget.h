@@ -20,6 +20,7 @@ public:
     void hide();
     void toggle();
     void onOrientationChanged(bool landscape);
+    void updateColors(uint32_t dock_color, uint8_t border_radius);
 
     void setHandleCallback(std::function<void()> callback);
     void setIconTapCallback(std::function<void(const char* app_id)> callback);
@@ -65,6 +66,7 @@ public:
     void hide();
     void toggle();
     void setLaunchHandler(std::function<void(const char* app_id)> handler);
+    void updateColors(uint32_t dock_color, uint8_t border_radius);
 
 private:
     struct LauncherItem {

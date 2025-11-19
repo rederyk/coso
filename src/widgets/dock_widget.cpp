@@ -1,6 +1,7 @@
 #include "widgets/dock_widget.h"
 
 #include "core/display_manager.h"
+#include "core/settings_manager.h"
 #include <Arduino.h>
 #include <utility>
 
@@ -60,14 +61,18 @@ void DockView::ensureCreated(lv_obj_t* launcher_layer) {
 
     launcher_layer_ = launcher_layer;
 
+    // Get colors from settings
+    SettingsManager& settings = SettingsManager::getInstance();
+    const SettingsSnapshot& snapshot = settings.getSnapshot();
+
     dock_container_ = lv_obj_create(launcher_layer_);
     lv_obj_remove_style_all(dock_container_);
-    lv_obj_set_style_bg_color(dock_container_, lv_color_hex(0x1a1a2e), 0);
+    lv_obj_set_style_bg_color(dock_container_, lv_color_hex(snapshot.dockColor), 0);
     lv_obj_set_style_bg_opa(dock_container_, LV_OPA_90, 0);
     lv_obj_set_style_border_width(dock_container_, 0, 0);
     lv_obj_set_style_outline_width(dock_container_, 0, 0);
     lv_obj_set_style_shadow_opa(dock_container_, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_radius(dock_container_, 16, 0);
+    lv_obj_set_style_radius(dock_container_, snapshot.borderRadius, 0);
     lv_obj_set_style_pad_all(dock_container_, 8, 0);
     lv_obj_add_flag(dock_container_, LV_OBJ_FLAG_FLOATING);
     lv_obj_clear_flag(dock_container_, LV_OBJ_FLAG_SCROLLABLE);
@@ -236,6 +241,14 @@ void DockView::updateHandlePosition() {
     lv_obj_align(handle_button_, LV_ALIGN_BOTTOM_MID, 0, -HANDLE_OFFSET);
 }
 
+void DockView::updateColors(uint32_t dock_color, uint8_t border_radius) {
+    if (!dock_container_) {
+        return;
+    }
+    lv_obj_set_style_bg_color(dock_container_, lv_color_hex(dock_color), 0);
+    lv_obj_set_style_radius(dock_container_, border_radius, 0);
+}
+
 void DockView::setHandleCallback(std::function<void()> callback) {
     handle_callback_ = std::move(callback);
 }
@@ -341,6 +354,10 @@ void DockController::hide() {
 
 void DockController::toggle() {
     view_.toggle();
+}
+
+void DockController::updateColors(uint32_t dock_color, uint8_t border_radius) {
+    view_.updateColors(dock_color, border_radius);
 }
 
 void DockController::setGestureSurface(lv_obj_t* target) {

@@ -1,4 +1,5 @@
 #include "screens/theme_settings_screen.h"
+#include "widgets/circular_color_picker.h"
 #include <Arduino.h>
 
 namespace {
@@ -149,10 +150,10 @@ void ThemeSettingsScreen::build(lv_obj_t* parent) {
     lv_obj_set_style_grid_cell_column_pos(color_content, 0, 0);
     lv_obj_set_style_grid_cell_row_pos(color_content, 0, 0);
 
-    // Lambda per creare sezioni ruota colore con grid positioning
+    // Lambda per creare sezioni color picker 2D con grid positioning
     int grid_col = 0;
     int grid_row = 0;
-    auto makeWheelSection = [&grid_col, &grid_row](lv_obj_t* parent, const char* title,
+    auto makePickerSection = [&grid_col, &grid_row](lv_obj_t* parent, const char* title,
                                         lv_obj_t** target,
                                         lv_event_cb_t handler,
                                         void* user_data) {
@@ -174,8 +175,7 @@ void ThemeSettingsScreen::build(lv_obj_t* parent) {
         lv_obj_set_style_text_color(lbl, lv_color_hex(0xf0f0f0), 0);
         lv_obj_set_style_text_font(lbl, &lv_font_montserrat_14, 0);
 
-        *target = lv_colorwheel_create(section, true);
-        lv_obj_set_size(*target, 110, 110);  // Dimensione fissa ottimale per wheel
+        *target = CircularColorPicker::create(section, 110, 70);
         lv_obj_add_event_cb(*target, handler, LV_EVENT_VALUE_CHANGED, user_data);
 
         grid_col++;
@@ -185,29 +185,11 @@ void ThemeSettingsScreen::build(lv_obj_t* parent) {
         }
     };
 
-    // Ruote colore posizionate automaticamente in griglia 2x2
-    makeWheelSection(color_content, "Primario", &primary_wheel, handlePrimaryColor, this);
-    makeWheelSection(color_content, "Accento", &accent_wheel, handleAccentColor, this);
-    makeWheelSection(color_content, "Card", &card_wheel, handleCardColor, this);
-    makeWheelSection(color_content, "Dock", &dock_wheel, handleDockColor, this);
-
-    // Brightness slider for primary color
-    lv_obj_t* brightness_card = create_card(color_palette_card, "Luminosità Primario");
-    lv_obj_set_height(brightness_card, LV_SIZE_CONTENT);
-    lv_obj_set_style_pad_all(brightness_card, 12, 0);
-    lv_obj_set_style_pad_row(brightness_card, 8, 0);
-
-    brightness_slider = lv_slider_create(brightness_card);
-    lv_slider_set_range(brightness_slider, 10, 100);  // Min 10% to avoid pure black
-    lv_slider_set_value(brightness_slider, 70, LV_ANIM_OFF);
-    lv_obj_set_width(brightness_slider, lv_pct(100));
-    lv_obj_set_height(brightness_slider, 16);
-    lv_obj_add_event_cb(brightness_slider, handlePrimaryBrightness, LV_EVENT_VALUE_CHANGED, this);
-
-    lv_obj_t* brightness_hint = lv_label_create(brightness_card);
-    lv_label_set_text(brightness_hint, "Scurisci/Schiarisci colore");
-    lv_obj_set_style_text_color(brightness_hint, lv_color_hex(0xa0a0a0), 0);
-    lv_obj_set_style_text_font(brightness_hint, &lv_font_montserrat_14, 0);
+    // Color picker 2D posizionati automaticamente in griglia 2x2
+    makePickerSection(color_content, "Primario", &primary_wheel, handlePrimaryColor, this);
+    makePickerSection(color_content, "Accento", &accent_wheel, handleAccentColor, this);
+    makePickerSection(color_content, "Card", &card_wheel, handleCardColor, this);
+    makePickerSection(color_content, "Dock", &dock_wheel, handleDockColor, this);
 
     // Container palette rapide: occupa tutta la riga sotto le ruote
     lv_obj_t* palette_section = lv_obj_create(color_palette_card);
@@ -296,9 +278,27 @@ void ThemeSettingsScreen::build(lv_obj_t* parent) {
     lv_obj_set_style_text_font(dock_label, &lv_font_montserrat_14, 0);
 
     if (settings_listener_id == 0) {
-        settings_listener_id = manager.addListener([this](SettingsManager::SettingKey, const SettingsSnapshot& snap) {
+        settings_listener_id = manager.addListener([this](SettingsManager::SettingKey key, const SettingsSnapshot& snap) {
             if (!root || updating_from_manager) return;
-            applySnapshot(snap);
+
+            // Only update UI elements that don't trigger color changes (sliders, switches)
+            // Color wheels are NEVER updated after initialization to avoid feedback loops
+            if (key == SettingsManager::SettingKey::ThemeBorderRadius && border_slider) {
+                updating_from_manager = true;
+                lv_slider_set_value(border_slider, snap.borderRadius, LV_ANIM_OFF);
+                updating_from_manager = false;
+            } else if (key == SettingsManager::SettingKey::LayoutOrientation && orientation_switch) {
+                updating_from_manager = true;
+                if (snap.landscapeLayout) {
+                    lv_obj_add_state(orientation_switch, LV_STATE_CHECKED);
+                } else {
+                    lv_obj_clear_state(orientation_switch, LV_STATE_CHECKED);
+                }
+                updating_from_manager = false;
+            }
+
+            // Always update preview (not the wheels)
+            updatePreview(snap);
         });
     }
 
@@ -318,45 +318,42 @@ void ThemeSettingsScreen::onHide() {
 void ThemeSettingsScreen::applySnapshot(const SettingsSnapshot& snapshot) {
     updating_from_manager = true;
 
-    Serial.printf("🔄 applySnapshot - Primary: 0x%06X, Accent: 0x%06X\n",
-                  snapshot.primaryColor, snapshot.accentColor);
+    Serial.printf("🔄 applySnapshot - Primary: 0x%06X, Accent: 0x%06X, Card: 0x%06X, Dock: 0x%06X\n",
+                  snapshot.primaryColor, snapshot.accentColor, snapshot.cardColor, snapshot.dockColor);
 
+    // Initialize color pickers ONCE with approximate position based on saved color
+    // After this, pickers are NEVER updated - they control the color, not vice versa
     if (primary_wheel) {
         lv_color_t color = toLvColor(snapshot.primaryColor);
         lv_color_hsv_t hsv = lv_color_rgb_to_hsv(LV_COLOR_GET_R(color),
                                                    LV_COLOR_GET_G(color),
                                                    LV_COLOR_GET_B(color));
-
-        // Store the ORIGINAL HSV values (not the boosted ones)
         current_primary_hsv = hsv;
 
-        // Create a temporary HSV for wheel display with boosted brightness
-        lv_color_hsv_t display_hsv = hsv;
-        if (display_hsv.v < 50) {
-            Serial.printf("⚠️ Primary color too dark (V=%d), boosting wheel display to 70\n", hsv.v);
-            display_hsv.v = 70;
-        }
-
-        // Set wheel with display values (potentially boosted)
-        lv_colorwheel_set_hsv(primary_wheel, display_hsv);
-
-        // Update brightness slider to show actual saved brightness
-        if (brightness_slider) {
-            lv_slider_set_value(brightness_slider, hsv.v, LV_ANIM_OFF);
-        }
+        Serial.printf("🎨 Initializing primary picker to: 0x%06X (H:%d S:%d V:%d)\n",
+                      snapshot.primaryColor, hsv.h, hsv.s, hsv.v);
+        CircularColorPicker::set_hsv(primary_wheel, hsv);
     }
+
     if (accent_wheel) {
-        lv_colorwheel_set_rgb(accent_wheel, toLvColor(snapshot.accentColor));
+        Serial.printf("🎨 Initializing accent picker to: 0x%06X\n", snapshot.accentColor);
+        CircularColorPicker::set_rgb(accent_wheel, toLvColor(snapshot.accentColor));
     }
+
     if (card_wheel) {
-        lv_colorwheel_set_rgb(card_wheel, toLvColor(snapshot.cardColor));
+        Serial.printf("🎨 Initializing card picker to: 0x%06X\n", snapshot.cardColor);
+        CircularColorPicker::set_rgb(card_wheel, toLvColor(snapshot.cardColor));
     }
+
     if (dock_wheel) {
-        lv_colorwheel_set_rgb(dock_wheel, toLvColor(snapshot.dockColor));
+        Serial.printf("🎨 Initializing dock picker to: 0x%06X\n", snapshot.dockColor);
+        CircularColorPicker::set_rgb(dock_wheel, toLvColor(snapshot.dockColor));
     }
+
     if (border_slider) {
         lv_slider_set_value(border_slider, snapshot.borderRadius, LV_ANIM_OFF);
     }
+
     if (orientation_switch) {
         if (snapshot.landscapeLayout) {
             lv_obj_add_state(orientation_switch, LV_STATE_CHECKED);
@@ -400,74 +397,52 @@ void ThemeSettingsScreen::handlePrimaryColor(lv_event_t* e) {
     auto* screen = static_cast<ThemeSettingsScreen*>(lv_event_get_user_data(e));
     if (!screen || screen->updating_from_manager) return;
 
-    lv_color_t color = lv_colorwheel_get_rgb(screen->primary_wheel);
-
-    // Get HSV from wheel and store it
-    lv_color_hsv_t hsv = lv_colorwheel_get_hsv(screen->primary_wheel);
+    lv_color_t color = CircularColorPicker::get_rgb(screen->primary_wheel);
+    lv_color_hsv_t hsv = CircularColorPicker::get_hsv(screen->primary_wheel);
     screen->current_primary_hsv = hsv;
 
-    // Update brightness slider to match wheel's brightness
-    if (screen->brightness_slider) {
-        screen->updating_from_manager = true;
-        lv_slider_set_value(screen->brightness_slider, hsv.v, LV_ANIM_OFF);
-        screen->updating_from_manager = false;
-    }
-
     uint32_t hex = toHex(color);
-    Serial.printf("🎨 Primary color changed: 0x%06X (H:%d S:%d V:%d)\n",
-                  hex, hsv.h, hsv.s, hsv.v);
+    Serial.printf("🎨 Primary color: 0x%06X (H:%d S:%d V:%d)\n", hex, hsv.h, hsv.s, hsv.v);
 
-    // Avoid saving pure black which indicates conversion error
-    if (hex == 0x000000) {
-        Serial.println("⚠️ Skipping black color (likely conversion error)");
-        return;
-    }
-
-    screen->updating_from_manager = true;  // Prevent feedback loop
     SettingsManager::getInstance().setPrimaryColor(hex);
-    screen->updating_from_manager = false;
 }
 
 void ThemeSettingsScreen::handleAccentColor(lv_event_t* e) {
     auto* screen = static_cast<ThemeSettingsScreen*>(lv_event_get_user_data(e));
     if (!screen || screen->updating_from_manager) return;
 
-    lv_color_t color = lv_colorwheel_get_rgb(screen->accent_wheel);
+    lv_color_t color = CircularColorPicker::get_rgb(screen->accent_wheel);
     uint32_t hex = toHex(color);
 
-    Serial.printf("🎨 Accent color changed: 0x%06X\n", hex);
+    Serial.printf("🎨 Accent color: 0x%06X\n", hex);
 
-    screen->updating_from_manager = true;  // Prevent feedback loop
     SettingsManager::getInstance().setAccentColor(hex);
-    screen->updating_from_manager = false;
 }
 
 void ThemeSettingsScreen::handleCardColor(lv_event_t* e) {
     auto* screen = static_cast<ThemeSettingsScreen*>(lv_event_get_user_data(e));
     if (!screen || screen->updating_from_manager) return;
 
-    lv_color_t color = lv_colorwheel_get_rgb(screen->card_wheel);
+    lv_color_t color = CircularColorPicker::get_rgb(screen->card_wheel);
     uint32_t hex = toHex(color);
 
-    Serial.printf("🎨 Card color changed: 0x%06X\n", hex);
+    Serial.printf("🎨 Card color: 0x%06X\n", hex);
 
-    screen->updating_from_manager = true;  // Prevent feedback loop
     SettingsManager::getInstance().setCardColor(hex);
-    screen->updating_from_manager = false;
 }
 
 void ThemeSettingsScreen::handleDockColor(lv_event_t* e) {
     auto* screen = static_cast<ThemeSettingsScreen*>(lv_event_get_user_data(e));
     if (!screen || screen->updating_from_manager) return;
 
-    lv_color_t color = lv_colorwheel_get_rgb(screen->dock_wheel);
+    // Read color from picker - this always returns a valid RGB based on cursor position
+    lv_color_t color = CircularColorPicker::get_rgb(screen->dock_wheel);
     uint32_t hex = toHex(color);
 
-    Serial.printf("🎨 Dock color changed: 0x%06X\n", hex);
+    Serial.printf("🎨 Dock color: 0x%06X\n", hex);
 
-    screen->updating_from_manager = true;  // Prevent feedback loop
+    // Save to settings - this triggers listeners to update dock and preview
     SettingsManager::getInstance().setDockColor(hex);
-    screen->updating_from_manager = false;
 }
 
 void ThemeSettingsScreen::handleBorderRadius(lv_event_t* e) {
@@ -498,29 +473,5 @@ void ThemeSettingsScreen::handlePaletteButton(lv_event_t* e) {
     manager.setPrimaryColor(preset->primary);
     manager.setAccentColor(preset->accent);
 
-    // The settings listener will trigger applySnapshot() which updates the color wheels
-}
-
-void ThemeSettingsScreen::handlePrimaryBrightness(lv_event_t* e) {
-    auto* screen = static_cast<ThemeSettingsScreen*>(lv_event_get_user_data(e));
-    if (!screen || screen->updating_from_manager) return;
-
-    int32_t brightness = lv_slider_get_value(screen->brightness_slider);
-
-    // Update the stored HSV with new brightness
-    screen->current_primary_hsv.v = static_cast<uint8_t>(brightness);
-
-    // Convert HSV to RGB and save
-    lv_color_t color = lv_color_hsv_to_rgb(screen->current_primary_hsv.h,
-                                            screen->current_primary_hsv.s,
-                                            screen->current_primary_hsv.v);
-    uint32_t hex = toHex(color);
-
-    Serial.printf("🔆 Brightness changed: %d%% -> 0x%06X (H:%d S:%d V:%d)\n",
-                  brightness, hex, screen->current_primary_hsv.h,
-                  screen->current_primary_hsv.s, screen->current_primary_hsv.v);
-
-    screen->updating_from_manager = true;
-    SettingsManager::getInstance().setPrimaryColor(hex);
-    screen->updating_from_manager = false;
+    // The settings listener will trigger applySnapshot() which updates the color pickers
 }

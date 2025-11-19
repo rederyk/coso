@@ -22,14 +22,12 @@ private:
     static void handleBorderRadius(lv_event_t* e);
     static void handleOrientation(lv_event_t* e);
     static void handlePaletteButton(lv_event_t* e);
-    static void handlePrimaryBrightness(lv_event_t* e);
 
     lv_obj_t* primary_wheel = nullptr;
     lv_obj_t* accent_wheel = nullptr;
     lv_obj_t* card_wheel = nullptr;
     lv_obj_t* dock_wheel = nullptr;
     lv_obj_t* border_slider = nullptr;
-    lv_obj_t* brightness_slider = nullptr;
     lv_obj_t* orientation_switch = nullptr;
     lv_obj_t* preview_card = nullptr;
     lv_obj_t* preview_header = nullptr;
