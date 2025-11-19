@@ -17,6 +17,7 @@
 #include "core/ble_manager.h"
 #include "drivers/touch_driver.h"
 #include "drivers/sd_card_driver.h"
+#include "drivers/rgb_led_driver.h"
 #include "screens/dashboard_screen.h"
 #include "screens/settings_screen.h"
 #include "screens/info_screen.h"
@@ -150,10 +151,12 @@ void setup() {
     SettingsManager& settings_mgr = SettingsManager::getInstance();
     bool initial_landscape = true;
     uint8_t initial_brightness = 80;
+    uint8_t initial_led_brightness = 50;
     if (settings_mgr.begin()) {
         settings_mgr.setVersion(APP_VERSION);
         initial_landscape = settings_mgr.isLandscapeLayout();
         initial_brightness = settings_mgr.getBrightness();
+        initial_led_brightness = settings_mgr.getLedBrightness();
     } else {
         logger.warn("[Settings] Initialization failed - persistent settings disabled");
     }
@@ -282,11 +285,24 @@ void setup() {
         } else if (key == SettingsManager::SettingKey::Brightness) {
             Logger::getInstance().infof("[Backlight] Brightness changed to %u%%", snapshot.brightness);
             BacklightManager::getInstance().setBrightness(snapshot.brightness);
+        } else if (key == SettingsManager::SettingKey::LedBrightness) {
+            Logger::getInstance().infof("[RGB LED] Brightness changed to %u%%", snapshot.ledBrightness);
+            RgbLedManager::getInstance().setBrightness(snapshot.ledBrightness);
         }
     });
 
     xTaskCreatePinnedToCore(lvgl_task, "lvgl", 6144, nullptr, 3, nullptr, 1);
     logMemoryStats("LVGL task started");
+
+    // Inizializza RGB LED dopo che tutto il resto è pronto
+    RgbLedManager& rgb_led = RgbLedManager::getInstance();
+    if (rgb_led.begin(42)) {  // GPIO42 per il LED RGB integrato su Freenove ESP32-S3
+        rgb_led.setBrightness(initial_led_brightness);
+        rgb_led.setState(RgbLedManager::LedState::BOOT);
+        logger.info("[RGB LED] Initialized with boot animation");
+    } else {
+        logger.warn("[RGB LED] Initialization failed");
+    }
 }
 
 void loop() {

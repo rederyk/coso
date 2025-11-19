@@ -1,5 +1,6 @@
 #include "ble_manager.h"
 #include "utils/logger.h"
+#include "drivers/rgb_led_driver.h"
 #include "BLEDevice.h"
 #include "BLEServer.h"
 #include "BLEUtils.h"
@@ -35,15 +36,25 @@ void BleManager::start() {
 class MyServerCallbacks: public BLEServerCallbacks {
     void onConnect(BLEServer* pServer) {
       log_i("BLE client connected");
+      RgbLedManager& rgb_led = RgbLedManager::getInstance();
+      if (rgb_led.isInitialized()) {
+          rgb_led.setState(RgbLedManager::LedState::BLE_CONNECTED);
+      }
     };
     void onDisconnect(BLEServer* pServer) {
       log_i("BLE client disconnected");
+      RgbLedManager& rgb_led = RgbLedManager::getInstance();
+      if (rgb_led.isInitialized()) {
+          rgb_led.setState(RgbLedManager::LedState::BLE_ADVERTISING);
+      }
     }
 };
 
 // The FreeRTOS task for handling BLE
 void BleManager::ble_task(void *pvParameters) {
     log_i("BLE task running");
+
+    RgbLedManager& rgb_led = RgbLedManager::getInstance();
 
     // Create the BLE Device
     BLEDevice::init("ESP32-S3"); // Device name
@@ -74,6 +85,11 @@ void BleManager::ble_task(void *pvParameters) {
     pAdvertising->setMinPreferred(0x12);
     BLEDevice::startAdvertising();
     log_i("BLE advertising started");
+
+    // Imposta LED su "advertising"
+    if (rgb_led.isInitialized()) {
+        rgb_led.setState(RgbLedManager::LedState::BLE_ADVERTISING);
+    }
 
     for (;;) {
         // Keep the task alive

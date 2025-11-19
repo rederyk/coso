@@ -10,6 +10,7 @@ struct SettingsSnapshot {
     std::string wifiSsid;
     std::string wifiPassword;
     uint8_t brightness = 80;
+    uint8_t ledBrightness = 50;
     std::string theme;
     std::string version;
     uint32_t primaryColor = 0x0b2035;
@@ -29,6 +30,7 @@ public:
         WifiSsid,
         WifiPassword,
         Brightness,
+        LedBrightness,
         Theme,
         Version,
         ThemePrimaryColor,
@@ -59,6 +61,9 @@ public:
 
     uint8_t getBrightness() const { return current_.brightness; }
     void setBrightness(uint8_t value);
+
+    uint8_t getLedBrightness() const { return current_.ledBrightness; }
+    void setLedBrightness(uint8_t value);
 
     const std::string& getTheme() const { return current_.theme; }
     void setTheme(const std::string& theme);
@@ -119,6 +124,7 @@ private:
     uint32_t next_callback_id_ = 1;
 
     static constexpr uint8_t DEFAULT_BRIGHTNESS = 80;
+    static constexpr uint8_t DEFAULT_LED_BRIGHTNESS = 50;
     static constexpr const char* DEFAULT_THEME = "dark";
     static constexpr const char* DEFAULT_VERSION = "0.5.0";
     static constexpr uint32_t DEFAULT_PRIMARY_COLOR = 0x0b2035;

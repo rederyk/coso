@@ -1,6 +1,7 @@
 #include "wifi_manager.h"
 #include "settings_manager.h"
 #include "utils/logger.h"
+#include "drivers/rgb_led_driver.h"
 
 // Constructor
 WifiManager::WifiManager() {
@@ -36,11 +37,18 @@ void WifiManager::start() {
 void WifiManager::wifi_task(void *pvParameters) {
     log_i("WiFi task running");
 
+    RgbLedManager& rgb_led = RgbLedManager::getInstance();
+
     // Connect to WiFi from settings
     const std::string& ssid = SettingsManager::getInstance().getWifiSsid();
     const std::string& password = SettingsManager::getInstance().getWifiPassword();
 
     if (!ssid.empty()) {
+        // Imposta LED su "connecting"
+        if (rgb_led.isInitialized()) {
+            rgb_led.setState(RgbLedManager::LedState::WIFI_CONNECTING);
+        }
+
         WiFi.begin(ssid.c_str(), password.c_str());
         log_i("Connecting to WiFi: %s", ssid.c_str());
 
@@ -53,16 +61,37 @@ void WifiManager::wifi_task(void *pvParameters) {
 
         if (WiFi.status() == WL_CONNECTED) {
             log_i("WiFi connected, IP address: %s", WiFi.localIP().toString().c_str());
+            // Imposta LED su "connected"
+            if (rgb_led.isInitialized()) {
+                rgb_led.setState(RgbLedManager::LedState::WIFI_CONNECTED);
+            }
         } else {
             log_e("Failed to connect to WiFi");
+            // Imposta LED su "error"
+            if (rgb_led.isInitialized()) {
+                rgb_led.setState(RgbLedManager::LedState::WIFI_ERROR);
+            }
         }
     } else {
         log_w("WiFi SSID not configured.");
+        // Non spegnere il LED, lascia che il BLE lo controlli
     }
 
-    // Task loop
+    // Task loop - monitora lo stato della connessione
+    wl_status_t last_status = WiFi.status();
     for (;;) {
-        // Keep the task alive
+        wl_status_t current_status = WiFi.status();
+
+        // Rileva cambio di stato - solo se connesso, mostra il LED verde
+        if (current_status != last_status && rgb_led.isInitialized()) {
+            if (current_status == WL_CONNECTED) {
+                log_i("WiFi reconnected");
+                rgb_led.setState(RgbLedManager::LedState::WIFI_CONNECTED);
+            }
+            // Non cambiare il LED se disconnesso, lascia il controllo al BLE
+            last_status = current_status;
+        }
+
         vTaskDelay(1000 / portTICK_PERIOD_MS);
     }
 }

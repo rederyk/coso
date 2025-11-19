@@ -121,6 +121,19 @@ void SettingsManager::setBrightness(uint8_t value) {
     notify(SettingKey::Brightness);
 }
 
+void SettingsManager::setLedBrightness(uint8_t value) {
+    if (!initialized_) {
+        return;
+    }
+    uint8_t clamped = std::min<uint8_t>(100, std::max<uint8_t>(0, value));
+    if (clamped == current_.ledBrightness) {
+        return;
+    }
+    current_.ledBrightness = clamped;
+    persistSnapshot();
+    notify(SettingKey::LedBrightness);
+}
+
 void SettingsManager::setTheme(const std::string& theme) {
     if (!initialized_) {
         return;
@@ -289,6 +302,7 @@ void SettingsManager::loadDefaults() {
     current_.wifiSsid.clear();
     current_.wifiPassword.clear();
     current_.brightness = DEFAULT_BRIGHTNESS;
+    current_.ledBrightness = DEFAULT_LED_BRIGHTNESS;
     current_.theme = DEFAULT_THEME;
     current_.version = DEFAULT_VERSION;
     current_.primaryColor = DEFAULT_PRIMARY_COLOR;
