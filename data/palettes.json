@@ -7,7 +7,8 @@
       "card": 1054764,
       "dock": 1712946,
       "dockIconBackground": 1712946,
-      "dockIconSymbol": 16777215
+      "dockIconSymbol": 16777215,
+      "dockIconRadius": 24
     },
     {
       "name": "Sunset",
@@ -16,7 +17,8 @@
       "card": 4008517,
       "dock": 4862802,
       "dockIconBackground": 4862802,
-      "dockIconSymbol": 16777215
+      "dockIconSymbol": 16777215,
+      "dockIconRadius": 24
     },
     {
       "name": "Forest",
@@ -25,7 +27,8 @@
       "card": 1719592,
       "dock": 2444597,
       "dockIconBackground": 2444597,
-      "dockIconSymbol": 16777215
+      "dockIconSymbol": 16777215,
+      "dockIconRadius": 24
     },
     {
       "name": "Mono",
@@ -34,7 +37,8 @@
       "card": 2763306,
       "dock": 3815994,
       "dockIconBackground": 3815994,
-      "dockIconSymbol": 16777215
+      "dockIconSymbol": 16777215,
+      "dockIconRadius": 16
     },
     {
       "name": "Ocean",
@@ -43,7 +47,8 @@
       "card": 4016604,
       "dock": 5472855,
       "dockIconBackground": 5472855,
-      "dockIconSymbol": 16777215
+      "dockIconSymbol": 16777215,
+      "dockIconRadius": 24
     },
     {
       "name": "Lavender",
@@ -52,7 +57,8 @@
       "card": 12891129,
       "dock": 13993175,
       "dockIconBackground": 13993175,
-      "dockIconSymbol": 1710618
+      "dockIconSymbol": 1710618,
+      "dockIconRadius": 24
     }
   ]
 }

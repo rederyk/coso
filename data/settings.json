@@ -16,6 +16,7 @@
     "card": 1054764,
     "dock": 1712946,
     "dockIconBackground": 1450302,
-    "dockIconSymbol": 16777215
+    "dockIconSymbol": 16777215,
+    "dockIconRadius": 24
   }
 }

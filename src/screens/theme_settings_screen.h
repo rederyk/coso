@@ -22,6 +22,7 @@ private:
     static void handleCardColor(lv_event_t* e);
     static void handleDockColor(lv_event_t* e);
     static void handleBorderRadius(lv_event_t* e);
+    static void handleDockIconRadius(lv_event_t* e);
     static void handleOrientation(lv_event_t* e);
     static void handlePaletteButton(lv_event_t* e);
 
@@ -30,11 +31,13 @@ private:
     lv_obj_t* card_wheel = nullptr;
     lv_obj_t* dock_wheel = nullptr;
     lv_obj_t* border_slider = nullptr;
+    lv_obj_t* dock_icon_radius_slider = nullptr;
     lv_obj_t* orientation_switch = nullptr;
     lv_obj_t* title_label = nullptr;
     lv_obj_t* orientation_card_container = nullptr;
     lv_obj_t* orientation_hint_label = nullptr;
     lv_obj_t* border_card_container = nullptr;
+    lv_obj_t* dock_icon_card_container = nullptr;
     lv_obj_t* color_palette_card_container = nullptr;
     lv_obj_t* color_grid_container = nullptr;
     lv_obj_t* palette_section_container = nullptr;

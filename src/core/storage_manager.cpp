@@ -28,6 +28,7 @@ void fillJsonFromSnapshot(const SettingsSnapshot& snapshot, JsonDocument& doc) {
     palette["dock"] = snapshot.dockColor;
     palette["dockIconBackground"] = snapshot.dockIconBackgroundColor;
     palette["dockIconSymbol"] = snapshot.dockIconSymbolColor;
+    palette["dockIconRadius"] = snapshot.dockIconRadius;
 }
 
 void fillSnapshotFromJson(SettingsSnapshot& snapshot, const JsonDocument& doc) {
@@ -46,6 +47,7 @@ void fillSnapshotFromJson(SettingsSnapshot& snapshot, const JsonDocument& doc) {
         doc["palette"]["dockIconBackground"] | snapshot.dockIconBackgroundColor;
     snapshot.dockIconSymbolColor =
         doc["palette"]["dockIconSymbol"] | snapshot.dockIconSymbolColor;
+    snapshot.dockIconRadius = doc["palette"]["dockIconRadius"] | snapshot.dockIconRadius;
 }
 
 void fillPalettesArray(const std::vector<ThemePalette>& palettes, JsonDocument& doc) {
@@ -59,6 +61,7 @@ void fillPalettesArray(const std::vector<ThemePalette>& palettes, JsonDocument& 
         obj["dock"] = palette.dock;
         obj["dockIconBackground"] = palette.dockIconBackground;
         obj["dockIconSymbol"] = palette.dockIconSymbol;
+        obj["dockIconRadius"] = palette.dockIconRadius;
     }
 }
 
@@ -76,6 +79,7 @@ void fillPalettesFromJson(std::vector<ThemePalette>& palettes, const JsonDocumen
         palette.dock = entry["dock"] | 0u;
         palette.dockIconBackground = entry["dockIconBackground"] | palette.dock;
         palette.dockIconSymbol = entry["dockIconSymbol"] | 0xffffffu;
+        palette.dockIconRadius = entry["dockIconRadius"] | palette.dockIconRadius;
         if (!palette.name.empty()) {
             palettes.push_back(std::move(palette));
         }

@@ -3,6 +3,7 @@
 #include "core/display_manager.h"
 #include "core/settings_manager.h"
 #include <Arduino.h>
+#include <algorithm>
 #include <utility>
 #include "utils/logger.h"
 
@@ -10,7 +11,6 @@ namespace {
 constexpr lv_coord_t DOCK_MARGIN = 5;
 constexpr lv_coord_t DOCK_THICKNESS = 88;
 constexpr lv_coord_t HANDLE_OFFSET = 2;  // Reduced offset - closer to bottom
-constexpr lv_coord_t ICON_SIZE = 48;
 constexpr lv_coord_t SWIPE_EDGE_HEIGHT = 24; // Android-style edge swipe area
 constexpr lv_coord_t HANDLE_TOUCH_WIDTH = 120;  // Wider touch area
 constexpr lv_coord_t HANDLE_TOUCH_HEIGHT = 24; // Reduced height - less extension upward
@@ -89,6 +89,7 @@ void DockView::ensureCreated(lv_obj_t* launcher_layer) {
     const SettingsSnapshot& snapshot = settings.getSnapshot();
     icon_background_color_hex_ = snapshot.dockIconBackgroundColor;
     icon_symbol_color_hex_ = snapshot.dockIconSymbolColor;
+    icon_corner_radius_ = clampIconRadius(snapshot.dockIconRadius);
 
     dock_container_ = lv_obj_create(launcher_layer_);
     lv_obj_remove_style_all(dock_container_);
@@ -202,7 +203,7 @@ void DockView::addIcon(const char* app_id, const char* emoji, const char* name) 
     lv_obj_set_style_text_font(icon, &lv_font_montserrat_24, 0);
     lv_obj_center(icon);
 
-    applyIconColors(app_btn, icon);
+    applyIconAppearance(app_btn, icon);
 
     lv_obj_add_event_cb(app_btn, iconEvent, LV_EVENT_CLICKED, this);
 
@@ -307,27 +308,29 @@ void DockView::updateHandlePosition() {
 void DockView::updateColors(uint32_t dock_color,
                             uint32_t icon_bg_color,
                             uint32_t icon_symbol_color,
-                            uint8_t border_radius) {
+                            uint8_t border_radius,
+                            uint8_t icon_radius) {
     if (!dock_container_) {
         return;
     }
     icon_background_color_hex_ = icon_bg_color;
     icon_symbol_color_hex_ = icon_symbol_color;
+    icon_corner_radius_ = clampIconRadius(icon_radius);
     lv_obj_set_style_bg_color(dock_container_, lv_color_hex(dock_color), 0);
     lv_obj_set_style_radius(dock_container_, border_radius, 0);
-    refreshIconColors();
+    refreshIconAppearance();
 }
 
-void DockView::refreshIconColors() {
+void DockView::refreshIconAppearance() {
     if (icons_.empty()) {
         return;
     }
     for (const auto& entry : icons_) {
-        applyIconColors(entry.button, entry.label);
+        applyIconAppearance(entry.button, entry.label);
     }
 }
 
-void DockView::applyIconColors(lv_obj_t* button, lv_obj_t* label) const {
+void DockView::applyIconAppearance(lv_obj_t* button, lv_obj_t* label) const {
     if (!button) {
         return;
     }
@@ -340,12 +343,19 @@ void DockView::applyIconColors(lv_obj_t* button, lv_obj_t* label) const {
     lv_obj_set_style_bg_opa(button, LV_OPA_COVER, 0);
     lv_obj_set_style_border_width(button, 1, 0);
     lv_obj_set_style_border_color(button, border, 0);
+    lv_obj_set_style_radius(button, icon_corner_radius_, 0);
     lv_obj_set_style_bg_color(button, pressed, LV_STATE_PRESSED);
     lv_obj_set_style_bg_opa(button, LV_OPA_COVER, LV_STATE_PRESSED);
 
     if (label) {
         lv_obj_set_style_text_color(label, symbol, 0);
     }
+}
+
+lv_coord_t DockView::clampIconRadius(uint8_t radius) const {
+    lv_coord_t max_radius = ICON_SIZE / 2;
+    lv_coord_t clamped = std::min<lv_coord_t>(max_radius, radius);
+    return clamped;
 }
 
 void DockView::setIconTapCallback(std::function<void(const char* app_id)> callback) {
@@ -603,6 +613,7 @@ void DockController::toggle() {
 void DockController::updateColors(uint32_t dock_color,
                                   uint32_t icon_bg_color,
                                   uint32_t icon_symbol_color,
-                                  uint8_t border_radius) {
-    view_.updateColors(dock_color, icon_bg_color, icon_symbol_color, border_radius);
+                                  uint8_t border_radius,
+                                  uint8_t icon_radius) {
+    view_.updateColors(dock_color, icon_bg_color, icon_symbol_color, border_radius, icon_radius);
 }

@@ -23,6 +23,8 @@ uint32_t toHex(lv_color_t color) {
     return (r << 16) | (g << 8) | b;
 }
 
+constexpr uint8_t DOCK_ICON_RADIUS_MAX = 24;
+
 lv_obj_t* create_card(lv_obj_t* parent, const char* title) {
     lv_obj_t* card = lv_obj_create(parent);
     lv_obj_remove_style_all(card);
@@ -69,11 +71,14 @@ void ThemeSettingsScreen::build(lv_obj_t* parent) {
     orientation_card_container = nullptr;
     orientation_hint_label = nullptr;
     border_card_container = nullptr;
+    dock_icon_card_container = nullptr;
     color_palette_card_container = nullptr;
     color_grid_container = nullptr;
     palette_section_container = nullptr;
     palette_header_label = nullptr;
     quick_palette_container = nullptr;
+    border_slider = nullptr;
+    dock_icon_radius_slider = nullptr;
 
     root = lv_obj_create(parent);
     lv_obj_remove_style_all(root);
@@ -126,6 +131,16 @@ void ThemeSettingsScreen::build(lv_obj_t* parent) {
     lv_obj_set_height(border_slider, 16);
     lv_obj_add_event_cb(border_slider, handleBorderRadius, LV_EVENT_VALUE_CHANGED, this);
 
+    // Dock icon radius
+    dock_icon_card_container = create_card(content, "Raggio Icone Dock");
+    lv_obj_set_height(dock_icon_card_container, LV_SIZE_CONTENT);
+    lv_obj_set_style_pad_all(dock_icon_card_container, 8, 0);
+    lv_obj_set_style_pad_row(dock_icon_card_container, 4, 0);
+    dock_icon_radius_slider = lv_slider_create(dock_icon_card_container);
+    lv_slider_set_range(dock_icon_radius_slider, 0, DOCK_ICON_RADIUS_MAX);
+    lv_obj_set_width(dock_icon_radius_slider, lv_pct(100));
+    lv_obj_set_height(dock_icon_radius_slider, 16);
+    lv_obj_add_event_cb(dock_icon_radius_slider, handleDockIconRadius, LV_EVENT_VALUE_CHANGED, this);
 
     // Combined color customization container (wheels + quick palettes) - IN FONDO
     color_palette_card_container = create_card(content, "Colori Rapidi & Custom");
@@ -275,6 +290,10 @@ void ThemeSettingsScreen::build(lv_obj_t* parent) {
                 updating_from_manager = true;
                 lv_slider_set_value(border_slider, snap.borderRadius, LV_ANIM_OFF);
                 updating_from_manager = false;
+            } else if (key == SettingsManager::SettingKey::ThemeDockIconRadius && dock_icon_radius_slider) {
+                updating_from_manager = true;
+                lv_slider_set_value(dock_icon_radius_slider, snap.dockIconRadius, LV_ANIM_OFF);
+                updating_from_manager = false;
             } else if (key == SettingsManager::SettingKey::LayoutOrientation && orientation_switch) {
                 updating_from_manager = true;
                 if (snap.landscapeLayout) {
@@ -348,6 +367,9 @@ void ThemeSettingsScreen::applySnapshot(const SettingsSnapshot& snapshot) {
     if (border_slider) {
         lv_slider_set_value(border_slider, snapshot.borderRadius, LV_ANIM_OFF);
     }
+    if (dock_icon_radius_slider) {
+        lv_slider_set_value(dock_icon_radius_slider, snapshot.dockIconRadius, LV_ANIM_OFF);
+    }
 
     if (orientation_switch) {
         if (snapshot.landscapeLayout) {
@@ -386,6 +408,7 @@ void ThemeSettingsScreen::applyLiveTheme(const SettingsSnapshot& snapshot) {
 
     style_card(orientation_card_container);
     style_card(border_card_container);
+    style_card(dock_icon_card_container);
     style_card(color_palette_card_container);
 
     if (orientation_hint_label) {
@@ -405,13 +428,16 @@ void ThemeSettingsScreen::applyLiveTheme(const SettingsSnapshot& snapshot) {
         lv_obj_set_style_radius(palette_section_container, snapshot.borderRadius, 0);
     }
 
-    if (border_slider) {
-        lv_obj_set_style_bg_color(border_slider, lv_color_mix(dock, primary, LV_OPA_60), LV_PART_MAIN);
-        lv_obj_set_style_bg_opa(border_slider, LV_OPA_40, LV_PART_MAIN);
-        lv_obj_set_style_bg_color(border_slider, accent, LV_PART_INDICATOR);
-        lv_obj_set_style_bg_color(border_slider, accent, LV_PART_KNOB);
-        lv_obj_set_style_border_width(border_slider, 0, LV_PART_KNOB);
-    }
+    auto style_slider = [&](lv_obj_t* slider) {
+        if (!slider) return;
+        lv_obj_set_style_bg_color(slider, lv_color_mix(dock, primary, LV_OPA_60), LV_PART_MAIN);
+        lv_obj_set_style_bg_opa(slider, LV_OPA_40, LV_PART_MAIN);
+        lv_obj_set_style_bg_color(slider, accent, LV_PART_INDICATOR);
+        lv_obj_set_style_bg_color(slider, accent, LV_PART_KNOB);
+        lv_obj_set_style_border_width(slider, 0, LV_PART_KNOB);
+    };
+    style_slider(border_slider);
+    style_slider(dock_icon_radius_slider);
 
     if (orientation_switch) {
         lv_obj_set_style_bg_color(orientation_switch, lv_color_mix(dock, primary, LV_OPA_50), LV_PART_MAIN);
@@ -542,6 +568,13 @@ void ThemeSettingsScreen::handleBorderRadius(lv_event_t* e) {
     SettingsManager::getInstance().setBorderRadius(static_cast<uint8_t>(value));
 }
 
+void ThemeSettingsScreen::handleDockIconRadius(lv_event_t* e) {
+    auto* screen = static_cast<ThemeSettingsScreen*>(lv_event_get_user_data(e));
+    if (!screen || screen->updating_from_manager) return;
+    int32_t value = lv_slider_get_value(screen->dock_icon_radius_slider);
+    SettingsManager::getInstance().setDockIconRadius(static_cast<uint8_t>(value));
+}
+
 void ThemeSettingsScreen::handleOrientation(lv_event_t* e) {
     auto* screen = static_cast<ThemeSettingsScreen*>(lv_event_get_user_data(e));
     if (!screen || screen->updating_from_manager) return;
@@ -566,6 +599,7 @@ void ThemeSettingsScreen::handlePaletteButton(lv_event_t* e) {
     manager.setDockColor(preset->dock);
     manager.setDockIconBackgroundColor(preset->dockIconBackground);
     manager.setDockIconSymbolColor(preset->dockIconSymbol);
+    manager.setDockIconRadius(preset->dockIconRadius);
 
     // The settings listener will trigger applySnapshot() which updates the color pickers
 }

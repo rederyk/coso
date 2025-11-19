@@ -16,13 +16,14 @@ struct PaletteSeed {
     uint32_t dock;
     uint32_t dockIconBackground;
     uint32_t dockIconSymbol;
+    uint8_t dockIconRadius;
 };
 
 constexpr PaletteSeed DEFAULT_PALETTE_SEEDS[] = {
-    {"Aurora", 0x0b2035, 0x5df4ff, 0x10182c, 0x1a2332, 0x1a2332, 0xffffff},
-    {"Sunset", 0x2b1f3a, 0xff7f50, 0x3d2a45, 0x4a3352, 0x4a3352, 0xffffff},
-    {"Forest", 0x0f2d1c, 0x7ed957, 0x1a3d28, 0x254d35, 0x254d35, 0xffffff},
-    {"Mono", 0x1a1a1a, 0xffffff, 0x2a2a2a, 0x3a3a3a, 0x3a3a3a, 0xffffff}
+    {"Aurora", 0x0b2035, 0x5df4ff, 0x10182c, 0x1a2332, 0x1a2332, 0xffffff, 24},
+    {"Sunset", 0x2b1f3a, 0xff7f50, 0x3d2a45, 0x4a3352, 0x4a3352, 0xffffff, 24},
+    {"Forest", 0x0f2d1c, 0x7ed957, 0x1a3d28, 0x254d35, 0x254d35, 0xffffff, 24},
+    {"Mono", 0x1a1a1a, 0xffffff, 0x2a2a2a, 0x3a3a3a, 0x3a3a3a, 0xffffff, 16}
 };
 
 std::string sanitizeString(const std::string& value, size_t max_len) {
@@ -76,6 +77,7 @@ void SettingsManager::reset() {
     notify(SettingKey::ThemeDockColor);
     notify(SettingKey::ThemeDockIconBackgroundColor);
     notify(SettingKey::ThemeDockIconSymbolColor);
+    notify(SettingKey::ThemeDockIconRadius);
     notify(SettingKey::ThemeBorderRadius);
     notify(SettingKey::LayoutOrientation);
 }
@@ -215,6 +217,18 @@ void SettingsManager::setDockIconSymbolColor(uint32_t color) {
     notify(SettingKey::ThemeDockIconSymbolColor);
 }
 
+void SettingsManager::setDockIconRadius(uint8_t radius) {
+    if (!initialized_) {
+        return;
+    }
+    uint8_t clamped = std::min<uint8_t>(MAX_DOCK_ICON_RADIUS, radius);
+    if (clamped == current_.dockIconRadius) {
+        return;
+    }
+    current_.dockIconRadius = clamped;
+    persistSnapshot();
+    notify(SettingKey::ThemeDockIconRadius);
+}
 void SettingsManager::setBorderRadius(uint8_t radius) {
     if (!initialized_) {
         return;
@@ -261,6 +275,7 @@ void SettingsManager::loadFromStorage() {
     }
     current_.brightness = std::min<uint8_t>(100, std::max<uint8_t>(1, current_.brightness));
     current_.borderRadius = std::min<uint8_t>(30, std::max<uint8_t>(0, current_.borderRadius));
+    current_.dockIconRadius = std::min<uint8_t>(MAX_DOCK_ICON_RADIUS, current_.dockIconRadius);
 
     // Fix corrupted black primary color (from previous conversion bugs)
     if (current_.primaryColor == 0x000000) {
@@ -282,6 +297,7 @@ void SettingsManager::loadDefaults() {
     current_.dockColor = DEFAULT_DOCK_COLOR;
     current_.dockIconBackgroundColor = DEFAULT_DOCK_ICON_BG_COLOR;
     current_.dockIconSymbolColor = DEFAULT_DOCK_ICON_SYMBOL_COLOR;
+    current_.dockIconRadius = DEFAULT_DOCK_ICON_RADIUS;
     current_.borderRadius = DEFAULT_BORDER_RADIUS;
     current_.landscapeLayout = DEFAULT_LANDSCAPE;
 }
@@ -313,6 +329,7 @@ std::vector<ThemePalette> SettingsManager::createDefaultPalettes() const {
         palette.dock = seed.dock;
         palette.dockIconBackground = seed.dockIconBackground;
         palette.dockIconSymbol = seed.dockIconSymbol;
+        palette.dockIconRadius = seed.dockIconRadius;
         defaults.push_back(std::move(palette));
     }
     return defaults;
@@ -333,7 +350,8 @@ bool SettingsManager::addThemePalette(const ThemePalette& palette) {
             existing->card == palette.card &&
             existing->dock == palette.dock &&
             existing->dockIconBackground == palette.dockIconBackground &&
-            existing->dockIconSymbol == palette.dockIconSymbol) {
+            existing->dockIconSymbol == palette.dockIconSymbol &&
+            existing->dockIconRadius == palette.dockIconRadius) {
             return false;
         }
         *existing = palette;
