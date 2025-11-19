@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Preferences.h>
 #include <functional>
 #include <string>
 #include <vector>
@@ -85,7 +84,8 @@ private:
     SettingsManager() = default;
 
     void loadFromStorage();
-    void persistString(const char* key, const std::string& value);
+    void loadDefaults();
+    void persistSnapshot();
     void notify(SettingKey key);
 
     struct CallbackEntry {
@@ -93,24 +93,11 @@ private:
         Callback fn;
     };
 
-    Preferences prefs_;
     bool initialized_ = false;
     SettingsSnapshot current_;
     std::vector<CallbackEntry> callbacks_;
     uint32_t next_callback_id_ = 1;
 
-    static constexpr const char* NAMESPACE = "os_settings";
-    static constexpr const char* KEY_WIFI_SSID = "wifi_ssid";
-    static constexpr const char* KEY_WIFI_PASS = "wifi_pass";
-    static constexpr const char* KEY_BRIGHTNESS = "brightness";
-    static constexpr const char* KEY_THEME = "theme";
-    static constexpr const char* KEY_VERSION = "version";
-    static constexpr const char* KEY_PRIMARY_COLOR = "theme_primary";
-    static constexpr const char* KEY_ACCENT_COLOR = "theme_accent";
-    static constexpr const char* KEY_CARD_COLOR = "theme_card";
-    static constexpr const char* KEY_DOCK_COLOR = "theme_dock";
-    static constexpr const char* KEY_BORDER_RADIUS = "theme_radius";
-    static constexpr const char* KEY_LAYOUT_ORIENT = "layout_orient";
     static constexpr uint8_t DEFAULT_BRIGHTNESS = 80;
     static constexpr const char* DEFAULT_THEME = "dark";
     static constexpr const char* DEFAULT_VERSION = "0.5.0";

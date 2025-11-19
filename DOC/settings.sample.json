@@ -1,0 +1,19 @@
+{
+  "wifi": {
+    "ssid": "MyWiFi",
+    "password": "SuperSecretPassword"
+  },
+  "ui": {
+    "theme": "dark",
+    "version": "0.5.0",
+    "brightness": 80,
+    "borderRadius": 12,
+    "landscape": true
+  },
+  "palette": {
+    "primary": 723765,
+    "accent": 6138367,
+    "card": 1058860,
+    "dock": 1703986
+  }
+}

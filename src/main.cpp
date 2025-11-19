@@ -17,6 +17,7 @@
 #include "screens/settings_screen.h"
 #include "screens/info_screen.h"
 #include "screens/theme_settings_screen.h"
+#include "utils/logger.h"
 #include "utils/lvgl_mutex.h"
 
 static TFT_eSPI tft;
@@ -38,15 +39,16 @@ static void logSystemBanner() {
     esp_chip_info_t chip_info;
     esp_chip_info(&chip_info);
 
-    Serial.println("\n=== Freenove ESP32-S3 OS Dashboard ===");
-    Serial.printf("[Build] %s %s | IDF %s\n", __DATE__, __TIME__, esp_get_idf_version());
-    Serial.printf("[Chip] ESP32-S3 rev %d | %d core(s) @ %d MHz\n",
-                  chip_info.revision,
-                  chip_info.cores,
-                  getCpuFrequencyMhz());
-    Serial.printf("[Flash] %u MB QIO | [PSRAM] %u MB\n",
-                  static_cast<unsigned>(ESP.getFlashChipSize() / (1024 * 1024)),
-                  static_cast<unsigned>(ESP.getPsramSize() / (1024 * 1024)));
+    auto& logger = Logger::getInstance();
+    logger.info("\n=== Freenove ESP32-S3 OS Dashboard ===");
+    logger.infof("[Build] %s %s | IDF %s", __DATE__, __TIME__, esp_get_idf_version());
+    logger.infof("[Chip] ESP32-S3 rev %d | %d core(s) @ %d MHz",
+                 chip_info.revision,
+                 chip_info.cores,
+                 getCpuFrequencyMhz());
+    logger.infof("[Flash] %u MB QIO | [PSRAM] %u MB",
+                 static_cast<unsigned>(ESP.getFlashChipSize() / (1024 * 1024)),
+                 static_cast<unsigned>(ESP.getPsramSize() / (1024 * 1024)));
 }
 
 static void logMemoryStats(const char* stage) {
@@ -57,28 +59,29 @@ static void logMemoryStats(const char* stage) {
     const size_t psram_free = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
     const size_t psram_largest = heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM);
 
-    Serial.printf("\n[Memory] Stage: %s\n", stage);
-    Serial.printf("  DRAM  free %7u / %7u bytes | largest block %7u\n",
-                  static_cast<unsigned>(dram_free),
-                  static_cast<unsigned>(dram_total),
-                  static_cast<unsigned>(dram_largest));
+    auto& logger = Logger::getInstance();
+    logger.infof("\n[Memory] Stage: %s", stage);
+    logger.infof("  DRAM  free %7u / %7u bytes | largest block %7u",
+                 static_cast<unsigned>(dram_free),
+                 static_cast<unsigned>(dram_total),
+                 static_cast<unsigned>(dram_largest));
     if (psram_total > 0) {
-        Serial.printf("  PSRAM free %7u / %7u bytes | largest block %7u\n",
-                      static_cast<unsigned>(psram_free),
-                      static_cast<unsigned>(psram_total),
-                      static_cast<unsigned>(psram_largest));
+        logger.infof("  PSRAM free %7u / %7u bytes | largest block %7u",
+                     static_cast<unsigned>(psram_free),
+                     static_cast<unsigned>(psram_total),
+                     static_cast<unsigned>(psram_largest));
     } else {
-        Serial.println("  PSRAM not detected");
+        logger.warn("  PSRAM not detected");
     }
 }
 
 static void logLvglBufferInfo() {
     const size_t bytes = DRAW_BUF_PIXELS * sizeof(lv_color_t);
-    Serial.printf("[LVGL] Draw buffer: %ld px (%u bytes) @ %p [%s]\n",
-                  static_cast<long>(DRAW_BUF_PIXELS),
-                  static_cast<unsigned>(bytes),
-                  draw_buf_ptr,
-                  draw_buf_in_psram ? "PSRAM" : "internal RAM");
+    Logger::getInstance().infof("[LVGL] Draw buffer: %ld px (%u bytes) @ %p [%s]",
+                                static_cast<long>(DRAW_BUF_PIXELS),
+                                static_cast<unsigned>(bytes),
+                                draw_buf_ptr,
+                                draw_buf_in_psram ? "PSRAM" : "internal RAM");
 }
 
 static void* allocatePsramBuffer(size_t size, const char* label) {
@@ -87,9 +90,14 @@ static void* allocatePsramBuffer(size_t size, const char* label) {
     }
     void* ptr = heap_caps_malloc(size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (ptr) {
-        Serial.printf("[PSRAM] %s allocated %u bytes @ %p\n", label, static_cast<unsigned>(size), ptr);
+        Logger::getInstance().infof("[PSRAM] %s allocated %u bytes @ %p",
+                                    label,
+                                    static_cast<unsigned>(size),
+                                    ptr);
     } else {
-        Serial.printf("[PSRAM] %s allocation FAILED (%u bytes)\n", label, static_cast<unsigned>(size));
+        Logger::getInstance().warnf("[PSRAM] %s allocation FAILED (%u bytes)",
+                                    label,
+                                    static_cast<unsigned>(size));
     }
     return ptr;
 }
@@ -126,7 +134,8 @@ static void lvgl_task(void*) {
 }
 
 void setup() {
-    Serial.begin(115200);
+    auto& logger = Logger::getInstance();
+    logger.begin(115200);
     delay(200);
     logSystemBanner();
     logMemoryStats("Boot");
@@ -137,13 +146,13 @@ void setup() {
         settings_mgr.setVersion(APP_VERSION);
         initial_landscape = settings_mgr.isLandscapeLayout();
     } else {
-        Serial.println("[Settings] Initialization failed - persistent settings disabled");
+        logger.warn("[Settings] Initialization failed - persistent settings disabled");
     }
 
     if (psramFound()) {
-        Serial.println("✓ PSRAM detected and enabled!");
+        logger.info("✓ PSRAM detected and enabled!");
     } else {
-        Serial.println("⚠ PSRAM not available - using internal RAM only");
+        logger.warn("⚠ PSRAM not available - using internal RAM only");
     }
 
     touch_driver_init();
@@ -163,7 +172,8 @@ void setup() {
     } else {
         draw_buf_ptr = draw_buf_fallback;
         draw_buf_in_psram = false;
-        Serial.printf("[PSRAM] Using internal fallback buffer (%u bytes)\n", static_cast<unsigned>(draw_buf_bytes));
+        logger.warnf("[PSRAM] Using internal fallback buffer (%u bytes)",
+                     static_cast<unsigned>(draw_buf_bytes));
     }
 
     // Single buffering con buffer in PSRAM (fallback statico se necessario)
@@ -181,13 +191,13 @@ void setup() {
     indev_drv.read_cb = touch_driver_read;
     lv_indev_drv_register(&indev_drv);
 
-    Serial.println("\n[INFO] Board: Freenove FNK0104 (2.8\" ILI9341 + FT6336)");
-    Serial.printf("[INFO] Touch controller: %s\n", has_touch ? "FT6336 detected" : "NOT detected - check wiring/pins");
+    logger.info("\n[INFO] Board: Freenove FNK0104 (2.8\" ILI9341 + FT6336)");
+    logger.infof("[INFO] Touch controller: %s", has_touch ? "FT6336 detected" : "NOT detected - check wiring/pins");
     if (has_touch) {
-        Serial.println("[INFO] Capacitive touch enabled (LVGL pointer input).");
+        logger.info("[INFO] Capacitive touch enabled (LVGL pointer input).");
     } else {
-        Serial.println("[WARN] Touch input registered but controller did not respond.");
-        Serial.println("       Use Serial logs or src/utils/i2c_scanner.cpp to verify SDA/SCL pins.");
+        logger.warn("[WARN] Touch input registered but controller did not respond.");
+        logger.warn("       Use Serial logs or src/utils/i2c_scanner.cpp to verify SDA/SCL pins.");
     }
 
     // Inizializza mutex PRIMA di usarlo
@@ -201,7 +211,7 @@ void setup() {
     if (esp_timer_create(&tick_args, &tick_handle) == ESP_OK) {
         esp_timer_start_periodic(tick_handle, 1000);
     } else {
-        Serial.println("[LVGL] Failed to create tick timer");
+        logger.error("[LVGL] Failed to create tick timer");
     }
 
     // Crea il display principale di LVGL
@@ -233,8 +243,8 @@ void setup() {
         if (key != SettingsManager::SettingKey::LayoutOrientation) {
             return;
         }
-        Serial.printf("[Display] Orientation toggle requested: %s\n",
-                      snapshot.landscapeLayout ? "Landscape" : "Portrait");
+        Logger::getInstance().infof("[Display] Orientation toggle requested: %s",
+                                    snapshot.landscapeLayout ? "Landscape" : "Portrait");
         DisplayManager& display = DisplayManager::getInstance();
         display.applyOrientation(snapshot.landscapeLayout);
         app_manager->getDock()->onOrientationChanged(snapshot.landscapeLayout);

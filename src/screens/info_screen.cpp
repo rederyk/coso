@@ -1,6 +1,7 @@
 #include "screens/info_screen.h"
 #include <Arduino.h>
 #include <esp_chip_info.h>
+#include "utils/logger.h"
 
 void InfoScreen::build(lv_obj_t* parent) {
     if (!parent) return;
@@ -84,9 +85,9 @@ void InfoScreen::build(lv_obj_t* parent) {
 }
 
 void InfoScreen::onShow() {
-    Serial.println("ℹ️ Info screen shown");
+    Logger::getInstance().info("ℹ️ Info screen shown");
 }
 
 void InfoScreen::onHide() {
-    Serial.println("ℹ️ Info screen hidden");
+    Logger::getInstance().info("ℹ️ Info screen hidden");
 }

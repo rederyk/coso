@@ -1,10 +1,11 @@
 #include "core/event_router.h"
+#include "utils/logger.h"
 
 EventRouter* EventRouter::instance = nullptr;
 
 EventRouter::EventRouter() {
     mutex = xSemaphoreCreateMutex();
-    Serial.println("[EventRouter] Initialized");
+    Logger::getInstance().info("[EventRouter] Initialized");
 }
 
 EventRouter::~EventRouter() {

@@ -1,6 +1,7 @@
 #include "screens/theme_settings_screen.h"
 #include "widgets/circular_color_picker.h"
 #include <Arduino.h>
+#include "utils/logger.h"
 
 namespace {
 struct PalettePreset {
@@ -318,19 +319,22 @@ void ThemeSettingsScreen::build(lv_obj_t* parent) {
 }
 
 void ThemeSettingsScreen::onShow() {
-    Serial.println("🎨 Theme settings opened");
+    Logger::getInstance().info("🎨 Theme settings opened");
     applySnapshot(SettingsManager::getInstance().getSnapshot());
 }
 
 void ThemeSettingsScreen::onHide() {
-    Serial.println("🎨 Theme settings closed");
+    Logger::getInstance().info("🎨 Theme settings closed");
 }
 
 void ThemeSettingsScreen::applySnapshot(const SettingsSnapshot& snapshot) {
     updating_from_manager = true;
 
-    Serial.printf("🔄 applySnapshot - Primary: 0x%06X, Accent: 0x%06X, Card: 0x%06X, Dock: 0x%06X\n",
-                  snapshot.primaryColor, snapshot.accentColor, snapshot.cardColor, snapshot.dockColor);
+    Logger::getInstance().debugf("🔄 applySnapshot - Primary: 0x%06X, Accent: 0x%06X, Card: 0x%06X, Dock: 0x%06X",
+                                 snapshot.primaryColor,
+                                 snapshot.accentColor,
+                                 snapshot.cardColor,
+                                 snapshot.dockColor);
 
     // Initialize color pickers ONCE with approximate position based on saved color
     // After this, pickers are NEVER updated - they control the color, not vice versa
@@ -341,23 +345,26 @@ void ThemeSettingsScreen::applySnapshot(const SettingsSnapshot& snapshot) {
                                                    LV_COLOR_GET_B(color));
         current_primary_hsv = hsv;
 
-        Serial.printf("🎨 Initializing primary picker to: 0x%06X (H:%d S:%d V:%d)\n",
-                      snapshot.primaryColor, hsv.h, hsv.s, hsv.v);
+        Logger::getInstance().debugf("🎨 Initializing primary picker to: 0x%06X (H:%d S:%d V:%d)",
+                                     snapshot.primaryColor,
+                                     hsv.h,
+                                     hsv.s,
+                                     hsv.v);
         CircularColorPicker::set_hsv(primary_wheel, hsv);
     }
 
     if (accent_wheel) {
-        Serial.printf("🎨 Initializing accent picker to: 0x%06X\n", snapshot.accentColor);
+        Logger::getInstance().debugf("🎨 Initializing accent picker to: 0x%06X", snapshot.accentColor);
         CircularColorPicker::set_rgb(accent_wheel, toLvColor(snapshot.accentColor));
     }
 
     if (card_wheel) {
-        Serial.printf("🎨 Initializing card picker to: 0x%06X\n", snapshot.cardColor);
+        Logger::getInstance().debugf("🎨 Initializing card picker to: 0x%06X", snapshot.cardColor);
         CircularColorPicker::set_rgb(card_wheel, toLvColor(snapshot.cardColor));
     }
 
     if (dock_wheel) {
-        Serial.printf("🎨 Initializing dock picker to: 0x%06X\n", snapshot.dockColor);
+        Logger::getInstance().debugf("🎨 Initializing dock picker to: 0x%06X", snapshot.dockColor);
         CircularColorPicker::set_rgb(dock_wheel, toLvColor(snapshot.dockColor));
     }
 
@@ -477,7 +484,7 @@ void ThemeSettingsScreen::handlePrimaryColor(lv_event_t* e) {
     screen->current_primary_hsv = hsv;
 
     uint32_t hex = toHex(color);
-    Serial.printf("🎨 Primary color: 0x%06X (H:%d S:%d V:%d)\n", hex, hsv.h, hsv.s, hsv.v);
+    Logger::getInstance().debugf("🎨 Primary color: 0x%06X (H:%d S:%d V:%d)", hex, hsv.h, hsv.s, hsv.v);
 
     SettingsManager::getInstance().setPrimaryColor(hex);
 }
@@ -488,8 +495,7 @@ void ThemeSettingsScreen::handleAccentColor(lv_event_t* e) {
 
     lv_color_t color = CircularColorPicker::get_rgb(screen->accent_wheel);
     uint32_t hex = toHex(color);
-
-    Serial.printf("🎨 Accent color: 0x%06X\n", hex);
+    Logger::getInstance().debugf("🎨 Accent color: 0x%06X", hex);
 
     SettingsManager::getInstance().setAccentColor(hex);
 }
@@ -500,8 +506,7 @@ void ThemeSettingsScreen::handleCardColor(lv_event_t* e) {
 
     lv_color_t color = CircularColorPicker::get_rgb(screen->card_wheel);
     uint32_t hex = toHex(color);
-
-    Serial.printf("🎨 Card color: 0x%06X\n", hex);
+    Logger::getInstance().debugf("🎨 Card color: 0x%06X", hex);
 
     SettingsManager::getInstance().setCardColor(hex);
 }
@@ -513,8 +518,7 @@ void ThemeSettingsScreen::handleDockColor(lv_event_t* e) {
     // Read color from picker - this always returns a valid RGB based on cursor position
     lv_color_t color = CircularColorPicker::get_rgb(screen->dock_wheel);
     uint32_t hex = toHex(color);
-
-    Serial.printf("🎨 Dock color: 0x%06X\n", hex);
+    Logger::getInstance().debugf("🎨 Dock color: 0x%06X", hex);
 
     // Save to settings - this triggers listeners to update dock and preview
     SettingsManager::getInstance().setDockColor(hex);

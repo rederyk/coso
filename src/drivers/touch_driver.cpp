@@ -3,6 +3,7 @@
 #include <Wire.h>
 #include <Arduino.h>
 #include <algorithm>
+#include "utils/logger.h"
 
 #define FT6336_ADDR 0x38
 #define FT6336_REG_NUM_TOUCHES 0x02
@@ -96,7 +97,8 @@ static void transformToDisplay(uint16_t raw_x, uint16_t raw_y, lv_point_t& point
 }
 
 void touch_driver_init() {
-    Serial.println("\n[Touch] === Touch Controller Initialization ===");
+    auto& logger = Logger::getInstance();
+    logger.info("\n[Touch] === Touch Controller Initialization ===");
 
     touch_available = false;
 
@@ -121,17 +123,17 @@ void touch_driver_init() {
     Wire.setClock(100000); // 100kHz per maggiore compatibilità
     delay(200);
 
-    Serial.printf("[Touch] I2C pins: SDA=%d, SCL=%d\n", TOUCH_I2C_SDA, TOUCH_I2C_SCL);
-    Serial.println("[Touch] Attempting communication with FT6336 at 0x38...");
+    logger.infof("[Touch] I2C pins: SDA=%d, SCL=%d", TOUCH_I2C_SDA, TOUCH_I2C_SCL);
+    logger.info("[Touch] Attempting communication with FT6336 at 0x38...");
 
     // Test connessione base
     Wire.beginTransmission(FT6336_ADDR);
     uint8_t error = Wire.endTransmission();
-    Serial.printf("[Touch] Transmission result: %d ", error);
-    if (error == 0) Serial.println("(OK)");
-    else if (error == 2) Serial.println("(NACK on address)");
-    else if (error == 3) Serial.println("(NACK on data)");
-    else Serial.println("(Other error)");
+    const char* error_desc = "(Other error)";
+    if (error == 0) error_desc = "(OK)";
+    else if (error == 2) error_desc = "(NACK on address)";
+    else if (error == 3) error_desc = "(NACK on data)";
+    logger.infof("[Touch] Transmission result: %d %s", error, error_desc);
 
     if (error == 0) {
         // Prova a leggere registri
@@ -140,19 +142,19 @@ void touch_driver_init() {
         uint8_t chipID = readRegister(0xA3);
         uint8_t fwVer = readRegister(0xA6);
 
-        Serial.printf("[Touch] Vendor ID: 0x%02X\n", vendorID);
-        Serial.printf("[Touch] Chip ID: 0x%02X\n", chipID);
-        Serial.printf("[Touch] FW Version: 0x%02X\n", fwVer);
-        Serial.println("[Touch] ✓ FT6336 detected and ready!");
+        logger.infof("[Touch] Vendor ID: 0x%02X", vendorID);
+        logger.infof("[Touch] Chip ID: 0x%02X", chipID);
+        logger.infof("[Touch] FW Version: 0x%02X", fwVer);
+        logger.info("[Touch] ✓ FT6336 detected and ready!");
         touch_available = true;
     } else {
-        Serial.println("[Touch] ✗ Touch controller NOT responding!");
-        Serial.println("[Touch] This board may not have touch capability,");
-        Serial.println("[Touch] or touch may use different pins/protocol.");
-        Serial.println("[Touch] Touch input will remain registered for debugging.");
+        logger.warn("[Touch] ✗ Touch controller NOT responding!");
+        logger.warn("[Touch] This board may not have touch capability,");
+        logger.warn("[Touch] or touch may use different pins/protocol.");
+        logger.warn("[Touch] Touch input will remain registered for debugging.");
     }
 
-    Serial.println("[Touch] ======================================\n");
+    logger.info("[Touch] ======================================\n");
 }
 
 bool touch_driver_available() {

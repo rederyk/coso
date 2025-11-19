@@ -4,6 +4,7 @@
 #include "core/settings_manager.h"
 #include <Arduino.h>
 #include <utility>
+#include "utils/logger.h"
 
 namespace {
 constexpr lv_coord_t DOCK_MARGIN = 5;
@@ -510,7 +511,7 @@ void DockController::init() {
     DisplayManager& display = DisplayManager::getInstance();
     lv_obj_t* launcher_layer = display.getLauncherLayer();
     if (!launcher_layer) {
-        Serial.println("[Dock] Launcher layer unavailable");
+        Logger::getInstance().warn("[Dock] Launcher layer unavailable");
         return;
     }
     view_.create(launcher_layer);

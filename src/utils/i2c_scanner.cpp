@@ -1,8 +1,10 @@
 #include "i2c_scanner.h"
 #include <Wire.h>
+#include "utils/logger.h"
 
 void scanI2CBus(int sda, int scl) {
-    Serial.printf("\n[I2C Scanner] Testing SDA=%d, SCL=%d\n", sda, scl);
+    auto& logger = Logger::getInstance();
+    logger.infof("\n[I2C Scanner] Testing SDA=%d, SCL=%d", sda, scl);
 
     Wire.begin(sda, scl);
     Wire.setClock(100000); // 100kHz per sicurezza
@@ -15,30 +17,30 @@ void scanI2CBus(int sda, int scl) {
         uint8_t error = Wire.endTransmission();
 
         if (error == 0) {
-            Serial.printf("  ✓ Device found at 0x%02X", addr);
-
-            // Identifica dispositivi comuni
-            if (addr == 0x38) Serial.print(" (FT6336/FT6236)");
-            else if (addr == 0x15) Serial.print(" (GT911)");
-            else if (addr == 0x5D) Serial.print(" (GT911 alt)");
-            else if (addr == 0x14) Serial.print(" (FT5x06)");
-
-            Serial.println();
+            char buffer[48];
+            snprintf(buffer, sizeof(buffer), "  ✓ Device found at 0x%02X", addr);
+            String line(buffer);
+            if (addr == 0x38) line += " (FT6336/FT6236)";
+            else if (addr == 0x15) line += " (GT911)";
+            else if (addr == 0x5D) line += " (GT911 alt)";
+            else if (addr == 0x14) line += " (FT5x06)";
+            logger.info(line.c_str());
             devicesFound++;
         }
     }
 
     if (devicesFound == 0) {
-        Serial.println("  ✗ No I2C devices found");
+        logger.warn("  ✗ No I2C devices found");
     }
 
     Wire.end();
 }
 
 void findTouchController() {
-    Serial.println("\n========================================");
-    Serial.println("     I2C Touch Controller Scanner");
-    Serial.println("========================================");
+    auto& logger = Logger::getInstance();
+    logger.info("\n========================================");
+    logger.info("     I2C Touch Controller Scanner");
+    logger.info("========================================");
 
     // Pin combinations comuni per ESP32-S3
     const int pinPairs[][2] = {
@@ -55,7 +57,7 @@ void findTouchController() {
         delay(100);
     }
 
-    Serial.println("========================================");
-    Serial.println("Scan complete!");
-    Serial.println("========================================\n");
+    logger.info("========================================");
+    logger.info("Scan complete!");
+    logger.info("========================================\n");
 }

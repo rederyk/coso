@@ -2,6 +2,7 @@
 
 #include <Arduino.h>
 #include <TFT_eSPI.h>
+#include "utils/logger.h"
 
 DisplayManager& DisplayManager::getInstance() {
     static DisplayManager instance;
@@ -27,7 +28,7 @@ void DisplayManager::begin(TFT_eSPI* tft,
     disp_ = lv_disp_drv_register(&disp_drv_);
     initialized_ = true;
 
-    Serial.println("[Display] LVGL display driver initialized");
+    Logger::getInstance().info("[Display] LVGL display driver initialized");
     getOverlayLayer();
 }
 
@@ -76,10 +77,10 @@ lv_coord_t DisplayManager::getHeight() const {
 }
 
 void DisplayManager::logOrientation(lv_coord_t width, lv_coord_t height) const {
-    Serial.printf("[Display] Orientation -> %s (%dx%d)\n",
-                  landscape_ ? "Landscape" : "Portrait",
-                  static_cast<int>(width),
-                  static_cast<int>(height));
+    Logger::getInstance().infof("[Display] Orientation -> %s (%dx%d)",
+                                landscape_ ? "Landscape" : "Portrait",
+                                static_cast<int>(width),
+                                static_cast<int>(height));
 }
 
 lv_obj_t* DisplayManager::getOverlayLayer() {

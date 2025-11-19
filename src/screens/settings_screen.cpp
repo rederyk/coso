@@ -1,5 +1,6 @@
 #include "screens/settings_screen.h"
 #include <Arduino.h>
+#include "utils/logger.h"
 
 namespace {
 struct ThemeOption {
@@ -144,12 +145,12 @@ void SettingsScreen::build(lv_obj_t* parent) {
 }
 
 void SettingsScreen::onShow() {
-    Serial.println("⚙️ Settings screen shown");
+    Logger::getInstance().info("⚙️ Settings screen shown");
     applySnapshot(SettingsManager::getInstance().getSnapshot());
 }
 
 void SettingsScreen::onHide() {
-    Serial.println("⚙️ Settings screen hidden");
+    Logger::getInstance().info("⚙️ Settings screen hidden");
 }
 
 void SettingsScreen::applySnapshot(const SettingsSnapshot& snapshot) {

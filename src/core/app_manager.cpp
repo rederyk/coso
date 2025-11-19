@@ -2,6 +2,7 @@
 #include "core/settings_manager.h"
 #include <Arduino.h>
 #include <lvgl.h>
+#include "utils/logger.h"
 
 AppManager* AppManager::instance = nullptr;
 
@@ -41,7 +42,7 @@ void AppManager::registerApp(const char* id, const char* emoji, const char* name
 void AppManager::launchApp(const char* id) {
     auto it = apps.find(id);
     if (it == apps.end()) {
-        Serial.printf("App '%s' not found\n", id);
+        Logger::getInstance().warnf("App '%s' not found", id);
         return;
     }
 
@@ -75,7 +76,7 @@ void AppManager::launchApp(const char* id) {
     new_screen->onShow();
     current_screen = new_screen;
     current_app_id = id ? id : "";
-    Serial.printf("Launched app: %s %s\n", it->second.emoji, it->second.name);
+    Logger::getInstance().infof("Launched app: %s %s", it->second.emoji, it->second.name);
 }
 
 void AppManager::reloadScreens() {
