@@ -361,9 +361,10 @@ void BleSettingsScreen::handleBackButton(lv_event_t* e) {
     if (!screen) return;
 
     // Navigate back to settings screen
-    AppManager* app_manager = static_cast<AppManager*>(lv_obj_get_user_data(screen->root));
+    Logger::getInstance().info("[BLE Settings] Returning to Settings...");
+    AppManager* app_manager = AppManager::getInstance();
     if (app_manager) {
-        app_manager->launchApp("Settings");
+        app_manager->launchApp("settings");
     }
 }
 

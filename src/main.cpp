@@ -274,9 +274,9 @@ void setup() {
     app_manager->registerApp("info", UI_SYMBOL_INFO, "Info", &info);
     app_manager->registerApp("sd_explorer", UI_SYMBOL_STORAGE, "SD Card", &sd_explorer);
 
-    // Registra le schermate supplementari (non nel dock, accessibili da Settings)
-    app_manager->registerApp("WiFiSettings", UI_SYMBOL_WIFI, "WiFi", &wifi_settings);
-    app_manager->registerApp("BleSettings", LV_SYMBOL_BLUETOOTH, "BLE", &ble_settings);
+    // Registra le schermate supplementari (non nel dock, accessibili solo da Settings)
+    app_manager->registerHiddenApp("WiFiSettings", &wifi_settings);
+    app_manager->registerHiddenApp("BleSettings", &ble_settings);
 
     // Lancia dashboard come app iniziale
     app_manager->launchApp("dashboard");

@@ -52,6 +52,11 @@ void AppManager::registerApp(const char* id, const char* emoji, const char* name
     dock.registerLauncherItem(id, emoji, name);
 }
 
+void AppManager::registerHiddenApp(const char* id, Screen* screen) {
+    // Register app without adding it to the dock
+    apps[id] = {"", "", screen};
+}
+
 void AppManager::launchApp(const char* id) {
     auto it = apps.find(id);
     if (it == apps.end()) {

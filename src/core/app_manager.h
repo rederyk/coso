@@ -12,6 +12,7 @@ public:
 
     void init(lv_obj_t* root_parent);
     void registerApp(const char* id, const char* emoji, const char* name, Screen* screen);
+    void registerHiddenApp(const char* id, Screen* screen);
     void launchApp(const char* id);
     void reloadScreens();
     void requestReload();

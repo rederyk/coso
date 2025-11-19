@@ -26,10 +26,6 @@ private:
     static void handleThemeChanged(lv_event_t* e);
     static void handleWifiSettingsButton(lv_event_t* e);
     static void handleBleSettingsButton(lv_event_t* e);
-    static void handleResetButton(lv_event_t* e);
-    static void handleRebootButton(lv_event_t* e);
-    static void confirmReset(lv_event_t* e);
-    static void confirmReboot(lv_event_t* e);
 
     lv_obj_t* wifi_ssid_input = nullptr;
     lv_obj_t* wifi_pass_input = nullptr;
@@ -41,11 +37,9 @@ private:
     lv_obj_t* header_label = nullptr;
     lv_obj_t* content_container = nullptr;
     lv_obj_t* connectivity_card = nullptr;
-    lv_obj_t* wifi_card = nullptr;
     lv_obj_t* display_card = nullptr;
     lv_obj_t* led_card = nullptr;
     lv_obj_t* theme_card = nullptr;
-    lv_obj_t* system_card = nullptr;
     lv_obj_t* info_card = nullptr;
     lv_obj_t* version_label = nullptr;
     lv_obj_t* hint_label = nullptr;
