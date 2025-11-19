@@ -14,7 +14,7 @@ AppManager* AppManager::getInstance() {
 
 void AppManager::init(lv_obj_t* parent) {
     root_parent = parent;
-    dock.init(root_parent);
+    dock.init();
     dock.setLaunchHandler([this](const char* app_id) {
         launchApp(app_id);
     });

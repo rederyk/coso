@@ -8,8 +8,11 @@
 namespace {
 constexpr lv_coord_t DOCK_MARGIN = 5;
 constexpr lv_coord_t DOCK_THICKNESS = 88;
-constexpr lv_coord_t HANDLE_OFFSET = 6;
+constexpr lv_coord_t HANDLE_OFFSET = 2;  // Reduced offset - closer to bottom
 constexpr lv_coord_t ICON_SIZE = 48;
+constexpr lv_coord_t SWIPE_EDGE_HEIGHT = 24; // Android-style edge swipe area
+constexpr lv_coord_t HANDLE_TOUCH_WIDTH = 120;  // Wider touch area
+constexpr lv_coord_t HANDLE_TOUCH_HEIGHT = 24; // Reduced height - less extension upward
 
 lv_coord_t get_display_width() {
     return DisplayManager::getInstance().getWidth();
@@ -32,6 +35,11 @@ DockView::~DockView() {
         lv_obj_del(handle_button_);
         handle_button_ = nullptr;
     }
+    if (edge_detector_) {
+        lv_obj_del(edge_detector_);
+        edge_detector_ = nullptr;
+    }
+    visual_bar_ = nullptr; // Child of handle_button_, deleted automatically
 }
 
 void DockView::create(lv_obj_t* launcher_layer) {
@@ -48,6 +56,11 @@ void DockView::destroy() {
         lv_obj_del(handle_button_);
         handle_button_ = nullptr;
     }
+    if (edge_detector_) {
+        lv_obj_del(edge_detector_);
+        edge_detector_ = nullptr;
+    }
+    visual_bar_ = nullptr;
     launcher_layer_ = nullptr;
 }
 
@@ -76,7 +89,11 @@ void DockView::ensureCreated(lv_obj_t* launcher_layer) {
     lv_obj_set_style_pad_all(dock_container_, 8, 0);
     lv_obj_add_flag(dock_container_, LV_OBJ_FLAG_FLOATING);
     lv_obj_clear_flag(dock_container_, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_clear_flag(dock_container_, LV_OBJ_FLAG_GESTURE_BUBBLE); // Dock catches gestures
     lv_obj_move_foreground(dock_container_);
+
+    // Add swipe-down gesture to hide dock
+    lv_obj_add_event_cb(dock_container_, dockSwipeEvent, LV_EVENT_GESTURE, this);
 
     icon_container_ = lv_obj_create(dock_container_);
     lv_obj_remove_style_all(icon_container_);
@@ -84,25 +101,47 @@ void DockView::ensureCreated(lv_obj_t* launcher_layer) {
     lv_obj_set_size(icon_container_, lv_pct(100), lv_pct(100));
     lv_obj_set_layout(icon_container_, LV_LAYOUT_FLEX);
     lv_obj_center(icon_container_);
+    // Allow gestures to bubble up from icons to dock
+    lv_obj_add_flag(icon_container_, LV_OBJ_FLAG_GESTURE_BUBBLE);
 
-    handle_button_ = lv_btn_create(launcher_layer_);
+    // Create edge swipe detector - Android-style bottom edge activation
+    edge_detector_ = lv_obj_create(launcher_layer_);
+    lv_obj_remove_style_all(edge_detector_);
+    lv_obj_set_size(edge_detector_, lv_pct(100), SWIPE_EDGE_HEIGHT);
+    lv_obj_align(edge_detector_, LV_ALIGN_BOTTOM_MID, 0, 0);
+    lv_obj_add_flag(edge_detector_, LV_OBJ_FLAG_FLOATING);
+    lv_obj_clear_flag(edge_detector_, LV_OBJ_FLAG_GESTURE_BUBBLE);
+    lv_obj_set_style_bg_opa(edge_detector_, LV_OPA_TRANSP, 0);
+    lv_obj_add_event_cb(edge_detector_, edgeSwipeEvent, LV_EVENT_GESTURE, this);
+
+    // Create handle bar - improved Android-style handle
+    handle_button_ = lv_obj_create(launcher_layer_);
     lv_obj_remove_style_all(handle_button_);
-    lv_obj_set_size(handle_button_, 80, 24);
+    lv_obj_set_size(handle_button_, HANDLE_TOUCH_WIDTH, HANDLE_TOUCH_HEIGHT);
     lv_obj_add_flag(handle_button_, LV_OBJ_FLAG_FLOATING);
-    lv_obj_set_style_bg_color(handle_button_, lv_color_hex(0x1f2a44), 0);
-    lv_obj_set_style_bg_opa(handle_button_, LV_OPA_80, 0);
-    lv_obj_set_style_radius(handle_button_, 12, 0);
+    lv_obj_clear_flag(handle_button_, LV_OBJ_FLAG_GESTURE_BUBBLE);
+    lv_obj_set_style_bg_opa(handle_button_, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(handle_button_, 0, 0);
     lv_obj_set_style_outline_width(handle_button_, 0, 0);
     lv_obj_move_foreground(handle_button_);
 
-    lv_obj_add_event_cb(handle_button_, handleButtonEvent, LV_EVENT_CLICKED, this);
+    // Create the visible bar with improved styling
+    visual_bar_ = lv_obj_create(handle_button_);
+    lv_obj_remove_style_all(visual_bar_);
+    lv_obj_set_size(visual_bar_, 60, 5);
+    lv_obj_set_style_bg_color(visual_bar_, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_bg_opa(visual_bar_, LV_OPA_70, 0);
+    lv_obj_set_style_radius(visual_bar_, 3, 0);
+    lv_obj_set_style_shadow_width(visual_bar_, 6, 0);
+    lv_obj_set_style_shadow_color(visual_bar_, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_shadow_opa(visual_bar_, LV_OPA_30, 0);
+    // Position bar at bottom of touch area, very close to screen edge
+    lv_obj_align(visual_bar_, LV_ALIGN_BOTTOM_MID, 0, -2);
 
-    lv_obj_t* handle_bar = lv_label_create(handle_button_);
-    lv_label_set_text(handle_bar, "⋮⋮");
-    lv_obj_set_style_text_font(handle_bar, &lv_font_montserrat_16, 0);
-    lv_obj_set_style_text_color(handle_bar, lv_color_hex(0xf0f0f0), 0);
-    lv_obj_center(handle_bar);
+    // Add gesture and press handlers to the handle bar
+    lv_obj_add_event_cb(handle_button_, handleGestureEvent, LV_EVENT_GESTURE, this);
+    lv_obj_add_event_cb(handle_button_, handlePressEvent, LV_EVENT_PRESSING, this);
+    lv_obj_add_event_cb(handle_button_, handleReleaseEvent, LV_EVENT_RELEASED, this);
 
     onOrientationChanged(landscape_mode_);
 }
@@ -137,6 +176,7 @@ void DockView::addIcon(const char* app_id, const char* emoji, const char* name) 
     lv_obj_set_style_border_width(app_btn, 1, 0);
     lv_obj_set_style_border_color(app_btn, lv_color_hex(0x0f3460), 0);
     lv_obj_add_flag(app_btn, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_flag(app_btn, LV_OBJ_FLAG_GESTURE_BUBBLE); // Allow swipe gestures to bubble
     lv_obj_set_style_bg_color(app_btn, lv_color_hex(0x0f3460), LV_STATE_PRESSED);
 
     lv_obj_t* icon = lv_label_create(app_btn);
@@ -249,10 +289,6 @@ void DockView::updateColors(uint32_t dock_color, uint8_t border_radius) {
     lv_obj_set_style_radius(dock_container_, border_radius, 0);
 }
 
-void DockView::setHandleCallback(std::function<void()> callback) {
-    handle_callback_ = std::move(callback);
-}
-
 void DockView::setIconTapCallback(std::function<void(const char* app_id)> callback) {
     icon_callback_ = std::move(callback);
 }
@@ -271,14 +307,121 @@ void DockView::handleIconTriggered(lv_obj_t* target) {
     }
 }
 
-void DockView::handleButtonEvent(lv_event_t* e) {
+void DockView::handleHandleGesture(lv_event_t* e) {
+    if (!e) {
+        return;
+    }
+    lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_get_act());
+
+    // Swipe up on handle -> show dock
+    if (dir == LV_DIR_TOP && !is_visible_) {
+        show();
+    }
+    // Swipe down on handle -> hide dock
+    else if (dir == LV_DIR_BOTTOM && is_visible_) {
+        hide();
+    }
+}
+
+void DockView::handleEdgeSwipe(lv_event_t* e) {
+    if (!e) {
+        return;
+    }
+    lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_get_act());
+
+    // Android-style: swipe up from bottom edge shows dock
+    if (dir == LV_DIR_TOP && !is_visible_) {
+        show();
+    }
+}
+
+void DockView::handleDockSwipe(lv_event_t* e) {
+    if (!e) {
+        return;
+    }
+    lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_get_act());
+
+    // Swipe down on visible dock -> hide it
+    if (dir == LV_DIR_BOTTOM && is_visible_) {
+        hide();
+    }
+}
+
+void DockView::handlePress() {
+    if (!visual_bar_) {
+        return;
+    }
+    // Animate handle on press - scale up effect
+    lv_obj_set_style_transform_zoom(visual_bar_, 280, 0); // 1.4x scale
+    lv_obj_set_style_bg_opa(visual_bar_, LV_OPA_90, 0);
+}
+
+void DockView::handleRelease() {
+    if (!visual_bar_) {
+        return;
+    }
+    // Restore handle size on release
+    lv_obj_set_style_transform_zoom(visual_bar_, 256, 0); // 1.0x scale
+    lv_obj_set_style_bg_opa(visual_bar_, LV_OPA_70, 0);
+}
+
+void DockView::animateHandlePulse() {
+    if (!visual_bar_) {
+        return;
+    }
+    // Subtle pulsing animation to draw attention
+    static lv_anim_t pulse_anim;
+    lv_anim_init(&pulse_anim);
+    lv_anim_set_var(&pulse_anim, visual_bar_);
+    lv_anim_set_time(&pulse_anim, 1200);
+    lv_anim_set_values(&pulse_anim, LV_OPA_70, LV_OPA_100);
+    lv_anim_set_path_cb(&pulse_anim, lv_anim_path_ease_in_out);
+    lv_anim_set_exec_cb(&pulse_anim, [](void* var, int32_t value) {
+        lv_obj_set_style_bg_opa((lv_obj_t*)var, value, 0);
+    });
+    lv_anim_set_playback_time(&pulse_anim, 1200);
+    lv_anim_set_repeat_count(&pulse_anim, LV_ANIM_REPEAT_INFINITE);
+    lv_anim_start(&pulse_anim);
+}
+
+void DockView::handleGestureEvent(lv_event_t* e) {
     auto* view = static_cast<DockView*>(lv_event_get_user_data(e));
     if (!view) {
         return;
     }
-    if (view->handle_callback_) {
-        view->handle_callback_();
+    view->handleHandleGesture(e);
+}
+
+void DockView::edgeSwipeEvent(lv_event_t* e) {
+    auto* view = static_cast<DockView*>(lv_event_get_user_data(e));
+    if (!view) {
+        return;
     }
+    view->handleEdgeSwipe(e);
+}
+
+void DockView::dockSwipeEvent(lv_event_t* e) {
+    auto* view = static_cast<DockView*>(lv_event_get_user_data(e));
+    if (!view) {
+        return;
+    }
+    view->handleDockSwipe(e);
+}
+
+void DockView::handlePressEvent(lv_event_t* e) {
+    auto* view = static_cast<DockView*>(lv_event_get_user_data(e));
+    if (!view) {
+        return;
+    }
+    view->handlePress();
+}
+
+void DockView::handleReleaseEvent(lv_event_t* e) {
+    auto* view = static_cast<DockView*>(lv_event_get_user_data(e));
+    if (!view) {
+        return;
+    }
+    view->handleRelease();
 }
 
 void DockView::iconEvent(lv_event_t* e) {
@@ -291,11 +434,9 @@ void DockView::iconEvent(lv_event_t* e) {
 }
 
 DockController::DockController() = default;
-DockController::~DockController() {
-    detachGestureSurface();
-}
+DockController::~DockController() = default;
 
-void DockController::init(lv_obj_t* gesture_surface) {
+void DockController::init() {
     DisplayManager& display = DisplayManager::getInstance();
     lv_obj_t* launcher_layer = display.getLauncherLayer();
     if (!launcher_layer) {
@@ -303,9 +444,6 @@ void DockController::init(lv_obj_t* gesture_surface) {
         return;
     }
     view_.create(launcher_layer);
-    view_.setHandleCallback([this]() {
-        toggle();
-    });
     view_.setIconTapCallback([this](const char* app_id) {
         if (launch_handler_) {
             launch_handler_(app_id);
@@ -313,7 +451,6 @@ void DockController::init(lv_obj_t* gesture_surface) {
         view_.hide();
     });
     onOrientationChanged(display.isLandscape());
-    setGestureSurface(gesture_surface);
 
     // Rebuild icons if init happens after registration
     if (!items_.empty()) {
@@ -358,43 +495,4 @@ void DockController::toggle() {
 
 void DockController::updateColors(uint32_t dock_color, uint8_t border_radius) {
     view_.updateColors(dock_color, border_radius);
-}
-
-void DockController::setGestureSurface(lv_obj_t* target) {
-    if (gesture_surface_ == target) {
-        return;
-    }
-    detachGestureSurface();
-    gesture_surface_ = target;
-    if (gesture_surface_) {
-        lv_obj_add_event_cb(gesture_surface_, gestureHandler, LV_EVENT_GESTURE, this);
-    }
-}
-
-void DockController::detachGestureSurface() {
-    if (!gesture_surface_) {
-        return;
-    }
-    lv_obj_remove_event_cb_with_user_data(gesture_surface_, gestureHandler, this);
-    gesture_surface_ = nullptr;
-}
-
-void DockController::handleGesture(lv_event_t* e) {
-    if (!e) {
-        return;
-    }
-    lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_get_act());
-    if (dir == LV_DIR_TOP && !view_.isVisible()) {
-        view_.show();
-    } else if (dir == LV_DIR_BOTTOM && view_.isVisible()) {
-        view_.hide();
-    }
-}
-
-void DockController::gestureHandler(lv_event_t* e) {
-    auto* controller = static_cast<DockController*>(lv_event_get_user_data(e));
-    if (!controller) {
-        return;
-    }
-    controller->handleGesture(e);
 }

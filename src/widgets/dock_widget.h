@@ -22,7 +22,6 @@ public:
     void onOrientationChanged(bool landscape);
     void updateColors(uint32_t dock_color, uint8_t border_radius);
 
-    void setHandleCallback(std::function<void()> callback);
     void setIconTapCallback(std::function<void(const char* app_id)> callback);
     bool isVisible() const { return is_visible_; }
     bool isReady() const { return dock_container_ != nullptr; }
@@ -37,20 +36,31 @@ private:
     void updateHandlePosition();
     void destroyIcons();
     void handleIconTriggered(lv_obj_t* target);
+    void handleHandleGesture(lv_event_t* e);
+    void handleEdgeSwipe(lv_event_t* e);
+    void handleDockSwipe(lv_event_t* e);
+    void handlePress();
+    void handleRelease();
+    void animateHandlePulse();
 
-    static void handleButtonEvent(lv_event_t* e);
     static void iconEvent(lv_event_t* e);
+    static void handleGestureEvent(lv_event_t* e);
+    static void edgeSwipeEvent(lv_event_t* e);
+    static void dockSwipeEvent(lv_event_t* e);
+    static void handlePressEvent(lv_event_t* e);
+    static void handleReleaseEvent(lv_event_t* e);
 
     lv_obj_t* launcher_layer_ = nullptr;
     lv_obj_t* dock_container_ = nullptr;
     lv_obj_t* icon_container_ = nullptr;
     lv_obj_t* handle_button_ = nullptr;
+    lv_obj_t* edge_detector_ = nullptr;
+    lv_obj_t* visual_bar_ = nullptr;
     lv_anim_t show_anim_;
     lv_anim_t hide_anim_;
     bool is_visible_ = false;
     bool landscape_mode_ = true;
     std::vector<IconEntry> icons_;
-    std::function<void()> handle_callback_;
     std::function<void(const char* app_id)> icon_callback_;
 };
 
@@ -59,7 +69,7 @@ public:
     DockController();
     ~DockController();
 
-    void init(lv_obj_t* gesture_surface);
+    void init();
     void registerLauncherItem(const char* app_id, const char* emoji, const char* name);
     void onOrientationChanged(bool landscape);
     void show();
@@ -74,14 +84,7 @@ private:
         std::string name;
     };
 
-    void setGestureSurface(lv_obj_t* target);
-    void detachGestureSurface();
-    void handleGesture(lv_event_t* e);
-
-    static void gestureHandler(lv_event_t* e);
-
     DockView view_;
-    lv_obj_t* gesture_surface_ = nullptr;
     std::function<void(const char* app_id)> launch_handler_;
     std::map<std::string, LauncherItem> items_;
 };
