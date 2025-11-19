@@ -14,13 +14,15 @@ struct PaletteSeed {
     uint32_t accent;
     uint32_t card;
     uint32_t dock;
+    uint32_t dockIconBackground;
+    uint32_t dockIconSymbol;
 };
 
 constexpr PaletteSeed DEFAULT_PALETTE_SEEDS[] = {
-    {"Aurora", 0x0b2035, 0x5df4ff, 0x10182c, 0x1a2332},
-    {"Sunset", 0x2b1f3a, 0xff7f50, 0x3d2a45, 0x4a3352},
-    {"Forest", 0x0f2d1c, 0x7ed957, 0x1a3d28, 0x254d35},
-    {"Mono", 0x1a1a1a, 0xffffff, 0x2a2a2a, 0x3a3a3a}
+    {"Aurora", 0x0b2035, 0x5df4ff, 0x10182c, 0x1a2332, 0x1a2332, 0xffffff},
+    {"Sunset", 0x2b1f3a, 0xff7f50, 0x3d2a45, 0x4a3352, 0x4a3352, 0xffffff},
+    {"Forest", 0x0f2d1c, 0x7ed957, 0x1a3d28, 0x254d35, 0x254d35, 0xffffff},
+    {"Mono", 0x1a1a1a, 0xffffff, 0x2a2a2a, 0x3a3a3a, 0x3a3a3a, 0xffffff}
 };
 
 std::string sanitizeString(const std::string& value, size_t max_len) {
@@ -72,6 +74,8 @@ void SettingsManager::reset() {
     notify(SettingKey::ThemeAccentColor);
     notify(SettingKey::ThemeCardColor);
     notify(SettingKey::ThemeDockColor);
+    notify(SettingKey::ThemeDockIconBackgroundColor);
+    notify(SettingKey::ThemeDockIconSymbolColor);
     notify(SettingKey::ThemeBorderRadius);
     notify(SettingKey::LayoutOrientation);
 }
@@ -187,6 +191,30 @@ void SettingsManager::setDockColor(uint32_t color) {
     notify(SettingKey::ThemeDockColor);
 }
 
+void SettingsManager::setDockIconBackgroundColor(uint32_t color) {
+    if (!initialized_) {
+        return;
+    }
+    if (color == current_.dockIconBackgroundColor) {
+        return;
+    }
+    current_.dockIconBackgroundColor = color;
+    persistSnapshot();
+    notify(SettingKey::ThemeDockIconBackgroundColor);
+}
+
+void SettingsManager::setDockIconSymbolColor(uint32_t color) {
+    if (!initialized_) {
+        return;
+    }
+    if (color == current_.dockIconSymbolColor) {
+        return;
+    }
+    current_.dockIconSymbolColor = color;
+    persistSnapshot();
+    notify(SettingKey::ThemeDockIconSymbolColor);
+}
+
 void SettingsManager::setBorderRadius(uint8_t radius) {
     if (!initialized_) {
         return;
@@ -252,6 +280,8 @@ void SettingsManager::loadDefaults() {
     current_.accentColor = DEFAULT_ACCENT_COLOR;
     current_.cardColor = DEFAULT_CARD_COLOR;
     current_.dockColor = DEFAULT_DOCK_COLOR;
+    current_.dockIconBackgroundColor = DEFAULT_DOCK_ICON_BG_COLOR;
+    current_.dockIconSymbolColor = DEFAULT_DOCK_ICON_SYMBOL_COLOR;
     current_.borderRadius = DEFAULT_BORDER_RADIUS;
     current_.landscapeLayout = DEFAULT_LANDSCAPE;
 }
@@ -281,6 +311,8 @@ std::vector<ThemePalette> SettingsManager::createDefaultPalettes() const {
         palette.accent = seed.accent;
         palette.card = seed.card;
         palette.dock = seed.dock;
+        palette.dockIconBackground = seed.dockIconBackground;
+        palette.dockIconSymbol = seed.dockIconSymbol;
         defaults.push_back(std::move(palette));
     }
     return defaults;
@@ -299,7 +331,9 @@ bool SettingsManager::addThemePalette(const ThemePalette& palette) {
         if (existing->primary == palette.primary &&
             existing->accent == palette.accent &&
             existing->card == palette.card &&
-            existing->dock == palette.dock) {
+            existing->dock == palette.dock &&
+            existing->dockIconBackground == palette.dockIconBackground &&
+            existing->dockIconSymbol == palette.dockIconSymbol) {
             return false;
         }
         *existing = palette;

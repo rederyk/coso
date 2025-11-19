@@ -19,6 +19,11 @@ void AppManager::init(lv_obj_t* parent) {
     dock.setLaunchHandler([this](const char* app_id) {
         launchApp(app_id);
     });
+    const SettingsSnapshot& initial_snapshot = SettingsManager::getInstance().getSnapshot();
+    dock.updateColors(initial_snapshot.dockColor,
+                      initial_snapshot.dockIconBackgroundColor,
+                      initial_snapshot.dockIconSymbolColor,
+                      initial_snapshot.borderRadius);
 
     // Register settings listener to update dock colors
     SettingsManager& settings = SettingsManager::getInstance();
@@ -26,8 +31,13 @@ void AppManager::init(lv_obj_t* parent) {
         settings_listener_id = settings.addListener(
             [this](SettingsManager::SettingKey key, const SettingsSnapshot& snapshot) {
                 if (key == SettingsManager::SettingKey::ThemeDockColor ||
+                    key == SettingsManager::SettingKey::ThemeDockIconBackgroundColor ||
+                    key == SettingsManager::SettingKey::ThemeDockIconSymbolColor ||
                     key == SettingsManager::SettingKey::ThemeBorderRadius) {
-                    dock.updateColors(snapshot.dockColor, snapshot.borderRadius);
+                    dock.updateColors(snapshot.dockColor,
+                                      snapshot.dockIconBackgroundColor,
+                                      snapshot.dockIconSymbolColor,
+                                      snapshot.borderRadius);
                 }
             });
     }

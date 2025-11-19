@@ -14,6 +14,8 @@
     "primary": 725045,
     "accent": 6157055,
     "card": 1054764,
-    "dock": 1712946
+    "dock": 1712946,
+    "dockIconBackground": 1450302,
+    "dockIconSymbol": 16777215
   }
 }

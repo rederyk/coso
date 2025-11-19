@@ -16,6 +16,8 @@ struct SettingsSnapshot {
     uint32_t accentColor = 0x5df4ff;
     uint32_t cardColor = 0x10182c;
     uint32_t dockColor = 0x1a2332;
+    uint32_t dockIconBackgroundColor = 0x16213e;
+    uint32_t dockIconSymbolColor = 0xffffff;
     uint8_t borderRadius = 12;
     bool landscapeLayout = true;
 };
@@ -32,6 +34,8 @@ public:
         ThemeAccentColor,
         ThemeCardColor,
         ThemeDockColor,
+        ThemeDockIconBackgroundColor,
+        ThemeDockIconSymbolColor,
         ThemeBorderRadius,
         LayoutOrientation
     };
@@ -71,6 +75,10 @@ public:
 
     uint32_t getDockColor() const { return current_.dockColor; }
     void setDockColor(uint32_t color);
+    uint32_t getDockIconBackgroundColor() const { return current_.dockIconBackgroundColor; }
+    void setDockIconBackgroundColor(uint32_t color);
+    uint32_t getDockIconSymbolColor() const { return current_.dockIconSymbolColor; }
+    void setDockIconSymbolColor(uint32_t color);
 
     uint8_t getBorderRadius() const { return current_.borderRadius; }
     void setBorderRadius(uint8_t radius);
@@ -113,6 +121,8 @@ private:
     static constexpr uint32_t DEFAULT_ACCENT_COLOR = 0x5df4ff;
     static constexpr uint32_t DEFAULT_CARD_COLOR = 0x10182c;
     static constexpr uint32_t DEFAULT_DOCK_COLOR = 0x1a2332;
+    static constexpr uint32_t DEFAULT_DOCK_ICON_BG_COLOR = 0x16213e;
+    static constexpr uint32_t DEFAULT_DOCK_ICON_SYMBOL_COLOR = 0xffffff;
     static constexpr uint8_t DEFAULT_BORDER_RADIUS = 12;
     static constexpr bool DEFAULT_LANDSCAPE = true;
 };

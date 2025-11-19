@@ -87,6 +87,8 @@ void DockView::ensureCreated(lv_obj_t* launcher_layer) {
     // Get colors from settings
     SettingsManager& settings = SettingsManager::getInstance();
     const SettingsSnapshot& snapshot = settings.getSnapshot();
+    icon_background_color_hex_ = snapshot.dockIconBackgroundColor;
+    icon_symbol_color_hex_ = snapshot.dockIconSymbolColor;
 
     dock_container_ = lv_obj_create(launcher_layer_);
     lv_obj_remove_style_all(dock_container_);
@@ -191,25 +193,23 @@ void DockView::addIcon(const char* app_id, const char* emoji, const char* name) 
     lv_obj_t* app_btn = lv_obj_create(icon_container_);
     lv_obj_remove_style_all(app_btn);
     lv_obj_set_size(app_btn, ICON_SIZE, ICON_SIZE);
-    lv_obj_set_style_bg_color(app_btn, lv_color_hex(0x16213e), 0);
-    lv_obj_set_style_bg_opa(app_btn, LV_OPA_COVER, 0);
     lv_obj_set_style_radius(app_btn, LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_style_border_width(app_btn, 1, 0);
-    lv_obj_set_style_border_color(app_btn, lv_color_hex(0x0f3460), 0);
     lv_obj_add_flag(app_btn, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_flag(app_btn, LV_OBJ_FLAG_GESTURE_BUBBLE); // Allow swipe gestures to bubble
-    lv_obj_set_style_bg_color(app_btn, lv_color_hex(0x0f3460), LV_STATE_PRESSED);
 
     lv_obj_t* icon = lv_label_create(app_btn);
     lv_label_set_text(icon, emoji);
     lv_obj_set_style_text_font(icon, &lv_font_montserrat_24, 0);
     lv_obj_center(icon);
 
+    applyIconColors(app_btn, icon);
+
     lv_obj_add_event_cb(app_btn, iconEvent, LV_EVENT_CLICKED, this);
 
     IconEntry entry;
     entry.id = app_id;
     entry.button = app_btn;
+    entry.label = icon;
     icons_.push_back(entry);
 }
 
@@ -304,12 +304,48 @@ void DockView::updateHandlePosition() {
     lv_obj_align(handle_button_, LV_ALIGN_BOTTOM_MID, 0, -HANDLE_OFFSET);
 }
 
-void DockView::updateColors(uint32_t dock_color, uint8_t border_radius) {
+void DockView::updateColors(uint32_t dock_color,
+                            uint32_t icon_bg_color,
+                            uint32_t icon_symbol_color,
+                            uint8_t border_radius) {
     if (!dock_container_) {
         return;
     }
+    icon_background_color_hex_ = icon_bg_color;
+    icon_symbol_color_hex_ = icon_symbol_color;
     lv_obj_set_style_bg_color(dock_container_, lv_color_hex(dock_color), 0);
     lv_obj_set_style_radius(dock_container_, border_radius, 0);
+    refreshIconColors();
+}
+
+void DockView::refreshIconColors() {
+    if (icons_.empty()) {
+        return;
+    }
+    for (const auto& entry : icons_) {
+        applyIconColors(entry.button, entry.label);
+    }
+}
+
+void DockView::applyIconColors(lv_obj_t* button, lv_obj_t* label) const {
+    if (!button) {
+        return;
+    }
+    lv_color_t base = lv_color_hex(icon_background_color_hex_);
+    lv_color_t symbol = lv_color_hex(icon_symbol_color_hex_);
+    lv_color_t border = lv_color_mix(base, symbol, LV_OPA_40);
+    lv_color_t pressed = lv_color_mix(base, lv_color_hex(0x000000), LV_OPA_30);
+
+    lv_obj_set_style_bg_color(button, base, 0);
+    lv_obj_set_style_bg_opa(button, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(button, 1, 0);
+    lv_obj_set_style_border_color(button, border, 0);
+    lv_obj_set_style_bg_color(button, pressed, LV_STATE_PRESSED);
+    lv_obj_set_style_bg_opa(button, LV_OPA_COVER, LV_STATE_PRESSED);
+
+    if (label) {
+        lv_obj_set_style_text_color(label, symbol, 0);
+    }
 }
 
 void DockView::setIconTapCallback(std::function<void(const char* app_id)> callback) {
@@ -564,6 +600,9 @@ void DockController::toggle() {
     view_.toggle();
 }
 
-void DockController::updateColors(uint32_t dock_color, uint8_t border_radius) {
-    view_.updateColors(dock_color, border_radius);
+void DockController::updateColors(uint32_t dock_color,
+                                  uint32_t icon_bg_color,
+                                  uint32_t icon_symbol_color,
+                                  uint8_t border_radius) {
+    view_.updateColors(dock_color, icon_bg_color, icon_symbol_color, border_radius);
 }

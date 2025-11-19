@@ -9,4 +9,6 @@ struct ThemePalette {
     uint32_t accent = 0;
     uint32_t card = 0;
     uint32_t dock = 0;
+    uint32_t dockIconBackground = 0;
+    uint32_t dockIconSymbol = 0;
 };

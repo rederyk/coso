@@ -564,6 +564,8 @@ void ThemeSettingsScreen::handlePaletteButton(lv_event_t* e) {
     manager.setAccentColor(preset->accent);
     manager.setCardColor(preset->card);
     manager.setDockColor(preset->dock);
+    manager.setDockIconBackgroundColor(preset->dockIconBackground);
+    manager.setDockIconSymbolColor(preset->dockIconSymbol);
 
     // The settings listener will trigger applySnapshot() which updates the color pickers
 }

@@ -20,7 +20,10 @@ public:
     void hide();
     void toggle();
     void onOrientationChanged(bool landscape);
-    void updateColors(uint32_t dock_color, uint8_t border_radius);
+    void updateColors(uint32_t dock_color,
+                      uint32_t icon_bg_color,
+                      uint32_t icon_symbol_color,
+                      uint8_t border_radius);
 
     void setIconTapCallback(std::function<void(const char* app_id)> callback);
     bool isVisible() const { return is_visible_; }
@@ -30,6 +33,7 @@ private:
     struct IconEntry {
         std::string id;
         lv_obj_t* button = nullptr;
+        lv_obj_t* label = nullptr;
     };
 
     void ensureCreated(lv_obj_t* launcher_layer);
@@ -44,6 +48,8 @@ private:
     void animateHandlePulse();
     void handleOutsideClick(lv_event_t* e);
     void updateClickDetector();
+    void refreshIconColors();
+    void applyIconColors(lv_obj_t* button, lv_obj_t* label) const;
 
     static void iconEvent(lv_event_t* e);
     static void handleGestureEvent(lv_event_t* e);
@@ -66,6 +72,8 @@ private:
     bool landscape_mode_ = true;
     std::vector<IconEntry> icons_;
     std::function<void(const char* app_id)> icon_callback_;
+    uint32_t icon_background_color_hex_ = 0x16213e;
+    uint32_t icon_symbol_color_hex_ = 0xffffff;
 };
 
 class DockController {
@@ -80,7 +88,10 @@ public:
     void hide();
     void toggle();
     void setLaunchHandler(std::function<void(const char* app_id)> handler);
-    void updateColors(uint32_t dock_color, uint8_t border_radius);
+    void updateColors(uint32_t dock_color,
+                      uint32_t icon_bg_color,
+                      uint32_t icon_symbol_color,
+                      uint8_t border_radius);
 
 private:
     struct LauncherItem {

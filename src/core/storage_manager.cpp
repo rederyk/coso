@@ -26,6 +26,8 @@ void fillJsonFromSnapshot(const SettingsSnapshot& snapshot, JsonDocument& doc) {
     palette["accent"] = snapshot.accentColor;
     palette["card"] = snapshot.cardColor;
     palette["dock"] = snapshot.dockColor;
+    palette["dockIconBackground"] = snapshot.dockIconBackgroundColor;
+    palette["dockIconSymbol"] = snapshot.dockIconSymbolColor;
 }
 
 void fillSnapshotFromJson(SettingsSnapshot& snapshot, const JsonDocument& doc) {
@@ -40,6 +42,10 @@ void fillSnapshotFromJson(SettingsSnapshot& snapshot, const JsonDocument& doc) {
     snapshot.accentColor = doc["palette"]["accent"] | snapshot.accentColor;
     snapshot.cardColor = doc["palette"]["card"] | snapshot.cardColor;
     snapshot.dockColor = doc["palette"]["dock"] | snapshot.dockColor;
+    snapshot.dockIconBackgroundColor =
+        doc["palette"]["dockIconBackground"] | snapshot.dockIconBackgroundColor;
+    snapshot.dockIconSymbolColor =
+        doc["palette"]["dockIconSymbol"] | snapshot.dockIconSymbolColor;
 }
 
 void fillPalettesArray(const std::vector<ThemePalette>& palettes, JsonDocument& doc) {
@@ -51,6 +57,8 @@ void fillPalettesArray(const std::vector<ThemePalette>& palettes, JsonDocument& 
         obj["accent"] = palette.accent;
         obj["card"] = palette.card;
         obj["dock"] = palette.dock;
+        obj["dockIconBackground"] = palette.dockIconBackground;
+        obj["dockIconSymbol"] = palette.dockIconSymbol;
     }
 }
 
@@ -66,6 +74,8 @@ void fillPalettesFromJson(std::vector<ThemePalette>& palettes, const JsonDocumen
         palette.accent = entry["accent"] | 0u;
         palette.card = entry["card"] | 0u;
         palette.dock = entry["dock"] | 0u;
+        palette.dockIconBackground = entry["dockIconBackground"] | palette.dock;
+        palette.dockIconSymbol = entry["dockIconSymbol"] | 0xffffffu;
         if (!palette.name.empty()) {
             palettes.push_back(std::move(palette));
         }

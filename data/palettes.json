@@ -5,42 +5,54 @@
       "primary": 729141,
       "accent": 6157567,
       "card": 1054764,
-      "dock": 1712946
+      "dock": 1712946,
+      "dockIconBackground": 1712946,
+      "dockIconSymbol": 16777215
     },
     {
       "name": "Sunset",
       "primary": 2826042,
       "accent": 16744272,
       "card": 4008517,
-      "dock": 4862802
+      "dock": 4862802,
+      "dockIconBackground": 4862802,
+      "dockIconSymbol": 16777215
     },
     {
       "name": "Forest",
       "primary": 994588,
       "accent": 8313175,
       "card": 1719592,
-      "dock": 2444597
+      "dock": 2444597,
+      "dockIconBackground": 2444597,
+      "dockIconSymbol": 16777215
     },
     {
       "name": "Mono",
       "primary": 1710618,
       "accent": 16777215,
       "card": 2763306,
-      "dock": 3815994
+      "dock": 3815994,
+      "dockIconBackground": 3815994,
+      "dockIconSymbol": 16777215
     },
     {
       "name": "Ocean",
       "primary": 2866761,
       "accent": 2697855,
       "card": 4016604,
-      "dock": 5472855
+      "dock": 5472855,
+      "dockIconBackground": 5472855,
+      "dockIconSymbol": 16777215
     },
     {
       "name": "Lavender",
       "primary": 10985223,
       "accent": 15433092,
       "card": 12891129,
-      "dock": 13993175
+      "dock": 13993175,
+      "dockIconBackground": 13993175,
+      "dockIconSymbol": 1710618
     }
   ]
 }
