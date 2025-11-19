@@ -29,7 +29,8 @@ public:
         PULSE,            // Respiro lento (legacy)
         RGB_CYCLE,        // Ciclo RGB (legacy)
         PULSE_CUSTOM,     // Pulse con colore personalizzato
-        STROBE_CUSTOM     // Strobe con colore personalizzato
+        STROBE_CUSTOM,    // Strobe con colore personalizzato
+        PULSE_PALETTE     // Pulse con una palette di colori
     };
 
     static RgbLedManager& getInstance();
@@ -85,6 +86,7 @@ public:
      */
     void setStrobeColor(uint8_t r, uint8_t g, uint8_t b);
     void setStrobePalette(const std::vector<uint32_t>& colors, size_t start_index = 0);
+    void setPulsePalette(const std::vector<uint32_t>& colors, size_t start_index = 0);
 
     /**
      * @brief Imposta la velocità delle animazioni
@@ -171,6 +173,9 @@ private:
     uint8_t strobe_b_ = 255;
     std::vector<std::array<uint8_t, 3>> strobe_palette_;
     size_t strobe_palette_index_ = 0;
+
+    std::vector<std::array<uint8_t, 3>> pulse_palette_;
+    size_t pulse_palette_index_ = 0;
 
     // Per animazioni
     uint32_t last_update_ = 0;

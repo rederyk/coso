@@ -280,8 +280,8 @@ void LedSettingsScreen::build(lv_obj_t* parent) {
     };
 
     static constexpr PatternDef patterns[] = {
-        {"Pulse 1", 0xFF64C8, PatternType::Pulse, 0},
-        {"Pulse 2", 0x6496FF, PatternType::Pulse, 1},
+        {"Pulse A", 0xFF64C8, PatternType::Pulse, 0},
+        {"Pulse B", 0x6496FF, PatternType::Pulse, 1},
         {"Rainbow", 0xFF00FF, PatternType::Rainbow, 0},
         {"Strobe 1", 0xFFFFFF, PatternType::Strobe, 0},
         {"Strobe 2", 0xFF0000, PatternType::Strobe, 1},
@@ -298,13 +298,16 @@ void LedSettingsScreen::build(lv_obj_t* parent) {
         lv_obj_t* btn = lv_btn_create(pattern_grid);
         lv_obj_set_height(btn, 38);
         lv_obj_set_style_radius(btn, 8, 0);
-        lv_obj_set_style_bg_color(btn, lv_color_hex(pat.default_color), 0);
+        lv_obj_set_style_bg_color(btn, lv_color_hex(pat.default_color), LV_PART_MAIN);
+        lv_obj_set_style_bg_color(btn, lv_color_hex(pat.default_color), LV_PART_MAIN | LV_STATE_CHECKED);
         lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, 0);
 
+        // Use a white outline on checked state to avoid obscuring the button's color
         lv_obj_set_style_border_width(btn, 0, LV_PART_MAIN);
-        lv_obj_set_style_border_width(btn, 3, LV_PART_MAIN | LV_STATE_CHECKED);
-        lv_obj_set_style_border_color(btn, lv_color_hex(0x00d4ff), LV_PART_MAIN | LV_STATE_CHECKED);
-        lv_obj_set_style_border_opa(btn, LV_OPA_100, LV_PART_MAIN | LV_STATE_CHECKED);
+        lv_obj_set_style_outline_width(btn, 2, LV_PART_MAIN | LV_STATE_CHECKED);
+        lv_obj_set_style_outline_color(btn, lv_color_hex(0xFFFFFF), LV_PART_MAIN | LV_STATE_CHECKED);
+        lv_obj_set_style_outline_opa(btn, LV_OPA_80, LV_PART_MAIN | LV_STATE_CHECKED);
+        lv_obj_set_style_outline_pad(btn, 2, LV_PART_MAIN | LV_STATE_CHECKED); // Space between button and outline
 
         lv_obj_add_flag(btn, LV_OBJ_FLAG_CHECKABLE);
         lv_obj_add_event_cb(btn, handlePatternButton, LV_EVENT_CLICKED, this);
@@ -449,7 +452,8 @@ void LedSettingsScreen::updatePatternButtonColor(int button_index, uint32_t colo
 
     auto& pb = pattern_buttons_[button_index];
     pb.color = color;
-    lv_obj_set_style_bg_color(pb.button, lv_color_hex(color), 0);
+    lv_obj_set_style_bg_color(pb.button, lv_color_hex(color), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(pb.button, lv_color_hex(color), LV_PART_MAIN | LV_STATE_CHECKED);
 }
 
 void LedSettingsScreen::configureColorPickerForType(PatternType type) {
@@ -514,6 +518,17 @@ void LedSettingsScreen::syncStrobePalette(size_t button_index_override) {
     RgbLedManager::getInstance().setStrobePalette(colors, selected_position);
 }
 
+void LedSettingsScreen::syncPulsePalette(size_t button_index_override) {
+    size_t selected_position = 0;
+    size_t target_index = (button_index_override == SIZE_MAX) ? current_pattern_index : button_index_override;
+    auto colors = collectPatternColors(PatternType::Pulse, target_index, selected_position);
+    if (colors.empty()) {
+        return;
+    }
+
+    RgbLedManager::getInstance().setPulsePalette(colors, selected_position);
+}
+
 void LedSettingsScreen::applyPatternSelection(int button_index) {
     if (button_index < 0 || button_index >= (int)pattern_buttons_.size()) {
         return;
@@ -529,16 +544,10 @@ void LedSettingsScreen::applyPatternSelection(int button_index) {
         return;
     }
 
-    uint32_t color = pb.color;
-    uint8_t r = (color >> 16) & 0xFF;
-    uint8_t g = (color >> 8) & 0xFF;
-    uint8_t b = color & 0xFF;
-
     if (pb.type == PatternType::Pulse) {
-        led.setPulseColor(r, g, b);
+        syncPulsePalette(button_index);
     } else if (pb.type == PatternType::Strobe) {
         syncStrobePalette(button_index);
-        led.setState(RgbLedManager::LedState::STROBE_CUSTOM);
     }
 }
 
@@ -582,15 +591,8 @@ void LedSettingsScreen::handleColorPickerChanged(lv_event_t* e) {
     // Update current pattern's color
     screen->updatePatternButtonColor(screen->current_pattern_index, color_hex);
 
-    // Apply to LED
-    uint8_t r = (color_hex >> 16) & 0xFF;
-    uint8_t g = (color_hex >> 8) & 0xFF;
-    uint8_t b = color_hex & 0xFF;
-
-    RgbLedManager& led = RgbLedManager::getInstance();
-
     if (screen->current_pattern_type == PatternType::Pulse) {
-        led.setPulseColor(r, g, b);
+        screen->syncPulsePalette();
     } else if (screen->current_pattern_type == PatternType::Strobe) {
         screen->syncStrobePalette();
     }

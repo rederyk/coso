@@ -100,6 +100,7 @@ void RgbLedManager::setState(LedState state, bool temporary) {
         case LedState::RGB_CYCLE: state_name = "RGB_CYCLE"; break;
         case LedState::PULSE_CUSTOM: state_name = "PULSE_CUSTOM"; break;
         case LedState::STROBE_CUSTOM: state_name = "STROBE_CUSTOM"; break;
+        case LedState::PULSE_PALETTE: state_name = "PULSE_PALETTE"; break;
     }
 
     Logger::getInstance().infof("[RGB LED] State change: %s -> %s %s",
@@ -181,6 +182,36 @@ void RgbLedManager::setStrobePalette(const std::vector<uint32_t>& colors, size_t
     Logger::getInstance().infof("[RGB LED] Strobe palette configured (%u colors)", (unsigned)strobe_palette_.size());
 }
 
+void RgbLedManager::setPulsePalette(const std::vector<uint32_t>& colors, size_t start_index) {
+    pulse_palette_.clear();
+    pulse_palette_index_ = 0;
+
+    for (uint32_t color : colors) {
+        uint8_t r = (color >> 16) & 0xFF;
+        uint8_t g = (color >> 8) & 0xFF;
+        uint8_t b = color & 0xFF;
+        pulse_palette_.push_back({r, g, b});
+    }
+
+    if (pulse_palette_.empty()) {
+        pulse_palette_.push_back({pulse_r_, pulse_g_, pulse_b_});
+    }
+
+    size_t palette_size = pulse_palette_.size();
+    if (palette_size > 0) {
+        if (start_index >= palette_size) {
+            start_index %= palette_size;
+        }
+        pulse_palette_index_ = start_index;
+    }
+
+    current_state_ = LedState::PULSE_PALETTE;
+    animation_phase_ = 0;
+    last_update_ = millis();
+    updateAnimation();
+    Logger::getInstance().infof("[RGB LED] Pulse palette configured (%u colors)", (unsigned)pulse_palette_.size());
+}
+
 void RgbLedManager::off() {
     current_state_ = LedState::OFF;
     setPixel(0, 0, 0);
@@ -241,6 +272,7 @@ void RgbLedManager::update() {
             break;
         case LedState::PULSE:
         case LedState::PULSE_CUSTOM:
+        case LedState::PULSE_PALETTE:
             if (elapsed >= interval) {
                 animation_phase_ = (animation_phase_ + 2) % 256;
                 last_update_ = now;
@@ -372,6 +404,27 @@ void RgbLedManager::updateAnimation() {
                 r = (uint8_t)(pulse_r_ * brightness_factor);
                 g = (uint8_t)(pulse_g_ * brightness_factor);
                 b = (uint8_t)(pulse_b_ * brightness_factor);
+            }
+            break;
+        case LedState::PULSE_PALETTE:
+            {
+                if (pulse_palette_.empty()) break;
+
+                float sine_val = (sin(animation_phase_ * 2.0f * PI / 256.0f) + 1.0f) / 2.0f;
+                
+                // Determina i due colori da interpolare
+                const auto& color1 = pulse_palette_[pulse_palette_index_];
+                const auto& color2 = pulse_palette_[(pulse_palette_index_ + 1) % pulse_palette_.size()];
+
+                // Interpola tra i due colori
+                r = (uint8_t)(color1[0] * (1.0f - sine_val) + color2[0] * sine_val);
+                g = (uint8_t)(color1[1] * (1.0f - sine_val) + color2[1] * sine_val);
+                b = (uint8_t)(color1[2] * (1.0f - sine_val) + color2[2] * sine_val);
+
+                // Quando il ciclo sinusoidale è vicino al termine, passa alla coppia di colori successiva
+                if (animation_phase_ >= 254) {
+                    pulse_palette_index_ = (pulse_palette_index_ + 1) % pulse_palette_.size();
+                }
             }
             break;
         case LedState::RGB_CYCLE:

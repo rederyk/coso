@@ -49,6 +49,7 @@ private:
     void updatePatternButtonColor(int button_index, uint32_t color);
     std::vector<uint32_t> collectPatternColors(PatternType type, size_t button_index, size_t& selected_position) const;
     void syncStrobePalette(size_t button_index_override = SIZE_MAX);
+    void syncPulsePalette(size_t button_index_override = SIZE_MAX);
     void applyPatternSelection(int button_index);
     void configureColorPickerForType(PatternType type);
 
