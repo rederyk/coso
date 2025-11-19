@@ -72,12 +72,17 @@ private:
         lv_coord_t size;            // Diameter of the picker
         uint16_t hue;               // Current hue (0-359)
         uint8_t saturation;         // Current saturation (0-100)
-        uint8_t brightness;         // Current brightness (0-100)
+        uint8_t brightness;         // Base brightness (0-100)
         bool dragging;              // Touch state
+        bool night_mode;            // Whether dark mode is active
+        uint32_t last_tap_tick;     // Last tap timestamp for double-tap detection
     };
 
-    static void draw_color_circle(lv_obj_t* canvas, lv_coord_t size, uint8_t brightness);
+    static void draw_color_circle(lv_obj_t* canvas, lv_coord_t size, uint8_t brightness, bool night_mode);
     static void update_cursor_position(lv_obj_t* obj);
     static void event_handler(lv_event_t* e);
     static void handle_touch(lv_obj_t* obj, lv_coord_t x, lv_coord_t y);
+    static void toggle_display_mode(lv_obj_t* obj);
+    static uint8_t compute_mode_brightness(const PickerData* data);
+    static uint8_t apply_mode_brightness(uint8_t brightness, bool night_mode);
 };

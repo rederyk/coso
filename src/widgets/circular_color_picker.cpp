@@ -2,6 +2,26 @@
 #include <Arduino.h>
 #include <cmath>
 
+namespace {
+constexpr uint32_t kDoubleTapWindowMs = 350;
+constexpr float kDayBrightnessScale = 0.75f;
+constexpr float kNightBrightnessScale = 0.45f;
+constexpr uint8_t kMinBrightness = 5;
+}  // namespace
+
+uint8_t CircularColorPicker::apply_mode_brightness(uint8_t brightness, bool night_mode) {
+    float scale = night_mode ? kNightBrightnessScale : kDayBrightnessScale;
+    int value = static_cast<int>(roundf(brightness * scale));
+    if (value < kMinBrightness) value = kMinBrightness;
+    if (value > 100) value = 100;
+    return static_cast<uint8_t>(value);
+}
+
+uint8_t CircularColorPicker::compute_mode_brightness(const PickerData* data) {
+    if (!data) return kMinBrightness;
+    return apply_mode_brightness(data->brightness, data->night_mode);
+}
+
 lv_obj_t* CircularColorPicker::create(lv_obj_t* parent, lv_coord_t size, uint8_t brightness) {
     // Create container
     lv_obj_t* container = lv_obj_create(parent);
@@ -16,6 +36,8 @@ lv_obj_t* CircularColorPicker::create(lv_obj_t* parent, lv_coord_t size, uint8_t
     data->saturation = 100;
     data->brightness = brightness;
     data->dragging = false;
+    data->night_mode = false;
+    data->last_tap_tick = 0;
 
     // Create canvas for color circle
     data->canvas = lv_canvas_create(container);
@@ -33,7 +55,7 @@ lv_obj_t* CircularColorPicker::create(lv_obj_t* parent, lv_coord_t size, uint8_t
     lv_canvas_set_buffer(data->canvas, cbuf, size, size, LV_IMG_CF_TRUE_COLOR_ALPHA);
 
     // Draw the color circle
-    draw_color_circle(data->canvas, size, brightness);
+    draw_color_circle(data->canvas, size, brightness, data->night_mode);
 
     // Create cursor with enhanced 3D effect
     data->cursor = lv_obj_create(container);
@@ -70,9 +92,13 @@ lv_obj_t* CircularColorPicker::create(lv_obj_t* parent, lv_coord_t size, uint8_t
     return container;
 }
 
-void CircularColorPicker::draw_color_circle(lv_obj_t* canvas, lv_coord_t size, uint8_t brightness) {
+void CircularColorPicker::draw_color_circle(lv_obj_t* canvas,
+                                            lv_coord_t size,
+                                            uint8_t brightness,
+                                            bool night_mode) {
     lv_coord_t center = size / 2;
     lv_coord_t radius = (size / 2) - 2;
+    uint8_t effective_brightness = apply_mode_brightness(brightness, night_mode);
 
     // Clear entire canvas first
     lv_canvas_fill_bg(canvas, lv_color_black(), LV_OPA_TRANSP);
@@ -87,10 +113,19 @@ void CircularColorPicker::draw_color_circle(lv_obj_t* canvas, lv_coord_t size, u
                 // Calculate angle and saturation
                 float angle = atan2f(dy, dx);
                 uint16_t hue = (uint16_t)((angle + M_PI) * 180.0f / M_PI);
-                uint8_t saturation = (uint8_t)((dist / radius) * 100.0f);
+                float normalized = dist / radius;
+                if (normalized < 0.0f) normalized = 0.0f;
+                if (normalized > 1.0f) normalized = 1.0f;
+                uint8_t saturation = (uint8_t)(normalized * 100.0f);
+                if (saturation > 100) saturation = 100;
+
+                // Slightly lower brightness near center for more contrast
+                float radial_factor = 0.85f + (normalized * 0.15f);
+                uint8_t pixel_value = static_cast<uint8_t>(effective_brightness * radial_factor);
+                if (pixel_value > 100) pixel_value = 100;
 
                 // Set pixel with color
-                lv_color_t color = lv_color_hsv_to_rgb(hue, saturation, brightness);
+                lv_color_t color = lv_color_hsv_to_rgb(hue, saturation, pixel_value);
                 lv_canvas_set_px_color(canvas, x, y, color);
                 lv_canvas_set_px_opa(canvas, x, y, LV_OPA_COVER);
             }
@@ -181,6 +216,14 @@ void CircularColorPicker::event_handler(lv_event_t* e) {
             }
             parent = lv_obj_get_parent(parent);
         }
+    } else if (code == LV_EVENT_SHORT_CLICKED || code == LV_EVENT_CLICKED) {
+        uint32_t now = lv_tick_get();
+        if (data->last_tap_tick != 0 && lv_tick_elaps(data->last_tap_tick) < kDoubleTapWindowMs) {
+            data->last_tap_tick = 0;
+            toggle_display_mode(obj);
+        } else {
+            data->last_tap_tick = now;
+        }
     } else if (code == LV_EVENT_DELETE) {
         // Cleanup
         if (data->canvas) {
@@ -221,6 +264,15 @@ void CircularColorPicker::handle_touch(lv_obj_t* obj, lv_coord_t x, lv_coord_t y
     update_cursor_position(obj);
 }
 
+void CircularColorPicker::toggle_display_mode(lv_obj_t* obj) {
+    PickerData* data = (PickerData*)lv_obj_get_user_data(obj);
+    if (!data || !data->canvas) return;
+
+    data->night_mode = !data->night_mode;
+    draw_color_circle(data->canvas, data->size, data->brightness, data->night_mode);
+    lv_event_send(obj, LV_EVENT_VALUE_CHANGED, nullptr);
+}
+
 void CircularColorPicker::set_rgb(lv_obj_t* obj, lv_color_t color) {
     PickerData* data = (PickerData*)lv_obj_get_user_data(obj);
     if (!data) return;
@@ -254,7 +306,8 @@ lv_color_t CircularColorPicker::get_rgb(lv_obj_t* obj) {
     PickerData* data = (PickerData*)lv_obj_get_user_data(obj);
     if (!data) return lv_color_black();
 
-    return lv_color_hsv_to_rgb(data->hue, data->saturation, data->brightness);
+    uint8_t value = compute_mode_brightness(data);
+    return lv_color_hsv_to_rgb(data->hue, data->saturation, value);
 }
 
 lv_color_hsv_t CircularColorPicker::get_hsv(lv_obj_t* obj) {
@@ -266,7 +319,7 @@ lv_color_hsv_t CircularColorPicker::get_hsv(lv_obj_t* obj) {
     lv_color_hsv_t hsv;
     hsv.h = data->hue;
     hsv.s = data->saturation;
-    hsv.v = data->brightness;
+    hsv.v = compute_mode_brightness(data);
     return hsv;
 }
 
@@ -277,7 +330,7 @@ void CircularColorPicker::set_brightness(lv_obj_t* obj, uint8_t brightness) {
     data->brightness = brightness;
 
     // Redraw the color circle with new brightness
-    draw_color_circle(data->canvas, data->size, brightness);
+    draw_color_circle(data->canvas, data->size, brightness, data->night_mode);
 }
 
 uint8_t CircularColorPicker::get_brightness(lv_obj_t* obj) {
