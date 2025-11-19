@@ -98,18 +98,30 @@ void LedSettingsScreen::build(lv_obj_t* parent) {
     lv_obj_set_style_pad_row(content_container, 6, 0);  // 6px spacing between cards (reduced)
 
     // ========== Brightness Card (Compact) ==========
-    brightness_card = create_card(content_container, "Luminosita");
+    brightness_card = create_card(content_container, nullptr);  // No title on card
     lv_obj_set_style_pad_all(brightness_card, 8, 0);  // Card padding: 8px all sides (reduced)
 
-    // Row container for value label
+    // Row container for icon + title + value label
     lv_obj_t* brightness_row = lv_obj_create(brightness_card);
     lv_obj_remove_style_all(brightness_row);
     lv_obj_set_width(brightness_row, lv_pct(100));
     lv_obj_set_height(brightness_row, LV_SIZE_CONTENT);  // Auto height
     lv_obj_set_layout(brightness_row, LV_LAYOUT_FLEX);
     lv_obj_set_flex_flow(brightness_row, LV_FLEX_FLOW_ROW);  // Horizontal layout
-    lv_obj_set_flex_align(brightness_row, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_flex_align(brightness_row, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_pad_bottom(brightness_row, 3, 0);  // 3px space below row (reduced)
+
+    // Icon label (EYE symbol for brightness)
+    lv_obj_t* brightness_icon = lv_label_create(brightness_row);
+    lv_label_set_text(brightness_icon, LV_SYMBOL_EYE_OPEN);
+    lv_obj_set_style_text_font(brightness_icon, &lv_font_montserrat_16, 0);  // Font size: 16px
+    lv_obj_set_style_text_color(brightness_icon, lv_color_hex(0xf0f0f0), 0);
+
+    // Title label (centered)
+    lv_obj_t* brightness_title = lv_label_create(brightness_row);
+    lv_label_set_text(brightness_title, "Luminosita");
+    lv_obj_set_style_text_font(brightness_title, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(brightness_title, lv_color_hex(0xf0f0f0), 0);
 
     // Value label (percentage)
     brightness_value_label = lv_label_create(brightness_row);
@@ -128,10 +140,10 @@ void LedSettingsScreen::build(lv_obj_t* parent) {
     lv_obj_add_event_cb(brightness_slider, handleBrightnessChanged, LV_EVENT_VALUE_CHANGED, this);
 
     // ========== Speed Card (Compact) ==========
-    speed_card = create_card(content_container, "Velocita");  // nullptr = no title
+    speed_card = create_card(content_container, nullptr);  // No title on card
     lv_obj_set_style_pad_all(speed_card, 8, 0);  // Card padding: 8px all sides (reduced)
 
-    // Row container for icon + value label
+    // Row container for icon + title + value label
     lv_obj_t* speed_row = lv_obj_create(speed_card);
     lv_obj_remove_style_all(speed_row);
     lv_obj_set_width(speed_row, lv_pct(100));
@@ -142,10 +154,16 @@ void LedSettingsScreen::build(lv_obj_t* parent) {
     lv_obj_set_style_pad_bottom(speed_row, 3, 0);  // 3px space below row (reduced)
 
     // Icon label (REFRESH symbol)
-    lv_obj_t* speed_label = lv_label_create(speed_row);
-    lv_label_set_text(speed_label, LV_SYMBOL_REFRESH);
-    lv_obj_set_style_text_font(speed_label, &lv_font_montserrat_16, 0);  // Font size: 16px
-    lv_obj_set_style_text_color(speed_label, lv_color_hex(0xf0f0f0), 0);
+    lv_obj_t* speed_icon = lv_label_create(speed_row);
+    lv_label_set_text(speed_icon, LV_SYMBOL_REFRESH);
+    lv_obj_set_style_text_font(speed_icon, &lv_font_montserrat_16, 0);  // Font size: 16px
+    lv_obj_set_style_text_color(speed_icon, lv_color_hex(0xf0f0f0), 0);
+
+    // Title label (centered)
+    lv_obj_t* speed_title = lv_label_create(speed_row);
+    lv_label_set_text(speed_title, "Velocita");
+    lv_obj_set_style_text_font(speed_title, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(speed_title, lv_color_hex(0xf0f0f0), 0);
 
     // Value label (numeric)
     speed_value_label = lv_label_create(speed_row);
@@ -164,10 +182,10 @@ void LedSettingsScreen::build(lv_obj_t* parent) {
     lv_obj_add_event_cb(speed_slider, handleSpeedChanged, LV_EVENT_VALUE_CHANGED, this);
 
     // ========== Idle Timeout Card (Compact) ==========
-    timeout_card = create_card(content_container, "Timeout");  // nullptr = no title
+    timeout_card = create_card(content_container, nullptr);  // No title on card
     lv_obj_set_style_pad_all(timeout_card, 8, 0);  // Card padding: 8px all sides (reduced)
 
-    // Row container for icon + value label
+    // Row container for icon + title + value label
     lv_obj_t* timeout_row = lv_obj_create(timeout_card);
     lv_obj_remove_style_all(timeout_row);
     lv_obj_set_width(timeout_row, lv_pct(100));
@@ -178,10 +196,16 @@ void LedSettingsScreen::build(lv_obj_t* parent) {
     lv_obj_set_style_pad_bottom(timeout_row, 3, 0);  // 3px space below row (reduced)
 
     // Icon label (POWER symbol)
-    lv_obj_t* timeout_label = lv_label_create(timeout_row);
-    lv_label_set_text(timeout_label, LV_SYMBOL_POWER);
-    lv_obj_set_style_text_font(timeout_label, &lv_font_montserrat_16, 0);  // Font size: 16px
-    lv_obj_set_style_text_color(timeout_label, lv_color_hex(0xf0f0f0), 0);
+    lv_obj_t* timeout_icon = lv_label_create(timeout_row);
+    lv_label_set_text(timeout_icon, LV_SYMBOL_POWER);
+    lv_obj_set_style_text_font(timeout_icon, &lv_font_montserrat_16, 0);  // Font size: 16px
+    lv_obj_set_style_text_color(timeout_icon, lv_color_hex(0xf0f0f0), 0);
+
+    // Title label (centered)
+    lv_obj_t* timeout_title = lv_label_create(timeout_row);
+    lv_label_set_text(timeout_title, "Timeout");
+    lv_obj_set_style_text_font(timeout_title, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(timeout_title, lv_color_hex(0xf0f0f0), 0);
 
     // Value label (time with unit)
     timeout_value_label = lv_label_create(timeout_row);
