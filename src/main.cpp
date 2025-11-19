@@ -14,19 +14,21 @@
 #include "core/display_manager.h"
 #include "core/settings_manager.h"
 #include "drivers/touch_driver.h"
+#include "drivers/sd_card_driver.h"
 #include "screens/dashboard_screen.h"
 #include "screens/settings_screen.h"
 #include "screens/info_screen.h"
 #include "screens/system_log_screen.h"
 #include "screens/theme_settings_screen.h"
+#include "screens/sd_explorer_screen.h"
 #include "ui/ui_symbols.h"
 #include "utils/logger.h"
 #include "utils/lvgl_mutex.h"
 
 static TFT_eSPI tft;
 static lv_disp_draw_buf_t draw_buf;
-// Ridotto a 20 righe per risparmiare memoria
-static constexpr int32_t DRAW_BUF_PIXELS = LV_HOR_RES_MAX * 20;
+// Ridotto a 15 righe per preservare RAM interna
+static constexpr int32_t DRAW_BUF_PIXELS = LV_HOR_RES_MAX * 15;
 // Buffer statico di fallback in RAM interna
 static lv_color_t draw_buf_fallback[DRAW_BUF_PIXELS];
 static lv_color_t* draw_buf_ptr = draw_buf_fallback;
@@ -205,6 +207,11 @@ void setup() {
         logger.warn("       Use Serial logs or src/utils/i2c_scanner.cpp to verify SDA/SCL pins.");
     }
 
+    SdCardDriver& sd_driver = SdCardDriver::getInstance();
+    if (!sd_driver.begin()) {
+        logger.warn("[SD] No microSD detected at boot");
+    }
+
     // Inizializza mutex PRIMA di usarlo
     lvgl_mutex_setup();
 
@@ -234,6 +241,7 @@ void setup() {
     static InfoScreen info;
     static ThemeSettingsScreen theme_settings;
     static SystemLogScreen system_log;
+    static SdExplorerScreen sd_explorer;
 
     // Registra le app nel dock
     app_manager->registerApp("dashboard", UI_SYMBOL_HOME, "Home", &dashboard);
@@ -241,6 +249,7 @@ void setup() {
     app_manager->registerApp("theme", UI_SYMBOL_THEME, "Theme", &theme_settings);
     app_manager->registerApp("system_log", UI_SYMBOL_SYSLOG, "SysLog", &system_log);
     app_manager->registerApp("info", UI_SYMBOL_INFO, "Info", &info);
+    app_manager->registerApp("sd_explorer", UI_SYMBOL_STORAGE, "SD Card", &sd_explorer);
 
     // Lancia dashboard come app iniziale
     app_manager->launchApp("dashboard");
