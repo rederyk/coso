@@ -15,13 +15,22 @@
 class CircularColorPicker {
 public:
     /**
+     * @brief Available visual styles for the color picker
+     */
+    enum class Style {
+        MODERN,  // Flat design with clean shadow
+        PIXEL,   // Retro pixelated grid style
+        GLASS    // Glassmorphism with transparency
+    };
+    /**
      * @brief Create a circular color picker
      * @param parent Parent LVGL object
      * @param size Diameter of the picker in pixels
      * @param brightness Initial brightness value (0-100)
+     * @param style Visual style (MODERN, PIXEL, or GLASS)
      * @return The created LVGL canvas object
      */
-    static lv_obj_t* create(lv_obj_t* parent, lv_coord_t size, uint8_t brightness = 70);
+    static lv_obj_t* create(lv_obj_t* parent, lv_coord_t size, uint8_t brightness = 70, Style style = Style::MODERN);
 
     /**
      * @brief Set the color of the picker (updates cursor position)
@@ -65,6 +74,13 @@ public:
      */
     static uint8_t get_brightness(lv_obj_t* obj);
 
+    /**
+     * @brief Change the visual style of the picker (redraws)
+     * @param obj The picker object
+     * @param style New visual style to apply
+     */
+    static void set_style(lv_obj_t* obj, Style style);
+
 private:
     struct PickerData {
         lv_obj_t* canvas;           // Canvas for drawing the color circle
@@ -74,9 +90,13 @@ private:
         uint8_t saturation;         // Current saturation (0-100)
         uint8_t brightness;         // Current brightness (0-100)
         bool dragging;              // Touch state
+        Style style;                // Visual style
     };
 
-    static void draw_color_circle(lv_obj_t* canvas, lv_coord_t size, uint8_t brightness);
+    static void draw_color_circle(lv_obj_t* canvas, lv_coord_t size, uint8_t brightness, Style style);
+    static void draw_modern_style(lv_obj_t* canvas, lv_coord_t size, uint8_t brightness);
+    static void draw_pixel_style(lv_obj_t* canvas, lv_coord_t size, uint8_t brightness);
+    static void draw_glass_style(lv_obj_t* canvas, lv_coord_t size, uint8_t brightness);
     static void update_cursor_position(lv_obj_t* obj);
     static void event_handler(lv_event_t* e);
     static void handle_touch(lv_obj_t* obj, lv_coord_t x, lv_coord_t y);
