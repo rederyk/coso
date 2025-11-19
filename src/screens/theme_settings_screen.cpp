@@ -7,13 +7,15 @@ struct PalettePreset {
     const char* name;
     uint32_t primary;
     uint32_t accent;
+    uint32_t card;
+    uint32_t dock;
 };
 
 constexpr PalettePreset PRESETS[] = {
-    {"Aurora", 0x0b2035, 0x5df4ff},
-    {"Sunset", 0x2b1f3a, 0xff7f50},
-    {"Forest", 0x0f2d1c, 0x7ed957},
-    {"Mono", 0x1a1a1a, 0xffffff}
+    {"Aurora", 0x0b2035, 0x5df4ff, 0x10182c, 0x1a2332},
+    {"Sunset", 0x2b1f3a, 0xff7f50, 0x3d2a45, 0x4a3352},
+    {"Forest", 0x0f2d1c, 0x7ed957, 0x1a3d28, 0x254d35},
+    {"Mono", 0x1a1a1a, 0xffffff, 0x2a2a2a, 0x3a3a3a}
 };
 
 lv_color_t toLvColor(uint32_t hex) {
@@ -545,6 +547,8 @@ void ThemeSettingsScreen::handlePaletteButton(lv_event_t* e) {
     SettingsManager& manager = SettingsManager::getInstance();
     manager.setPrimaryColor(preset->primary);
     manager.setAccentColor(preset->accent);
+    manager.setCardColor(preset->card);
+    manager.setDockColor(preset->dock);
 
     // The settings listener will trigger applySnapshot() which updates the color pickers
 }

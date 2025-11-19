@@ -13,6 +13,7 @@ constexpr lv_coord_t ICON_SIZE = 48;
 constexpr lv_coord_t SWIPE_EDGE_HEIGHT = 24; // Android-style edge swipe area
 constexpr lv_coord_t HANDLE_TOUCH_WIDTH = 120;  // Wider touch area
 constexpr lv_coord_t HANDLE_TOUCH_HEIGHT = 24; // Reduced height - less extension upward
+constexpr lv_coord_t OUTSIDE_CLICK_MARGIN = 30; // Margin outside dock area for closing
 
 lv_coord_t get_display_width() {
     return DisplayManager::getInstance().getWidth();
@@ -39,6 +40,10 @@ DockView::~DockView() {
         lv_obj_del(edge_detector_);
         edge_detector_ = nullptr;
     }
+    if (click_detector_) {
+        lv_obj_del(click_detector_);
+        click_detector_ = nullptr;
+    }
     visual_bar_ = nullptr; // Child of handle_button_, deleted automatically
 }
 
@@ -59,6 +64,10 @@ void DockView::destroy() {
     if (edge_detector_) {
         lv_obj_del(edge_detector_);
         edge_detector_ = nullptr;
+    }
+    if (click_detector_) {
+        lv_obj_del(click_detector_);
+        click_detector_ = nullptr;
     }
     visual_bar_ = nullptr;
     launcher_layer_ = nullptr;
@@ -143,6 +152,17 @@ void DockView::ensureCreated(lv_obj_t* launcher_layer) {
     lv_obj_add_event_cb(handle_button_, handlePressEvent, LV_EVENT_PRESSING, this);
     lv_obj_add_event_cb(handle_button_, handleReleaseEvent, LV_EVENT_RELEASED, this);
 
+    // Create click detector for outside clicks
+    click_detector_ = lv_obj_create(launcher_layer_);
+    lv_obj_remove_style_all(click_detector_);
+    lv_obj_set_size(click_detector_, lv_pct(100), lv_pct(100));
+    lv_obj_set_pos(click_detector_, 0, 0);
+    lv_obj_add_flag(click_detector_, LV_OBJ_FLAG_FLOATING);
+    lv_obj_add_flag(click_detector_, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_style_bg_opa(click_detector_, LV_OPA_TRANSP, 0);
+    lv_obj_add_event_cb(click_detector_, outsideClickEvent, LV_EVENT_CLICKED, this);
+    lv_obj_add_flag(click_detector_, LV_OBJ_FLAG_HIDDEN); // Initially hidden
+
     onOrientationChanged(landscape_mode_);
 }
 
@@ -208,6 +228,7 @@ void DockView::show() {
     lv_anim_set_exec_cb(&show_anim_, (lv_anim_exec_xcb_t)lv_obj_set_y);
     lv_anim_start(&show_anim_);
     is_visible_ = true;
+    updateClickDetector();
 }
 
 void DockView::hide() {
@@ -226,6 +247,7 @@ void DockView::hide() {
     lv_anim_set_exec_cb(&hide_anim_, (lv_anim_exec_xcb_t)lv_obj_set_y);
     lv_anim_start(&hide_anim_);
     is_visible_ = false;
+    updateClickDetector();
 }
 
 void DockView::toggle() {
@@ -384,6 +406,46 @@ void DockView::animateHandlePulse() {
     lv_anim_start(&pulse_anim);
 }
 
+void DockView::updateClickDetector() {
+    if (!click_detector_) {
+        return;
+    }
+
+    if (is_visible_) {
+        // Show click detector when dock is visible
+        lv_obj_clear_flag(click_detector_, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_move_background(click_detector_); // Behind dock but above apps
+    } else {
+        // Hide click detector when dock is hidden
+        lv_obj_add_flag(click_detector_, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
+void DockView::handleOutsideClick(lv_event_t* e) {
+    if (!e || !is_visible_ || !dock_container_) {
+        return;
+    }
+
+    lv_point_t point;
+    lv_indev_get_point(lv_indev_get_act(), &point);
+
+    // Get dock boundaries with margin
+    lv_coord_t dock_x = lv_obj_get_x(dock_container_);
+    lv_coord_t dock_y = lv_obj_get_y(dock_container_);
+    lv_coord_t dock_w = lv_obj_get_width(dock_container_);
+    lv_coord_t dock_h = lv_obj_get_height(dock_container_);
+
+    // Check if click is outside dock area (with margin)
+    bool outside = (point.x < dock_x - OUTSIDE_CLICK_MARGIN ||
+                   point.x > dock_x + dock_w + OUTSIDE_CLICK_MARGIN ||
+                   point.y < dock_y - OUTSIDE_CLICK_MARGIN ||
+                   point.y > dock_y + dock_h + OUTSIDE_CLICK_MARGIN);
+
+    if (outside) {
+        hide();
+    }
+}
+
 void DockView::handleGestureEvent(lv_event_t* e) {
     auto* view = static_cast<DockView*>(lv_event_get_user_data(e));
     if (!view) {
@@ -431,6 +493,14 @@ void DockView::iconEvent(lv_event_t* e) {
     }
     lv_obj_t* target = lv_event_get_target(e);
     view->handleIconTriggered(target);
+}
+
+void DockView::outsideClickEvent(lv_event_t* e) {
+    auto* view = static_cast<DockView*>(lv_event_get_user_data(e));
+    if (!view) {
+        return;
+    }
+    view->handleOutsideClick(e);
 }
 
 DockController::DockController() = default;

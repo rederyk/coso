@@ -42,6 +42,8 @@ private:
     void handlePress();
     void handleRelease();
     void animateHandlePulse();
+    void handleOutsideClick(lv_event_t* e);
+    void updateClickDetector();
 
     static void iconEvent(lv_event_t* e);
     static void handleGestureEvent(lv_event_t* e);
@@ -49,6 +51,7 @@ private:
     static void dockSwipeEvent(lv_event_t* e);
     static void handlePressEvent(lv_event_t* e);
     static void handleReleaseEvent(lv_event_t* e);
+    static void outsideClickEvent(lv_event_t* e);
 
     lv_obj_t* launcher_layer_ = nullptr;
     lv_obj_t* dock_container_ = nullptr;
@@ -56,6 +59,7 @@ private:
     lv_obj_t* handle_button_ = nullptr;
     lv_obj_t* edge_detector_ = nullptr;
     lv_obj_t* visual_bar_ = nullptr;
+    lv_obj_t* click_detector_ = nullptr;
     lv_anim_t show_anim_;
     lv_anim_t hide_anim_;
     bool is_visible_ = false;
