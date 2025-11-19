@@ -185,7 +185,7 @@ void ThemeSettingsScreen::build(lv_obj_t* parent) {
         }
     };
 
-    // Color picker 2D posizionati automaticamente in griglia 2x2
+    // Color pickers
     makePickerSection(color_content, "Primario", &primary_wheel, handlePrimaryColor, this);
     makePickerSection(color_content, "Accento", &accent_wheel, handleAccentColor, this);
     makePickerSection(color_content, "Card", &card_wheel, handleCardColor, this);
