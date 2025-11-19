@@ -20,8 +20,10 @@ lv_color_t toLvColor(uint32_t hex) {
 }
 
 uint32_t toHex(lv_color_t color) {
-    uint32_t full = lv_color_to32(color);
-    return full & 0x00FFFFFF;
+    const uint32_t r = static_cast<uint32_t>(LV_COLOR_GET_R(color)) & 0xFF;
+    const uint32_t g = static_cast<uint32_t>(LV_COLOR_GET_G(color)) & 0xFF;
+    const uint32_t b = static_cast<uint32_t>(LV_COLOR_GET_B(color)) & 0xFF;
+    return (r << 16) | (g << 8) | b;
 }
 
 lv_obj_t* create_card(lv_obj_t* parent, const char* title) {
@@ -97,61 +99,110 @@ void ThemeSettingsScreen::build(lv_obj_t* parent) {
     lv_obj_set_style_pad_row(content, 12, 0);
     lv_obj_clear_flag(content, LV_OBJ_FLAG_SCROLLABLE);
 
-    // Color wheels
-    lv_obj_t* primary_card = create_card(content, "Colore Primario");
-    lv_obj_t* primary_holder = lv_obj_create(primary_card);
-    lv_obj_remove_style_all(primary_holder);
-    lv_obj_set_width(primary_holder, lv_pct(100));
-    lv_obj_set_layout(primary_holder, LV_LAYOUT_FLEX);
-    lv_obj_set_flex_flow(primary_holder, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(primary_holder,
-                          LV_FLEX_ALIGN_CENTER,
-                          LV_FLEX_ALIGN_CENTER,
-                          LV_FLEX_ALIGN_CENTER);
-    primary_wheel = lv_colorwheel_create(primary_holder, true);
-    lv_obj_set_size(primary_wheel, 140, 140);
-    lv_obj_add_event_cb(primary_wheel, handlePrimaryColor, LV_EVENT_VALUE_CHANGED, this);
-
-    lv_obj_t* accent_card = create_card(content, "Colore Accento");
-    lv_obj_t* accent_holder = lv_obj_create(accent_card);
-    lv_obj_remove_style_all(accent_holder);
-    lv_obj_set_width(accent_holder, lv_pct(100));
-    lv_obj_set_layout(accent_holder, LV_LAYOUT_FLEX);
-    lv_obj_set_flex_flow(accent_holder, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(accent_holder,
-                          LV_FLEX_ALIGN_CENTER,
-                          LV_FLEX_ALIGN_CENTER,
-                          LV_FLEX_ALIGN_CENTER);
-    accent_wheel = lv_colorwheel_create(accent_holder, true);
-    lv_obj_set_size(accent_wheel, 140, 140);
-    lv_obj_add_event_cb(accent_wheel, handleAccentColor, LV_EVENT_VALUE_CHANGED, this);
-
-    // Border radius
-    lv_obj_t* border_card = create_card(content, "Raggio Bordi");
-    border_slider = lv_slider_create(border_card);
-    lv_slider_set_range(border_slider, 0, 30);
-    lv_obj_set_width(border_slider, lv_pct(100));
-    lv_obj_add_event_cb(border_slider, handleBorderRadius, LV_EVENT_VALUE_CHANGED, this);
-
     // Orientation
     lv_obj_t* orientation_card = create_card(content, "Orientamento UI");
+    lv_obj_set_height(orientation_card, LV_SIZE_CONTENT);
     orientation_switch = lv_switch_create(orientation_card);
     lv_obj_add_event_cb(orientation_switch, handleOrientation, LV_EVENT_VALUE_CHANGED, this);
     lv_obj_t* orient_hint = lv_label_create(orientation_card);
     lv_label_set_text(orient_hint, "Landscape / Portrait");
     lv_obj_set_style_text_color(orient_hint, lv_color_hex(0xa0a0a0), 0);
 
-    // Palette presets
-    lv_obj_t* palette_card = create_card(content, "Palette Rapide");
-    lv_obj_set_width(palette_card, lv_pct(100));
-    lv_obj_set_layout(palette_card, LV_LAYOUT_FLEX);
-    lv_obj_set_flex_flow(palette_card, LV_FLEX_FLOW_ROW_WRAP);
-    lv_obj_set_style_pad_row(palette_card, 6, 0);
-    lv_obj_set_style_pad_column(palette_card, 6, 0);
-    lv_obj_clear_flag(palette_card, LV_OBJ_FLAG_SCROLLABLE);
+    // Border radius
+    lv_obj_t* border_card = create_card(content, "Raggio Bordi");
+    lv_obj_set_height(border_card, LV_SIZE_CONTENT);
+    lv_obj_set_style_pad_all(border_card, 8, 0);
+    lv_obj_set_style_pad_row(border_card, 4, 0);
+    border_slider = lv_slider_create(border_card);
+    lv_slider_set_range(border_slider, 0, 30);
+    lv_obj_set_width(border_slider, lv_pct(100));
+    lv_obj_set_height(border_slider, 16);
+    lv_obj_add_event_cb(border_slider, handleBorderRadius, LV_EVENT_VALUE_CHANGED, this);
+
+
+    // Combined color customization container (wheels + quick palettes) - IN FONDO
+    lv_obj_t* color_palette_card = create_card(content, "Colori Rapidi & Custom");
+    lv_obj_set_size(color_palette_card, lv_pct(100), LV_SIZE_CONTENT);
+    lv_obj_set_style_pad_row(color_palette_card, 12, 0);
+
+    // Grid container: dimensionamento automatico intelligente
+    lv_obj_t* color_content = lv_obj_create(color_palette_card);
+    lv_obj_remove_style_all(color_content);
+    lv_obj_set_size(color_content, lv_pct(100), LV_SIZE_CONTENT);
+    lv_obj_set_layout(color_content, LV_LAYOUT_GRID);
+
+    // Griglia 2 colonne responsive per le ruote colore
+    static lv_coord_t col_dsc[] = {LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST};
+    static lv_coord_t row_dsc[] = {LV_SIZE_CONTENT, 8, LV_SIZE_CONTENT, LV_GRID_TEMPLATE_LAST};
+    lv_obj_set_grid_dsc_array(color_content, col_dsc, row_dsc);
+
+    lv_obj_set_style_pad_row(color_content, 0, 0);
+    lv_obj_set_style_pad_column(color_content, 16, 0);
+    lv_obj_set_style_grid_row_align(color_content, LV_GRID_ALIGN_START, 0);
+    lv_obj_set_style_grid_cell_column_pos(color_content, 0, 0);
+    lv_obj_set_style_grid_cell_row_pos(color_content, 0, 0);
+
+    // Lambda per creare sezioni ruota colore con grid positioning
+    int grid_col = 0;
+    auto makeWheelSection = [&grid_col](lv_obj_t* parent, const char* title,
+                                        lv_obj_t** target,
+                                        lv_event_cb_t handler,
+                                        void* user_data) {
+        // Contenitore sezione auto-centrato nella cella grid
+        lv_obj_t* section = lv_obj_create(parent);
+        lv_obj_remove_style_all(section);
+        lv_obj_set_size(section, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+        lv_obj_set_layout(section, LV_LAYOUT_FLEX);
+        lv_obj_set_flex_flow(section, LV_FLEX_FLOW_COLUMN);
+        lv_obj_set_flex_align(section, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+        lv_obj_set_style_pad_row(section, 8, 0);
+
+        // Posizionamento grid automatico
+        lv_obj_set_grid_cell(section, LV_GRID_ALIGN_CENTER, grid_col, 1,
+                                      LV_GRID_ALIGN_START, 0, 1);
+
+        lv_obj_t* lbl = lv_label_create(section);
+        lv_label_set_text(lbl, title);
+        lv_obj_set_style_text_color(lbl, lv_color_hex(0xf0f0f0), 0);
+        lv_obj_set_style_text_font(lbl, &lv_font_montserrat_14, 0);
+
+        *target = lv_colorwheel_create(section, true);
+        lv_obj_set_size(*target, 110, 110);  // Dimensione fissa ottimale per wheel
+        lv_obj_add_event_cb(*target, handler, LV_EVENT_VALUE_CHANGED, user_data);
+
+        grid_col++;
+    };
+
+    // Ruote colore posizionate automaticamente in griglia
+    makeWheelSection(color_content, "Primario", &primary_wheel, handlePrimaryColor, this);
+    makeWheelSection(color_content, "Accento", &accent_wheel, handleAccentColor, this);
+
+    // Container palette rapide: occupa tutta la riga sotto le ruote
+    lv_obj_t* palette_section = lv_obj_create(color_palette_card);
+    lv_obj_remove_style_all(palette_section);
+    lv_obj_set_size(palette_section, lv_pct(100), LV_SIZE_CONTENT);
+    lv_obj_set_layout(palette_section, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(palette_section, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_row(palette_section, 10, 0);
+    lv_obj_set_style_pad_top(palette_section, 16, 0);
+
+    lv_obj_t* palette_label = lv_label_create(palette_section);
+    lv_label_set_text(palette_label, "Palette Rapide");
+    lv_obj_set_style_text_color(palette_label, lv_color_hex(0x9fb0c8), 0);
+    lv_obj_set_style_text_font(palette_label, &lv_font_montserrat_14, 0);
+
+    lv_obj_t* palette_container = lv_obj_create(palette_section);
+    lv_obj_remove_style_all(palette_container);
+    lv_obj_set_size(palette_container, lv_pct(100), LV_SIZE_CONTENT);
+    lv_obj_set_layout(palette_container, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(palette_container, LV_FLEX_FLOW_ROW_WRAP);
+    lv_obj_set_flex_align(palette_container, LV_FLEX_ALIGN_SPACE_EVENLY,
+                          LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_row(palette_container, 8, 0);
+    lv_obj_set_style_pad_column(palette_container, 8, 0);
 
     for (const auto& preset : PRESETS) {
-        lv_obj_t* btn = lv_btn_create(palette_card);
+        lv_obj_t* btn = lv_btn_create(palette_container);
         lv_obj_set_size(btn, 90, 36);
         lv_obj_set_style_bg_color(btn, toLvColor(preset.primary), 0);
         lv_obj_set_style_radius(btn, 10, 0);
@@ -162,7 +213,6 @@ void ThemeSettingsScreen::build(lv_obj_t* parent) {
         lv_obj_set_style_text_color(lbl, lv_color_hex(0xffffff), 0);
         lv_obj_center(lbl);
     }
-
     // Preview
     preview_card = lv_obj_create(content);
     lv_obj_remove_style_all(preview_card);
