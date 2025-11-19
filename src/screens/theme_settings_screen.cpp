@@ -73,12 +73,17 @@ void ThemeSettingsScreen::build(lv_obj_t* parent) {
     border_card_container = nullptr;
     dock_icon_card_container = nullptr;
     color_palette_card_container = nullptr;
-    color_grid_container = nullptr;
+    color_target_selector_container = nullptr;
+    color_picker_container = nullptr;
+    color_picker_label = nullptr;
+    color_picker_widget = nullptr;
     palette_section_container = nullptr;
     palette_header_label = nullptr;
     quick_palette_container = nullptr;
     border_slider = nullptr;
     dock_icon_radius_slider = nullptr;
+    color_target_buttons_.clear();
+    current_target_ = ColorTarget::Primary;
 
     root = lv_obj_create(parent);
     lv_obj_remove_style_all(root);
@@ -142,68 +147,95 @@ void ThemeSettingsScreen::build(lv_obj_t* parent) {
     lv_obj_set_height(dock_icon_radius_slider, 16);
     lv_obj_add_event_cb(dock_icon_radius_slider, handleDockIconRadius, LV_EVENT_VALUE_CHANGED, this);
 
-    // Combined color customization container (wheels + quick palettes) - IN FONDO
+    // Combined color customization container (selector + quick palettes)
     color_palette_card_container = create_card(content, "Colori Rapidi & Custom");
     lv_obj_set_size(color_palette_card_container, lv_pct(100), LV_SIZE_CONTENT);
     lv_obj_set_style_pad_row(color_palette_card_container, 12, 0);
 
-    // Grid container: dimensionamento automatico intelligente
-    color_grid_container = lv_obj_create(color_palette_card_container);
-    lv_obj_remove_style_all(color_grid_container);
-    lv_obj_set_size(color_grid_container, lv_pct(100), LV_SIZE_CONTENT);
-    lv_obj_set_layout(color_grid_container, LV_LAYOUT_GRID);
+    color_target_selector_container = lv_obj_create(color_palette_card_container);
+    lv_obj_remove_style_all(color_target_selector_container);
+    lv_obj_set_size(color_target_selector_container, lv_pct(100), LV_SIZE_CONTENT);
+    lv_obj_set_layout(color_target_selector_container, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(color_target_selector_container, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(color_target_selector_container,
+                          LV_FLEX_ALIGN_START,
+                          LV_FLEX_ALIGN_CENTER,
+                          LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_row(color_target_selector_container, 12, 0);
 
-    // Griglia 2x2 per 4 ruote colore
-    static lv_coord_t col_dsc[] = {LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST};
-    static lv_coord_t row_dsc[] = {LV_SIZE_CONTENT, 12, LV_SIZE_CONTENT, LV_GRID_TEMPLATE_LAST};
-    lv_obj_set_grid_dsc_array(color_grid_container, col_dsc, row_dsc);
+    color_picker_container = lv_obj_create(color_target_selector_container);
+    lv_obj_remove_style_all(color_picker_container);
+    lv_obj_set_width(color_picker_container, LV_SIZE_CONTENT);
+    lv_obj_set_layout(color_picker_container, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(color_picker_container, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(color_picker_container,
+                          LV_FLEX_ALIGN_CENTER,
+                          LV_FLEX_ALIGN_CENTER,
+                          LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_row(color_picker_container, 10, 0);
 
-    lv_obj_set_style_pad_row(color_grid_container, 0, 0);
-    lv_obj_set_style_pad_column(color_grid_container, 16, 0);
-    lv_obj_set_style_grid_row_align(color_grid_container, LV_GRID_ALIGN_START, 0);
-    lv_obj_set_style_grid_cell_column_pos(color_grid_container, 0, 0);
-    lv_obj_set_style_grid_cell_row_pos(color_grid_container, 0, 0);
+    color_picker_label = lv_label_create(color_picker_container);
+    lv_obj_set_style_text_font(color_picker_label, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(color_picker_label, lv_color_hex(0xf0f0f0), 0);
 
-    // Lambda per creare sezioni color picker 2D con grid positioning
-    int grid_col = 0;
-    int grid_row = 0;
-    auto makePickerSection = [&grid_col, &grid_row](lv_obj_t* parent, const char* title,
-                                        lv_obj_t** target,
-                                        lv_event_cb_t handler,
-                                        void* user_data) {
-        // Contenitore sezione auto-centrato nella cella grid
-        lv_obj_t* section = lv_obj_create(parent);
-        lv_obj_remove_style_all(section);
-        lv_obj_set_size(section, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
-        lv_obj_set_layout(section, LV_LAYOUT_FLEX);
-        lv_obj_set_flex_flow(section, LV_FLEX_FLOW_COLUMN);
-        lv_obj_set_flex_align(section, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-        lv_obj_set_style_pad_row(section, 8, 0);
+    color_picker_widget = CircularColorPicker::create(color_picker_container, 160, 70);
+    if (color_picker_widget) {
+        lv_obj_add_event_cb(color_picker_widget, handleUnifiedColorPicker, LV_EVENT_VALUE_CHANGED, this);
+    }
 
-        // Posizionamento grid automatico
-        lv_obj_set_grid_cell(section, LV_GRID_ALIGN_CENTER, grid_col, 1,
-                                      LV_GRID_ALIGN_START, grid_row, 1);
+    lv_obj_t* targets_list = lv_obj_create(color_target_selector_container);
+    lv_obj_remove_style_all(targets_list);
+    lv_obj_set_width(targets_list, lv_pct(100));
+    lv_obj_set_layout(targets_list, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(targets_list, LV_FLEX_FLOW_ROW_WRAP);
+    lv_obj_set_flex_align(targets_list,
+                          LV_FLEX_ALIGN_SPACE_BETWEEN,
+                          LV_FLEX_ALIGN_START,
+                          LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_row(targets_list, 10, 0);
+    lv_obj_set_style_pad_column(targets_list, 10, 0);
 
-        lv_obj_t* lbl = lv_label_create(section);
-        lv_label_set_text(lbl, title);
-        lv_obj_set_style_text_color(lbl, lv_color_hex(0xf0f0f0), 0);
-        lv_obj_set_style_text_font(lbl, &lv_font_montserrat_14, 0);
-
-        *target = CircularColorPicker::create(section, 110, 70);
-        lv_obj_add_event_cb(*target, handler, LV_EVENT_VALUE_CHANGED, user_data);
-
-        grid_col++;
-        if (grid_col >= 2) {
-            grid_col = 0;
-            grid_row += 2;  // Skip the spacing row
-        }
+    struct ColorTargetDescriptor {
+        ColorTarget target;
+        const char* label;
+    };
+    static constexpr ColorTargetDescriptor descriptors[] = {
+        {ColorTarget::Primary, "Primario"},
+        {ColorTarget::Accent, "Accento"},
+        {ColorTarget::Card, "Card"},
+        {ColorTarget::Dock, "Dock"},
+        {ColorTarget::DockIconBackground, "Sfondo Icone Dock"},
+        {ColorTarget::DockIconSymbol, "Simbolo Icone Dock"},
     };
 
-    // Color pickers
-    makePickerSection(color_grid_container, "Primario", &primary_wheel, handlePrimaryColor, this);
-    makePickerSection(color_grid_container, "Accento", &accent_wheel, handleAccentColor, this);
-    makePickerSection(color_grid_container, "Card", &card_wheel, handleCardColor, this);
-    makePickerSection(color_grid_container, "Dock", &dock_wheel, handleDockColor, this);
+    color_target_buttons_.clear();
+    for (const auto& desc : descriptors) {
+        lv_obj_t* btn = lv_btn_create(targets_list);
+        lv_obj_set_width(btn, 140);
+        lv_obj_set_height(btn, 38);
+        lv_obj_set_style_radius(btn, 8, 0);
+        lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, 0);
+        lv_obj_set_style_border_width(btn, 0, LV_PART_MAIN);
+        lv_obj_set_style_border_width(btn, 3, LV_PART_MAIN | LV_STATE_CHECKED);
+        lv_obj_set_style_border_opa(btn, LV_OPA_100, LV_PART_MAIN | LV_STATE_CHECKED);
+        lv_obj_add_flag(btn, LV_OBJ_FLAG_CHECKABLE);
+        lv_obj_add_event_cb(btn, handleColorTargetButton, LV_EVENT_CLICKED, this);
+
+        lv_obj_t* lbl = lv_label_create(btn);
+        lv_label_set_text(lbl, desc.label);
+        lv_obj_set_style_text_color(lbl, lv_color_hex(0xffffff), 0);
+        lv_obj_center(lbl);
+
+        lv_obj_set_style_text_color(lbl, lv_color_hex(0xffffff), 0);
+
+        TargetButton target_button;
+        target_button.button = btn;
+        target_button.target = desc.target;
+        color_target_buttons_.push_back(target_button);
+    }
+
+    updateTargetButtonColors(snapshot);
+    setActiveColorTarget(current_target_, snapshot);
 
     // Container palette rapide: occupa tutta la riga sotto le ruote
     palette_section_container = lv_obj_create(color_palette_card_container);
@@ -304,8 +336,9 @@ void ThemeSettingsScreen::build(lv_obj_t* parent) {
                 updating_from_manager = false;
             }
 
-            // Always update preview (not the wheels)
+            // Always update preview and button colors (not the wheel)
             updatePreview(snap);
+            updateTargetButtonColors(snap);
         });
     }
 
@@ -332,37 +365,14 @@ void ThemeSettingsScreen::applySnapshot(const SettingsSnapshot& snapshot) {
                                  snapshot.cardColor,
                                  snapshot.dockColor);
 
-    // Initialize color pickers ONCE with approximate position based on saved color
-    // After this, pickers are NEVER updated - they control the color, not vice versa
-    if (primary_wheel) {
-        lv_color_t color = toLvColor(snapshot.primaryColor);
-        lv_color_hsv_t hsv = lv_color_rgb_to_hsv(LV_COLOR_GET_R(color),
-                                                   LV_COLOR_GET_G(color),
-                                                   LV_COLOR_GET_B(color));
-        current_primary_hsv = hsv;
+    lv_color_t primary_color = toLvColor(snapshot.primaryColor);
+    lv_color_hsv_t primary_hsv = lv_color_rgb_to_hsv(LV_COLOR_GET_R(primary_color),
+                                                     LV_COLOR_GET_G(primary_color),
+                                                     LV_COLOR_GET_B(primary_color));
+    current_primary_hsv = primary_hsv;
 
-        Logger::getInstance().debugf(UI_SYMBOL_THEME " Initializing primary picker to: 0x%06X (H:%d S:%d V:%d)",
-                                     snapshot.primaryColor,
-                                     hsv.h,
-                                     hsv.s,
-                                     hsv.v);
-        CircularColorPicker::set_hsv(primary_wheel, hsv);
-    }
-
-    if (accent_wheel) {
-        Logger::getInstance().debugf(UI_SYMBOL_THEME " Initializing accent picker to: 0x%06X", snapshot.accentColor);
-        CircularColorPicker::set_rgb(accent_wheel, toLvColor(snapshot.accentColor));
-    }
-
-    if (card_wheel) {
-        Logger::getInstance().debugf(UI_SYMBOL_THEME " Initializing card picker to: 0x%06X", snapshot.cardColor);
-        CircularColorPicker::set_rgb(card_wheel, toLvColor(snapshot.cardColor));
-    }
-
-    if (dock_wheel) {
-        Logger::getInstance().debugf(UI_SYMBOL_THEME " Initializing dock picker to: 0x%06X", snapshot.dockColor);
-        CircularColorPicker::set_rgb(dock_wheel, toLvColor(snapshot.dockColor));
-    }
+    refreshColorPickerForCurrentTarget(snapshot);
+    updateTargetButtonColors(snapshot);
 
     if (border_slider) {
         lv_slider_set_value(border_slider, snapshot.borderRadius, LV_ANIM_OFF);
@@ -417,10 +427,25 @@ void ThemeSettingsScreen::applyLiveTheme(const SettingsSnapshot& snapshot) {
     if (palette_header_label) {
         lv_obj_set_style_text_color(palette_header_label, accent, 0);
     }
-    if (color_grid_container) {
-        lv_obj_set_style_bg_color(color_grid_container, dock_muted, 0);
-        lv_obj_set_style_bg_opa(color_grid_container, LV_OPA_30, 0);
-        lv_obj_set_style_radius(color_grid_container, snapshot.borderRadius / 2 + 4, 0);
+    if (color_target_selector_container) {
+        lv_obj_set_style_bg_color(color_target_selector_container, dock_muted, 0);
+        lv_obj_set_style_bg_opa(color_target_selector_container, LV_OPA_30, 0);
+        lv_obj_set_style_radius(color_target_selector_container, snapshot.borderRadius / 2 + 4, 0);
+        lv_obj_set_style_pad_all(color_target_selector_container, 12, 0);
+    }
+    if (color_picker_container) {
+        lv_obj_set_style_bg_color(color_picker_container, lv_color_mix(card, dock, LV_OPA_50), 0);
+        lv_obj_set_style_bg_opa(color_picker_container, LV_OPA_30, 0);
+        lv_obj_set_style_radius(color_picker_container, snapshot.borderRadius / 2, 0);
+        lv_obj_set_style_pad_all(color_picker_container, 8, 0);
+    }
+    if (color_picker_label) {
+        lv_obj_set_style_text_color(color_picker_label, accent, 0);
+    }
+    for (const auto& button : color_target_buttons_) {
+        if (!button.button) continue;
+        lv_obj_set_style_border_color(button.button, accent, LV_PART_MAIN | LV_STATE_CHECKED);
+        lv_obj_set_style_border_color(button.button, lv_color_hex(0x000000), LV_PART_MAIN);
     }
     if (palette_section_container) {
         lv_obj_set_style_bg_color(palette_section_container, dock, 0);
@@ -512,53 +537,170 @@ void ThemeSettingsScreen::populateQuickPalettes() {
     }
 }
 
-void ThemeSettingsScreen::handlePrimaryColor(lv_event_t* e) {
-    auto* screen = static_cast<ThemeSettingsScreen*>(lv_event_get_user_data(e));
-    if (!screen || screen->updating_from_manager) return;
-
-    lv_color_t color = CircularColorPicker::get_rgb(screen->primary_wheel);
-    lv_color_hsv_t hsv = CircularColorPicker::get_hsv(screen->primary_wheel);
-    screen->current_primary_hsv = hsv;
-
-    uint32_t hex = toHex(color);
-    Logger::getInstance().debugf(UI_SYMBOL_THEME " Primary color: 0x%06X (H:%d S:%d V:%d)", hex, hsv.h, hsv.s, hsv.v);
-
-    SettingsManager::getInstance().setPrimaryColor(hex);
+const char* ThemeSettingsScreen::getTargetLabel(ColorTarget target) const {
+    switch (target) {
+        case ColorTarget::Primary:
+            return "Primario";
+        case ColorTarget::Accent:
+            return "Accento";
+        case ColorTarget::Card:
+            return "Card";
+        case ColorTarget::Dock:
+            return "Dock";
+        case ColorTarget::DockIconBackground:
+            return "Sfondo Icone Dock";
+        case ColorTarget::DockIconSymbol:
+            return "Simbolo Icone Dock";
+    }
+    return "Sconosciuto";
 }
 
-void ThemeSettingsScreen::handleAccentColor(lv_event_t* e) {
-    auto* screen = static_cast<ThemeSettingsScreen*>(lv_event_get_user_data(e));
-    if (!screen || screen->updating_from_manager) return;
-
-    lv_color_t color = CircularColorPicker::get_rgb(screen->accent_wheel);
-    uint32_t hex = toHex(color);
-    Logger::getInstance().debugf(UI_SYMBOL_THEME " Accent color: 0x%06X", hex);
-
-    SettingsManager::getInstance().setAccentColor(hex);
+uint32_t ThemeSettingsScreen::getColorForTarget(const SettingsSnapshot& snapshot, ColorTarget target) const {
+    switch (target) {
+        case ColorTarget::Primary:
+            return snapshot.primaryColor;
+        case ColorTarget::Accent:
+            return snapshot.accentColor;
+        case ColorTarget::Card:
+            return snapshot.cardColor;
+        case ColorTarget::Dock:
+            return snapshot.dockColor;
+        case ColorTarget::DockIconBackground:
+            return snapshot.dockIconBackgroundColor;
+        case ColorTarget::DockIconSymbol:
+            return snapshot.dockIconSymbolColor;
+    }
+    return snapshot.primaryColor;
 }
 
-void ThemeSettingsScreen::handleCardColor(lv_event_t* e) {
-    auto* screen = static_cast<ThemeSettingsScreen*>(lv_event_get_user_data(e));
-    if (!screen || screen->updating_from_manager) return;
-
-    lv_color_t color = CircularColorPicker::get_rgb(screen->card_wheel);
-    uint32_t hex = toHex(color);
-    Logger::getInstance().debugf(UI_SYMBOL_THEME " Card color: 0x%06X", hex);
-
-    SettingsManager::getInstance().setCardColor(hex);
+void ThemeSettingsScreen::updateTargetButtonColors(const SettingsSnapshot& snapshot) {
+    for (auto& target_button : color_target_buttons_) {
+        if (!target_button.button) continue;
+        uint32_t hex = getColorForTarget(snapshot, target_button.target);
+        lv_color_t color = toLvColor(hex);
+        lv_obj_set_style_bg_color(target_button.button, color, LV_PART_MAIN);
+        lv_obj_set_style_bg_color(target_button.button, color, LV_PART_MAIN | LV_STATE_CHECKED);
+    }
 }
 
-void ThemeSettingsScreen::handleDockColor(lv_event_t* e) {
+void ThemeSettingsScreen::setActiveColorTarget(ColorTarget target, const SettingsSnapshot& snapshot) {
+    current_target_ = target;
+    if (color_picker_label) {
+        lv_label_set_text_fmt(color_picker_label, "Modifica: %s", getTargetLabel(target));
+    }
+    updateTargetButtonStates();
+    refreshColorPickerForCurrentTarget(snapshot);
+}
+
+void ThemeSettingsScreen::refreshColorPickerForCurrentTarget(const SettingsSnapshot& snapshot) {
+    if (!color_picker_widget) {
+        return;
+    }
+
+    uint32_t hex = snapshot.primaryColor;
+    switch (current_target_) {
+        case ColorTarget::Primary:
+            hex = snapshot.primaryColor;
+            break;
+        case ColorTarget::Accent:
+            hex = snapshot.accentColor;
+            break;
+        case ColorTarget::Card:
+            hex = snapshot.cardColor;
+            break;
+        case ColorTarget::Dock:
+            hex = snapshot.dockColor;
+            break;
+        case ColorTarget::DockIconBackground:
+            hex = snapshot.dockIconBackgroundColor;
+            break;
+        case ColorTarget::DockIconSymbol:
+            hex = snapshot.dockIconSymbolColor;
+            break;
+    }
+
+    lv_color_t color = toLvColor(hex);
+    if (current_target_ == ColorTarget::Primary) {
+        lv_color_hsv_t hsv = lv_color_rgb_to_hsv(LV_COLOR_GET_R(color),
+                                                 LV_COLOR_GET_G(color),
+                                                 LV_COLOR_GET_B(color));
+        current_primary_hsv = hsv;
+        CircularColorPicker::set_hsv(color_picker_widget, hsv);
+    } else {
+        CircularColorPicker::set_rgb(color_picker_widget, color);
+    }
+}
+
+void ThemeSettingsScreen::updateTargetButtonStates() {
+    for (auto& target_button : color_target_buttons_) {
+        if (!target_button.button) {
+            continue;
+        }
+        if (target_button.target == current_target_) {
+            lv_obj_add_state(target_button.button, LV_STATE_CHECKED);
+        } else {
+            lv_obj_clear_state(target_button.button, LV_STATE_CHECKED);
+        }
+    }
+}
+
+void ThemeSettingsScreen::handleUnifiedColorPicker(lv_event_t* e) {
     auto* screen = static_cast<ThemeSettingsScreen*>(lv_event_get_user_data(e));
     if (!screen || screen->updating_from_manager) return;
 
-    // Read color from picker - this always returns a valid RGB based on cursor position
-    lv_color_t color = CircularColorPicker::get_rgb(screen->dock_wheel);
+    lv_color_t color = CircularColorPicker::get_rgb(screen->color_picker_widget);
     uint32_t hex = toHex(color);
-    Logger::getInstance().debugf(UI_SYMBOL_THEME " Dock color: 0x%06X", hex);
 
-    // Save to settings - this triggers listeners to update dock and preview
-    SettingsManager::getInstance().setDockColor(hex);
+    SettingsManager& manager = SettingsManager::getInstance();
+    switch (screen->current_target_) {
+        case ColorTarget::Primary: {
+            lv_color_hsv_t hsv = CircularColorPicker::get_hsv(screen->color_picker_widget);
+            screen->current_primary_hsv = hsv;
+            Logger::getInstance().debugf(UI_SYMBOL_THEME " Primary color: 0x%06X (H:%d S:%d V:%d)",
+                                         hex,
+                                         hsv.h,
+                                         hsv.s,
+                                         hsv.v);
+            manager.setPrimaryColor(hex);
+            break;
+        }
+        case ColorTarget::Accent:
+            Logger::getInstance().debugf(UI_SYMBOL_THEME " Accent color: 0x%06X", hex);
+            manager.setAccentColor(hex);
+            break;
+        case ColorTarget::Card:
+            Logger::getInstance().debugf(UI_SYMBOL_THEME " Card color: 0x%06X", hex);
+            manager.setCardColor(hex);
+            break;
+        case ColorTarget::Dock:
+            Logger::getInstance().debugf(UI_SYMBOL_THEME " Dock color: 0x%06X", hex);
+            manager.setDockColor(hex);
+            break;
+        case ColorTarget::DockIconBackground:
+            Logger::getInstance().debugf(UI_SYMBOL_THEME " Dock icon background: 0x%06X", hex);
+            manager.setDockIconBackgroundColor(hex);
+            break;
+        case ColorTarget::DockIconSymbol:
+            Logger::getInstance().debugf(UI_SYMBOL_THEME " Dock icon symbol: 0x%06X", hex);
+            manager.setDockIconSymbolColor(hex);
+            break;
+    }
+}
+
+void ThemeSettingsScreen::handleColorTargetButton(lv_event_t* e) {
+    auto* screen = static_cast<ThemeSettingsScreen*>(lv_event_get_user_data(e));
+    if (!screen) return;
+
+    lv_obj_t* btn = lv_event_get_target(e);
+    for (const auto& target_button : screen->color_target_buttons_) {
+        if (target_button.button == btn) {
+            if (screen->current_target_ != target_button.target) {
+                screen->setActiveColorTarget(target_button.target,
+                                             SettingsManager::getInstance().getSnapshot());
+            }
+            break;
+        }
+    }
 }
 
 void ThemeSettingsScreen::handleBorderRadius(lv_event_t* e) {
