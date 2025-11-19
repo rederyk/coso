@@ -3,9 +3,24 @@
 #include <Arduino.h>
 #include <algorithm>
 #include "utils/logger.h"
+#include <utility>
 
 namespace {
 constexpr size_t MAX_WIFI_FIELD_LENGTH = 63;
+struct PaletteSeed {
+    const char* name;
+    uint32_t primary;
+    uint32_t accent;
+    uint32_t card;
+    uint32_t dock;
+};
+
+constexpr PaletteSeed DEFAULT_PALETTE_SEEDS[] = {
+    {"Aurora", 0x0b2035, 0x5df4ff, 0x10182c, 0x1a2332},
+    {"Sunset", 0x2b1f3a, 0xff7f50, 0x3d2a45, 0x4a3352},
+    {"Forest", 0x0f2d1c, 0x7ed957, 0x1a3d28, 0x254d35},
+    {"Mono", 0x1a1a1a, 0xffffff, 0x2a2a2a, 0x3a3a3a}
+};
 
 std::string sanitizeString(const std::string& value, size_t max_len) {
     if (value.size() <= max_len) {
@@ -34,6 +49,7 @@ bool SettingsManager::begin() {
     loadDefaults();
     initialized_ = true;
     loadFromStorage();
+    loadThemePalettes();
     Logger::getInstance().info("[Settings] Manager initialized");
     return true;
 }
@@ -89,7 +105,7 @@ void SettingsManager::setBrightness(uint8_t value) {
     if (!initialized_) {
         return;
     }
-    uint8_t clamped = std::min<uint8_t>(100, std::max<uint8_t>(0, value));
+    uint8_t clamped = std::min<uint8_t>(100, std::max<uint8_t>(1, value));
     if (clamped == current_.brightness) {
         return;
     }
@@ -214,7 +230,7 @@ void SettingsManager::loadFromStorage() {
     if (!storage.loadSettings(current_)) {
         persistSnapshot();
     }
-    current_.brightness = std::min<uint8_t>(100, std::max<uint8_t>(0, current_.brightness));
+    current_.brightness = std::min<uint8_t>(100, std::max<uint8_t>(1, current_.brightness));
     current_.borderRadius = std::min<uint8_t>(30, std::max<uint8_t>(0, current_.borderRadius));
 
     // Fix corrupted black primary color (from previous conversion bugs)
@@ -237,6 +253,61 @@ void SettingsManager::loadDefaults() {
     current_.dockColor = DEFAULT_DOCK_COLOR;
     current_.borderRadius = DEFAULT_BORDER_RADIUS;
     current_.landscapeLayout = DEFAULT_LANDSCAPE;
+}
+
+void SettingsManager::loadThemePalettes() {
+    StorageManager& storage = StorageManager::getInstance();
+    if (!storage.loadThemePalettes(palettes_)) {
+        palettes_ = createDefaultPalettes();
+        persistThemePalettes();
+    }
+}
+
+void SettingsManager::persistThemePalettes() {
+    if (!initialized_) {
+        return;
+    }
+    StorageManager::getInstance().saveThemePalettes(palettes_);
+}
+
+std::vector<ThemePalette> SettingsManager::createDefaultPalettes() const {
+    std::vector<ThemePalette> defaults;
+    defaults.reserve(sizeof(DEFAULT_PALETTE_SEEDS) / sizeof(DEFAULT_PALETTE_SEEDS[0]));
+    for (const auto& seed : DEFAULT_PALETTE_SEEDS) {
+        ThemePalette palette;
+        palette.name = seed.name;
+        palette.primary = seed.primary;
+        palette.accent = seed.accent;
+        palette.card = seed.card;
+        palette.dock = seed.dock;
+        defaults.push_back(std::move(palette));
+    }
+    return defaults;
+}
+
+bool SettingsManager::addThemePalette(const ThemePalette& palette) {
+    if (!initialized_ || palette.name.empty()) {
+        return false;
+    }
+
+    auto existing = std::find_if(palettes_.begin(), palettes_.end(), [&](const ThemePalette& entry) {
+        return entry.name == palette.name;
+    });
+
+    if (existing != palettes_.end()) {
+        if (existing->primary == palette.primary &&
+            existing->accent == palette.accent &&
+            existing->card == palette.card &&
+            existing->dock == palette.dock) {
+            return false;
+        }
+        *existing = palette;
+    } else {
+        palettes_.push_back(palette);
+    }
+
+    persistThemePalettes();
+    return true;
 }
 
 void SettingsManager::persistSnapshot() {

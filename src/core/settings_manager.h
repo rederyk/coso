@@ -1,9 +1,10 @@
 #pragma once
 
+#include "core/theme_palette.h"
+#include <cstdint>
 #include <functional>
 #include <string>
 #include <vector>
-#include <cstdint>
 
 struct SettingsSnapshot {
     std::string wifiSsid;
@@ -77,6 +78,9 @@ public:
     bool isLandscapeLayout() const { return current_.landscapeLayout; }
     void setLandscapeLayout(bool landscape);
 
+    const std::vector<ThemePalette>& getThemePalettes() const { return palettes_; }
+    bool addThemePalette(const ThemePalette& palette);
+
     uint32_t addListener(Callback callback);
     void removeListener(uint32_t id);
 
@@ -85,6 +89,9 @@ private:
 
     void loadFromStorage();
     void loadDefaults();
+    void loadThemePalettes();
+    void persistThemePalettes();
+    std::vector<ThemePalette> createDefaultPalettes() const;
     void persistSnapshot();
     void notify(SettingKey key);
 
@@ -95,6 +102,7 @@ private:
 
     bool initialized_ = false;
     SettingsSnapshot current_;
+    std::vector<ThemePalette> palettes_;
     std::vector<CallbackEntry> callbacks_;
     uint32_t next_callback_id_ = 1;
 

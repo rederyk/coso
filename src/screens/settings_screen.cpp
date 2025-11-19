@@ -107,7 +107,7 @@ void SettingsScreen::build(lv_obj_t* parent) {
     display_card = create_card(content_container, "💡 Display", "Regola la luminosità del backlight (0-100%)");
     brightness_slider = lv_slider_create(display_card);
     lv_obj_set_width(brightness_slider, lv_pct(100));
-    lv_slider_set_range(brightness_slider, 0, 100);
+    lv_slider_set_range(brightness_slider, 1, 100);
     lv_obj_add_event_cb(brightness_slider, handleBrightnessChanged, LV_EVENT_VALUE_CHANGED, this);
 
     brightness_value_label = lv_label_create(display_card);

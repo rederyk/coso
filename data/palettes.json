@@ -1,0 +1,46 @@
+{
+  "palettes": [
+    {
+      "name": "Aurora",
+      "primary": 729141,
+      "accent": 6157567,
+      "card": 1054764,
+      "dock": 1712946
+    },
+    {
+      "name": "Sunset",
+      "primary": 2826042,
+      "accent": 16744272,
+      "card": 4008517,
+      "dock": 4862802
+    },
+    {
+      "name": "Forest",
+      "primary": 994588,
+      "accent": 8313175,
+      "card": 1719592,
+      "dock": 2444597
+    },
+    {
+      "name": "Mono",
+      "primary": 1710618,
+      "accent": 16777215,
+      "card": 2763306,
+      "dock": 3815994
+    },
+    {
+      "name": "Ocean",
+      "primary": 2866761,
+      "accent": 2697855,
+      "card": 4016604,
+      "dock": 5472855
+    },
+    {
+      "name": "Lavender",
+      "primary": 10985223,
+      "accent": 15433092,
+      "card": 12891129,
+      "dock": 13993175
+    }
+  ]
+}

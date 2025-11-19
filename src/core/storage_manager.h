@@ -7,6 +7,7 @@
 #include <vector>
 
 struct SettingsSnapshot;
+struct ThemePalette;
 
 class StorageManager {
 public:
@@ -20,6 +21,8 @@ public:
     bool begin();
     bool saveSettings(const SettingsSnapshot& snapshot);
     bool loadSettings(SettingsSnapshot& snapshot);
+    bool saveThemePalettes(const std::vector<ThemePalette>& palettes);
+    bool loadThemePalettes(std::vector<ThemePalette>& palettes);
 
     bool savePngAsset(AssetType type, const std::string& name, const uint8_t* data, size_t length);
     bool loadPngAsset(AssetType type, const std::string& name, std::vector<uint8_t>& out);
@@ -41,6 +44,7 @@ private:
     bool initialized_ = false;
 
     static constexpr const char* SETTINGS_FILE = "/settings.json";
+    static constexpr const char* PALETTES_FILE = "/palettes.json";
     static constexpr const char* ICONS_DIR = "/icons";
     static constexpr const char* BACKGROUNDS_DIR = "/backgrounds";
 };

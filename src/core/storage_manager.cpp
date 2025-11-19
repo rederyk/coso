@@ -1,10 +1,12 @@
 #include "core/storage_manager.h"
 
 #include "core/settings_manager.h"
+#include "core/theme_palette.h"
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include <FS.h>
 #include "utils/logger.h"
+#include <utility>
 
 namespace {
 void fillJsonFromSnapshot(const SettingsSnapshot& snapshot, JsonDocument& doc) {
@@ -38,6 +40,36 @@ void fillSnapshotFromJson(SettingsSnapshot& snapshot, const JsonDocument& doc) {
     snapshot.accentColor = doc["palette"]["accent"] | snapshot.accentColor;
     snapshot.cardColor = doc["palette"]["card"] | snapshot.cardColor;
     snapshot.dockColor = doc["palette"]["dock"] | snapshot.dockColor;
+}
+
+void fillPalettesArray(const std::vector<ThemePalette>& palettes, JsonDocument& doc) {
+    JsonArray arr = doc["palettes"].to<JsonArray>();
+    for (const auto& palette : palettes) {
+        JsonObject obj = arr.add<JsonObject>();
+        obj["name"] = palette.name.c_str();
+        obj["primary"] = palette.primary;
+        obj["accent"] = palette.accent;
+        obj["card"] = palette.card;
+        obj["dock"] = palette.dock;
+    }
+}
+
+void fillPalettesFromJson(std::vector<ThemePalette>& palettes, const JsonDocument& doc) {
+    JsonArrayConst arr = doc["palettes"].as<JsonArrayConst>();
+    if (arr.isNull()) {
+        return;
+    }
+    for (JsonObjectConst entry : arr) {
+        ThemePalette palette;
+        palette.name = entry["name"] | "";
+        palette.primary = entry["primary"] | 0u;
+        palette.accent = entry["accent"] | 0u;
+        palette.card = entry["card"] | 0u;
+        palette.dock = entry["dock"] | 0u;
+        if (!palette.name.empty()) {
+            palettes.push_back(std::move(palette));
+        }
+    }
 }
 } // namespace
 
@@ -118,6 +150,55 @@ bool StorageManager::loadSettings(SettingsSnapshot& snapshot) {
 
     fillSnapshotFromJson(snapshot, doc);
     return true;
+}
+
+bool StorageManager::saveThemePalettes(const std::vector<ThemePalette>& palettes) {
+    if (!initialized_) {
+        return false;
+    }
+
+    JsonDocument doc;
+    fillPalettesArray(palettes, doc);
+
+    File file = LittleFS.open(PALETTES_FILE, FILE_WRITE);
+    if (!file) {
+        Logger::getInstance().error("[Storage] Failed to open palettes file for writing");
+        return false;
+    }
+
+    const bool ok = serializeJsonPretty(doc, file) > 0;
+    file.close();
+    if (!ok) {
+        Logger::getInstance().error("[Storage] Failed to serialize palettes JSON");
+    }
+    return ok;
+}
+
+bool StorageManager::loadThemePalettes(std::vector<ThemePalette>& palettes) {
+    if (!initialized_) {
+        return false;
+    }
+    if (!LittleFS.exists(PALETTES_FILE)) {
+        return false;
+    }
+
+    File file = LittleFS.open(PALETTES_FILE, FILE_READ);
+    if (!file) {
+        Logger::getInstance().error("[Storage] Failed to open palettes file for reading");
+        return false;
+    }
+
+    JsonDocument doc;
+    DeserializationError err = deserializeJson(doc, file);
+    file.close();
+    if (err) {
+        Logger::getInstance().errorf("[Storage] Palette JSON parse error: %s", err.c_str());
+        return false;
+    }
+
+    palettes.clear();
+    fillPalettesFromJson(palettes, doc);
+    return !palettes.empty();
 }
 
 bool StorageManager::savePngAsset(AssetType type, const std::string& name, const uint8_t* data, size_t length) {

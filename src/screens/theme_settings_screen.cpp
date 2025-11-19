@@ -4,21 +4,6 @@
 #include "utils/logger.h"
 
 namespace {
-struct PalettePreset {
-    const char* name;
-    uint32_t primary;
-    uint32_t accent;
-    uint32_t card;
-    uint32_t dock;
-};
-
-constexpr PalettePreset PRESETS[] = {
-    {"Aurora", 0x0b2035, 0x5df4ff, 0x10182c, 0x1a2332},
-    {"Sunset", 0x2b1f3a, 0xff7f50, 0x3d2a45, 0x4a3352},
-    {"Forest", 0x0f2d1c, 0x7ed957, 0x1a3d28, 0x254d35},
-    {"Mono", 0x1a1a1a, 0xffffff, 0x2a2a2a, 0x3a3a3a}
-};
-
 lv_color_t toLvColor(uint32_t hex) {
     return lv_color_hex(hex);
 }
@@ -87,6 +72,7 @@ void ThemeSettingsScreen::build(lv_obj_t* parent) {
     color_grid_container = nullptr;
     palette_section_container = nullptr;
     palette_header_label = nullptr;
+    quick_palette_container = nullptr;
 
     root = lv_obj_create(parent);
     lv_obj_remove_style_all(root);
@@ -217,28 +203,17 @@ void ThemeSettingsScreen::build(lv_obj_t* parent) {
     lv_obj_set_style_text_color(palette_header_label, lv_color_hex(0x9fb0c8), 0);
     lv_obj_set_style_text_font(palette_header_label, &lv_font_montserrat_14, 0);
 
-    lv_obj_t* palette_container = lv_obj_create(palette_section_container);
-    lv_obj_remove_style_all(palette_container);
-    lv_obj_set_size(palette_container, lv_pct(100), LV_SIZE_CONTENT);
-    lv_obj_set_layout(palette_container, LV_LAYOUT_FLEX);
-    lv_obj_set_flex_flow(palette_container, LV_FLEX_FLOW_ROW_WRAP);
-    lv_obj_set_flex_align(palette_container, LV_FLEX_ALIGN_SPACE_EVENLY,
+    quick_palette_container = lv_obj_create(palette_section_container);
+    lv_obj_remove_style_all(quick_palette_container);
+    lv_obj_set_size(quick_palette_container, lv_pct(100), LV_SIZE_CONTENT);
+    lv_obj_set_layout(quick_palette_container, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(quick_palette_container, LV_FLEX_FLOW_ROW_WRAP);
+    lv_obj_set_flex_align(quick_palette_container, LV_FLEX_ALIGN_SPACE_EVENLY,
                           LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_row(palette_container, 8, 0);
-    lv_obj_set_style_pad_column(palette_container, 8, 0);
+    lv_obj_set_style_pad_row(quick_palette_container, 8, 0);
+    lv_obj_set_style_pad_column(quick_palette_container, 8, 0);
 
-    for (const auto& preset : PRESETS) {
-        lv_obj_t* btn = lv_btn_create(palette_container);
-        lv_obj_set_size(btn, 90, 36);
-        lv_obj_set_style_bg_color(btn, toLvColor(preset.primary), 0);
-        lv_obj_set_style_radius(btn, 10, 0);
-        lv_obj_add_event_cb(btn, handlePaletteButton, LV_EVENT_CLICKED, (void*)&preset);
-
-        lv_obj_t* lbl = lv_label_create(btn);
-        lv_label_set_text(lbl, preset.name);
-        lv_obj_set_style_text_color(lbl, lv_color_hex(0xffffff), 0);
-        lv_obj_center(lbl);
-    }
+    populateQuickPalettes();
     // Preview
     preview_card = lv_obj_create(content);
     lv_obj_remove_style_all(preview_card);
@@ -321,6 +296,7 @@ void ThemeSettingsScreen::build(lv_obj_t* parent) {
 void ThemeSettingsScreen::onShow() {
     Logger::getInstance().info("🎨 Theme settings opened");
     applySnapshot(SettingsManager::getInstance().getSnapshot());
+    populateQuickPalettes();
 }
 
 void ThemeSettingsScreen::onHide() {
@@ -475,6 +451,40 @@ void ThemeSettingsScreen::updatePreview(const SettingsSnapshot& snapshot) {
     }
 }
 
+void ThemeSettingsScreen::populateQuickPalettes() {
+    if (!quick_palette_container) {
+        return;
+    }
+
+    lv_obj_clean(quick_palette_container);
+    quick_palettes_.clear();
+
+    const auto& palettes = SettingsManager::getInstance().getThemePalettes();
+    quick_palettes_ = palettes;
+
+    if (quick_palettes_.empty()) {
+        lv_obj_t* empty = lv_label_create(quick_palette_container);
+        lv_label_set_text(empty, "Nessuna palette trovata");
+        lv_obj_set_style_text_color(empty, lv_color_hex(0xc0c0c0), 0);
+        return;
+    }
+
+    for (size_t i = 0; i < quick_palettes_.size(); ++i) {
+        ThemePalette* palette = &quick_palettes_[i];
+
+        lv_obj_t* btn = lv_btn_create(quick_palette_container);
+        lv_obj_set_size(btn, 90, 36);
+        lv_obj_set_style_bg_color(btn, toLvColor(palette->primary), 0);
+        lv_obj_set_style_radius(btn, 10, 0);
+        lv_obj_add_event_cb(btn, handlePaletteButton, LV_EVENT_CLICKED, palette);
+
+        lv_obj_t* lbl = lv_label_create(btn);
+        lv_label_set_text(lbl, palette->name.c_str());
+        lv_obj_set_style_text_color(lbl, lv_color_hex(0xffffff), 0);
+        lv_obj_center(lbl);
+    }
+}
+
 void ThemeSettingsScreen::handlePrimaryColor(lv_event_t* e) {
     auto* screen = static_cast<ThemeSettingsScreen*>(lv_event_get_user_data(e));
     if (!screen || screen->updating_from_manager) return;
@@ -545,7 +555,7 @@ void ThemeSettingsScreen::handleOrientation(lv_event_t* e) {
 }
 
 void ThemeSettingsScreen::handlePaletteButton(lv_event_t* e) {
-    auto* preset = static_cast<const PalettePreset*>(lv_event_get_user_data(e));
+    auto* preset = static_cast<const ThemePalette*>(lv_event_get_user_data(e));
     if (!preset) return;
 
     SettingsManager& manager = SettingsManager::getInstance();

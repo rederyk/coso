@@ -159,9 +159,10 @@ void setup() {
     touch_driver_init();
     bool has_touch = touch_driver_available();
 
+    tft.init();
+    // TFT_eSPI reconfigures TFT_BL inside init(), so attach PWM afterwards to keep control.
     enableBacklight();
     BacklightManager::getInstance().setBrightness(initial_brightness);
-    tft.init();
 
     lv_init();
     logMemoryStats("After lv_init");
