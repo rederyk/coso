@@ -114,8 +114,29 @@ void CircularColorPicker::event_handler(lv_event_t* e) {
     PickerData* data = (PickerData*)lv_obj_get_user_data(obj);
     if (!data) return;
 
-    if (code == LV_EVENT_PRESSED || code == LV_EVENT_PRESSING) {
+    if (code == LV_EVENT_PRESSED) {
         data->dragging = true;
+
+        // Block scrolling on all parent objects while dragging
+        lv_obj_t* parent = lv_obj_get_parent(obj);
+        while (parent) {
+            lv_obj_clear_flag(parent, LV_OBJ_FLAG_SCROLLABLE);
+            parent = lv_obj_get_parent(parent);
+        }
+
+        lv_indev_t* indev = lv_indev_get_act();
+        lv_point_t point;
+        lv_indev_get_point(indev, &point);
+
+        // Convert to local coordinates
+        lv_coord_t x = point.x - lv_obj_get_x(obj);
+        lv_coord_t y = point.y - lv_obj_get_y(obj);
+
+        handle_touch(obj, x, y);
+
+        // Trigger VALUE_CHANGED event
+        lv_event_send(obj, LV_EVENT_VALUE_CHANGED, nullptr);
+    } else if (code == LV_EVENT_PRESSING) {
         lv_indev_t* indev = lv_indev_get_act();
         lv_point_t point;
         lv_indev_get_point(indev, &point);
@@ -130,6 +151,20 @@ void CircularColorPicker::event_handler(lv_event_t* e) {
         lv_event_send(obj, LV_EVENT_VALUE_CHANGED, nullptr);
     } else if (code == LV_EVENT_RELEASED) {
         data->dragging = false;
+
+        // Re-enable scrolling on parent objects after dragging
+        lv_obj_t* parent = lv_obj_get_parent(obj);
+        while (parent) {
+            // Only re-enable scrolling for the root container (should have LV_DIR_VER)
+            if (lv_obj_has_flag(parent, LV_OBJ_FLAG_SCROLL_ONE)) {
+                lv_obj_add_flag(parent, LV_OBJ_FLAG_SCROLLABLE);
+            }
+            // Check if this was originally scrollable by checking scroll direction
+            if (lv_obj_get_scroll_dir(parent) != LV_DIR_NONE) {
+                lv_obj_add_flag(parent, LV_OBJ_FLAG_SCROLLABLE);
+            }
+            parent = lv_obj_get_parent(parent);
+        }
     } else if (code == LV_EVENT_DELETE) {
         // Cleanup
         if (data->canvas) {
