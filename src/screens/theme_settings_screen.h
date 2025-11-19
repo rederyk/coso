@@ -13,6 +13,7 @@ public:
 
 private:
     void applySnapshot(const SettingsSnapshot& snapshot);
+    void applyLiveTheme(const SettingsSnapshot& snapshot);
     void updatePreview(const SettingsSnapshot& snapshot);
 
     static void handlePrimaryColor(lv_event_t* e);
@@ -29,6 +30,14 @@ private:
     lv_obj_t* dock_wheel = nullptr;
     lv_obj_t* border_slider = nullptr;
     lv_obj_t* orientation_switch = nullptr;
+    lv_obj_t* title_label = nullptr;
+    lv_obj_t* orientation_card_container = nullptr;
+    lv_obj_t* orientation_hint_label = nullptr;
+    lv_obj_t* border_card_container = nullptr;
+    lv_obj_t* color_palette_card_container = nullptr;
+    lv_obj_t* color_grid_container = nullptr;
+    lv_obj_t* palette_section_container = nullptr;
+    lv_obj_t* palette_header_label = nullptr;
     lv_obj_t* preview_card = nullptr;
     lv_obj_t* preview_header = nullptr;
     lv_obj_t* preview_body = nullptr;
