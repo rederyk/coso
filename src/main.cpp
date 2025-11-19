@@ -13,6 +13,8 @@
 #include "core/backlight_manager.h"
 #include "core/display_manager.h"
 #include "core/settings_manager.h"
+#include "core/wifi_manager.h"
+#include "core/ble_manager.h"
 #include "drivers/touch_driver.h"
 #include "drivers/sd_card_driver.h"
 #include "screens/dashboard_screen.h"
@@ -33,6 +35,9 @@ static constexpr int32_t DRAW_BUF_PIXELS = LV_HOR_RES_MAX * (LV_VER_RES_MAX / 10
 static lv_color_t* draw_buf_ptr = nullptr;
 static bool draw_buf_in_psram = false;
 static constexpr const char* APP_VERSION = "0.5.0";
+
+static WifiManager wifi_manager;
+static BleManager ble_manager;
 
 static void logSystemBanner();
 static void logMemoryStats(const char* stage);
@@ -152,6 +157,12 @@ void setup() {
     } else {
         logger.warn("[Settings] Initialization failed - persistent settings disabled");
     }
+
+    // Initialize and start WiFi and BLE managers
+    wifi_manager.init();
+    ble_manager.init();
+    wifi_manager.start();
+    ble_manager.start();
 
     if (psramFound()) {
         logger.info("✓ PSRAM detected and enabled!");
