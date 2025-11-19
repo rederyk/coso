@@ -1,0 +1,19 @@
+{
+  "wifi": {
+    "ssid": "FAstweb",
+    "password": ""
+  },
+  "ui": {
+    "theme": "dark",
+    "version": "0.5.0",
+    "brightness": 80,
+    "borderRadius": 12,
+    "landscape": false
+  },
+  "palette": {
+    "primary": 725045,
+    "accent": 6157055,
+    "card": 1054764,
+    "dock": 1712946
+  }
+}

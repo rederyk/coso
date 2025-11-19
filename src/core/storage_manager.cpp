@@ -7,8 +7,6 @@
 #include "utils/logger.h"
 
 namespace {
-constexpr size_t SETTINGS_JSON_CAPACITY = 1024;
-
 void fillJsonFromSnapshot(const SettingsSnapshot& snapshot, JsonDocument& doc) {
     JsonObject wifi = doc["wifi"].to<JsonObject>();
     wifi["ssid"] = snapshot.wifiSsid;
@@ -78,7 +76,7 @@ bool StorageManager::saveSettings(const SettingsSnapshot& snapshot) {
         return false;
     }
 
-    StaticJsonDocument<SETTINGS_JSON_CAPACITY> doc;
+    JsonDocument doc;
     fillJsonFromSnapshot(snapshot, doc);
 
     File file = LittleFS.open(SETTINGS_FILE, FILE_WRITE);
@@ -110,7 +108,7 @@ bool StorageManager::loadSettings(SettingsSnapshot& snapshot) {
         return false;
     }
 
-    StaticJsonDocument<SETTINGS_JSON_CAPACITY> doc;
+    JsonDocument doc;
     DeserializationError err = deserializeJson(doc, file);
     file.close();
     if (err) {

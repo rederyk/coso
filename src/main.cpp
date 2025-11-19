@@ -10,6 +10,7 @@
 #include <TFT_eSPI.h>
 
 #include "core/app_manager.h"
+#include "core/backlight_manager.h"
 #include "core/display_manager.h"
 #include "core/settings_manager.h"
 #include "drivers/touch_driver.h"
@@ -103,10 +104,8 @@ static void* allocatePsramBuffer(size_t size, const char* label) {
 }
 
 static void enableBacklight() {
-#ifdef TFT_BL
-    pinMode(TFT_BL, OUTPUT);
-    digitalWrite(TFT_BL, TFT_BACKLIGHT_ON);
-#endif
+    BacklightManager& backlight = BacklightManager::getInstance();
+    backlight.begin();
 }
 
 static void tft_flush_cb(lv_disp_drv_t* drv, const lv_area_t* area, lv_color_t* color_p) {
@@ -142,9 +141,11 @@ void setup() {
 
     SettingsManager& settings_mgr = SettingsManager::getInstance();
     bool initial_landscape = true;
+    uint8_t initial_brightness = 80;
     if (settings_mgr.begin()) {
         settings_mgr.setVersion(APP_VERSION);
         initial_landscape = settings_mgr.isLandscapeLayout();
+        initial_brightness = settings_mgr.getBrightness();
     } else {
         logger.warn("[Settings] Initialization failed - persistent settings disabled");
     }
@@ -159,6 +160,7 @@ void setup() {
     bool has_touch = touch_driver_available();
 
     enableBacklight();
+    BacklightManager::getInstance().setBrightness(initial_brightness);
     tft.init();
 
     lv_init();
@@ -240,15 +242,17 @@ void setup() {
     logMemoryStats("UI ready");
 
     settings_mgr.addListener([app_manager](SettingsManager::SettingKey key, const SettingsSnapshot& snapshot) {
-        if (key != SettingsManager::SettingKey::LayoutOrientation) {
-            return;
+        if (key == SettingsManager::SettingKey::LayoutOrientation) {
+            Logger::getInstance().infof("[Display] Orientation toggle requested: %s",
+                                        snapshot.landscapeLayout ? "Landscape" : "Portrait");
+            DisplayManager& display = DisplayManager::getInstance();
+            display.applyOrientation(snapshot.landscapeLayout);
+            app_manager->getDock()->onOrientationChanged(snapshot.landscapeLayout);
+            app_manager->requestReload();
+        } else if (key == SettingsManager::SettingKey::Brightness) {
+            Logger::getInstance().infof("[Backlight] Brightness changed to %u%%", snapshot.brightness);
+            BacklightManager::getInstance().setBrightness(snapshot.brightness);
         }
-        Logger::getInstance().infof("[Display] Orientation toggle requested: %s",
-                                    snapshot.landscapeLayout ? "Landscape" : "Portrait");
-        DisplayManager& display = DisplayManager::getInstance();
-        display.applyOrientation(snapshot.landscapeLayout);
-        app_manager->getDock()->onOrientationChanged(snapshot.landscapeLayout);
-        app_manager->requestReload();
     });
 
     xTaskCreatePinnedToCore(lvgl_task, "lvgl", 6144, nullptr, 3, nullptr, 1);
