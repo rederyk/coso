@@ -2,6 +2,7 @@
 #include "core/storage_manager.h"
 #include <Arduino.h>
 #include <algorithm>
+#include "ui/ui_symbols.h"
 #include "utils/logger.h"
 #include <utility>
 
@@ -235,7 +236,7 @@ void SettingsManager::loadFromStorage() {
 
     // Fix corrupted black primary color (from previous conversion bugs)
     if (current_.primaryColor == 0x000000) {
-        Logger::getInstance().warn("⚠️ Fixing corrupted primary color (was black)");
+        Logger::getInstance().warn(UI_SYMBOL_WARNING " Fixing corrupted primary color (was black)");
         current_.primaryColor = DEFAULT_PRIMARY_COLOR;
         persistSnapshot();
     }

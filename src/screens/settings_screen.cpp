@@ -1,5 +1,6 @@
 #include "screens/settings_screen.h"
 #include <Arduino.h>
+#include "ui/ui_symbols.h"
 #include "utils/logger.h"
 
 namespace {
@@ -70,7 +71,7 @@ void SettingsScreen::build(lv_obj_t* parent) {
     lv_obj_set_style_outline_width(root, 0, 0);
 
     header_label = lv_label_create(root);
-    lv_label_set_text(header_label, "⚙️ Settings");
+    lv_label_set_text(header_label, UI_SYMBOL_SETTINGS " Settings");
     lv_obj_set_style_text_font(header_label, &lv_font_montserrat_24, 0);
     lv_obj_set_width(header_label, lv_pct(100));
 
@@ -86,7 +87,7 @@ void SettingsScreen::build(lv_obj_t* parent) {
     lv_obj_clear_flag(content_container, LV_OBJ_FLAG_SCROLLABLE);
 
     // WiFi credentials
-    wifi_card = create_card(content_container, "📶 WiFi", "Configura SSID e password della rete");
+    wifi_card = create_card(content_container, UI_SYMBOL_WIFI " WiFi", "Configura SSID e password della rete");
 
     wifi_ssid_input = lv_textarea_create(wifi_card);
     lv_textarea_set_one_line(wifi_ssid_input, true);
@@ -104,7 +105,7 @@ void SettingsScreen::build(lv_obj_t* parent) {
     lv_obj_add_event_cb(wifi_pass_input, handleTextInput, LV_EVENT_VALUE_CHANGED, this);
 
     // Brightness
-    display_card = create_card(content_container, "💡 Display", "Regola la luminosità del backlight (0-100%)");
+    display_card = create_card(content_container, UI_SYMBOL_BRIGHTNESS " Display", "Regola la luminosità del backlight (0-100%)");
     brightness_slider = lv_slider_create(display_card);
     lv_obj_set_width(brightness_slider, lv_pct(100));
     lv_slider_set_range(brightness_slider, 1, 100);
@@ -115,14 +116,14 @@ void SettingsScreen::build(lv_obj_t* parent) {
     lv_obj_set_style_text_color(brightness_value_label, lv_color_hex(0xe0e0e0), 0);
 
     // Theme selector
-    theme_card = create_card(content_container, "🎨 Tema", "Seleziona la palette preferita");
+    theme_card = create_card(content_container, UI_SYMBOL_THEME " Tema", "Seleziona la palette preferita");
     theme_dropdown = lv_dropdown_create(theme_card);
     lv_obj_set_width(theme_dropdown, lv_pct(100));
     lv_dropdown_set_options(theme_dropdown, "Dark\nLight\nAuto");
     lv_obj_add_event_cb(theme_dropdown, handleThemeChanged, LV_EVENT_VALUE_CHANGED, this);
 
     // Version
-    info_card = create_card(content_container, "ℹ️ Sistema", "Versione firmware e suggerimenti UI");
+    info_card = create_card(content_container, UI_SYMBOL_INFO " Sistema", "Versione firmware e suggerimenti UI");
     version_label = lv_label_create(info_card);
     lv_obj_set_style_text_font(version_label, &lv_font_montserrat_16, 0);
     lv_obj_set_style_text_color(version_label, lv_color_hex(0xc0c0c0), 0);
@@ -145,12 +146,12 @@ void SettingsScreen::build(lv_obj_t* parent) {
 }
 
 void SettingsScreen::onShow() {
-    Logger::getInstance().info("⚙️ Settings screen shown");
+    Logger::getInstance().info(UI_SYMBOL_SETTINGS " Settings screen shown");
     applySnapshot(SettingsManager::getInstance().getSnapshot());
 }
 
 void SettingsScreen::onHide() {
-    Logger::getInstance().info("⚙️ Settings screen hidden");
+    Logger::getInstance().info(UI_SYMBOL_SETTINGS " Settings screen hidden");
 }
 
 void SettingsScreen::applySnapshot(const SettingsSnapshot& snapshot) {

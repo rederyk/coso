@@ -1,6 +1,7 @@
 #include "widgets/circular_color_picker.h"
 #include <Arduino.h>
 #include <cmath>
+#include "ui/ui_symbols.h"
 #include "utils/logger.h"
 
 namespace {
@@ -55,7 +56,7 @@ lv_obj_t* CircularColorPicker::create(lv_obj_t* parent, lv_coord_t size, uint8_t
     size_t buffer_size = LV_CANVAS_BUF_SIZE_TRUE_COLOR_ALPHA(size, size);
     uint8_t* cbuf = (uint8_t*)heap_caps_malloc(buffer_size, MALLOC_CAP_SPIRAM);
     if (!cbuf) {
-        Logger::getInstance().error("❌ Failed to allocate canvas buffer");
+        Logger::getInstance().error(UI_SYMBOL_ERROR " Failed to allocate canvas buffer");
         delete data;
         return nullptr;
     }

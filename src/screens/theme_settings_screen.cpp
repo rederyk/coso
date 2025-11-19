@@ -1,6 +1,7 @@
 #include "screens/theme_settings_screen.h"
 #include "widgets/circular_color_picker.h"
 #include <Arduino.h>
+#include "ui/ui_symbols.h"
 #include "utils/logger.h"
 
 namespace {
@@ -89,7 +90,7 @@ void ThemeSettingsScreen::build(lv_obj_t* parent) {
     lv_obj_set_style_outline_width(root, 0, 0);
 
     title_label = lv_label_create(root);
-    lv_label_set_text(title_label, "🎨 Theme Studio");
+    lv_label_set_text(title_label, UI_SYMBOL_THEME " Theme Studio");
     lv_obj_set_style_text_font(title_label, &lv_font_montserrat_24, 0);
     lv_obj_set_style_text_color(title_label, lv_color_hex(0xffffff), 0);
     lv_obj_set_width(title_label, lv_pct(100));
@@ -294,19 +295,19 @@ void ThemeSettingsScreen::build(lv_obj_t* parent) {
 }
 
 void ThemeSettingsScreen::onShow() {
-    Logger::getInstance().info("🎨 Theme settings opened");
+    Logger::getInstance().info(UI_SYMBOL_THEME " Theme settings opened");
     applySnapshot(SettingsManager::getInstance().getSnapshot());
     populateQuickPalettes();
 }
 
 void ThemeSettingsScreen::onHide() {
-    Logger::getInstance().info("🎨 Theme settings closed");
+    Logger::getInstance().info(UI_SYMBOL_THEME " Theme settings closed");
 }
 
 void ThemeSettingsScreen::applySnapshot(const SettingsSnapshot& snapshot) {
     updating_from_manager = true;
 
-    Logger::getInstance().debugf("🔄 applySnapshot - Primary: 0x%06X, Accent: 0x%06X, Card: 0x%06X, Dock: 0x%06X",
+    Logger::getInstance().debugf(UI_SYMBOL_REFRESH " applySnapshot - Primary: 0x%06X, Accent: 0x%06X, Card: 0x%06X, Dock: 0x%06X",
                                  snapshot.primaryColor,
                                  snapshot.accentColor,
                                  snapshot.cardColor,
@@ -321,7 +322,7 @@ void ThemeSettingsScreen::applySnapshot(const SettingsSnapshot& snapshot) {
                                                    LV_COLOR_GET_B(color));
         current_primary_hsv = hsv;
 
-        Logger::getInstance().debugf("🎨 Initializing primary picker to: 0x%06X (H:%d S:%d V:%d)",
+        Logger::getInstance().debugf(UI_SYMBOL_THEME " Initializing primary picker to: 0x%06X (H:%d S:%d V:%d)",
                                      snapshot.primaryColor,
                                      hsv.h,
                                      hsv.s,
@@ -330,17 +331,17 @@ void ThemeSettingsScreen::applySnapshot(const SettingsSnapshot& snapshot) {
     }
 
     if (accent_wheel) {
-        Logger::getInstance().debugf("🎨 Initializing accent picker to: 0x%06X", snapshot.accentColor);
+        Logger::getInstance().debugf(UI_SYMBOL_THEME " Initializing accent picker to: 0x%06X", snapshot.accentColor);
         CircularColorPicker::set_rgb(accent_wheel, toLvColor(snapshot.accentColor));
     }
 
     if (card_wheel) {
-        Logger::getInstance().debugf("🎨 Initializing card picker to: 0x%06X", snapshot.cardColor);
+        Logger::getInstance().debugf(UI_SYMBOL_THEME " Initializing card picker to: 0x%06X", snapshot.cardColor);
         CircularColorPicker::set_rgb(card_wheel, toLvColor(snapshot.cardColor));
     }
 
     if (dock_wheel) {
-        Logger::getInstance().debugf("🎨 Initializing dock picker to: 0x%06X", snapshot.dockColor);
+        Logger::getInstance().debugf(UI_SYMBOL_THEME " Initializing dock picker to: 0x%06X", snapshot.dockColor);
         CircularColorPicker::set_rgb(dock_wheel, toLvColor(snapshot.dockColor));
     }
 
@@ -494,7 +495,7 @@ void ThemeSettingsScreen::handlePrimaryColor(lv_event_t* e) {
     screen->current_primary_hsv = hsv;
 
     uint32_t hex = toHex(color);
-    Logger::getInstance().debugf("🎨 Primary color: 0x%06X (H:%d S:%d V:%d)", hex, hsv.h, hsv.s, hsv.v);
+    Logger::getInstance().debugf(UI_SYMBOL_THEME " Primary color: 0x%06X (H:%d S:%d V:%d)", hex, hsv.h, hsv.s, hsv.v);
 
     SettingsManager::getInstance().setPrimaryColor(hex);
 }
@@ -505,7 +506,7 @@ void ThemeSettingsScreen::handleAccentColor(lv_event_t* e) {
 
     lv_color_t color = CircularColorPicker::get_rgb(screen->accent_wheel);
     uint32_t hex = toHex(color);
-    Logger::getInstance().debugf("🎨 Accent color: 0x%06X", hex);
+    Logger::getInstance().debugf(UI_SYMBOL_THEME " Accent color: 0x%06X", hex);
 
     SettingsManager::getInstance().setAccentColor(hex);
 }
@@ -516,7 +517,7 @@ void ThemeSettingsScreen::handleCardColor(lv_event_t* e) {
 
     lv_color_t color = CircularColorPicker::get_rgb(screen->card_wheel);
     uint32_t hex = toHex(color);
-    Logger::getInstance().debugf("🎨 Card color: 0x%06X", hex);
+    Logger::getInstance().debugf(UI_SYMBOL_THEME " Card color: 0x%06X", hex);
 
     SettingsManager::getInstance().setCardColor(hex);
 }
@@ -528,7 +529,7 @@ void ThemeSettingsScreen::handleDockColor(lv_event_t* e) {
     // Read color from picker - this always returns a valid RGB based on cursor position
     lv_color_t color = CircularColorPicker::get_rgb(screen->dock_wheel);
     uint32_t hex = toHex(color);
-    Logger::getInstance().debugf("🎨 Dock color: 0x%06X", hex);
+    Logger::getInstance().debugf(UI_SYMBOL_THEME " Dock color: 0x%06X", hex);
 
     // Save to settings - this triggers listeners to update dock and preview
     SettingsManager::getInstance().setDockColor(hex);

@@ -17,7 +17,9 @@
 #include "screens/dashboard_screen.h"
 #include "screens/settings_screen.h"
 #include "screens/info_screen.h"
+#include "screens/system_log_screen.h"
 #include "screens/theme_settings_screen.h"
+#include "ui/ui_symbols.h"
 #include "utils/logger.h"
 #include "utils/lvgl_mutex.h"
 
@@ -231,12 +233,14 @@ void setup() {
     static SettingsScreen settings;
     static InfoScreen info;
     static ThemeSettingsScreen theme_settings;
+    static SystemLogScreen system_log;
 
     // Registra le app nel dock
-    app_manager->registerApp("dashboard", "🏠", "Home", &dashboard);
-    app_manager->registerApp("settings", "⚙️", "Settings", &settings);
-    app_manager->registerApp("theme", "🖌️", "Theme", &theme_settings);
-    app_manager->registerApp("info", "ℹ️", "Info", &info);
+    app_manager->registerApp("dashboard", UI_SYMBOL_HOME, "Home", &dashboard);
+    app_manager->registerApp("settings", UI_SYMBOL_SETTINGS, "Settings", &settings);
+    app_manager->registerApp("theme", UI_SYMBOL_THEME, "Theme", &theme_settings);
+    app_manager->registerApp("system_log", UI_SYMBOL_SYSLOG, "SysLog", &system_log);
+    app_manager->registerApp("info", UI_SYMBOL_INFO, "Info", &info);
 
     // Lancia dashboard come app iniziale
     app_manager->launchApp("dashboard");
