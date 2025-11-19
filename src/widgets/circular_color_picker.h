@@ -19,9 +19,10 @@ public:
      * @param parent Parent LVGL object
      * @param size Diameter of the picker in pixels
      * @param brightness Initial brightness value (0-100)
+     * @param enable_mode_toggle Enable double-tap to toggle night/day mode
      * @return The created LVGL canvas object
      */
-    static lv_obj_t* create(lv_obj_t* parent, lv_coord_t size, uint8_t brightness = 70);
+    static lv_obj_t* create(lv_obj_t* parent, lv_coord_t size, uint8_t brightness = 70, bool enable_mode_toggle = true);
 
     /**
      * @brief Set the color of the picker (updates cursor position)
@@ -76,6 +77,7 @@ private:
         bool dragging;              // Touch state
         bool night_mode;            // Whether dark mode is active
         uint32_t last_tap_tick;     // Last tap timestamp for double-tap detection
+        bool mode_toggle_enabled;   // Whether mode toggle is enabled
     };
 
     static void draw_color_circle(lv_obj_t* canvas, lv_coord_t size, uint8_t brightness, bool night_mode);

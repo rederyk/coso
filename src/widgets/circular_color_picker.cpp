@@ -30,7 +30,7 @@ uint8_t CircularColorPicker::compute_mode_brightness(const PickerData* data) {
     return apply_mode_brightness(data->brightness, data->night_mode);
 }
 
-lv_obj_t* CircularColorPicker::create(lv_obj_t* parent, lv_coord_t size, uint8_t brightness) {
+lv_obj_t* CircularColorPicker::create(lv_obj_t* parent, lv_coord_t size, uint8_t brightness, bool enable_mode_toggle) {
     // Create container
     lv_obj_t* container = lv_obj_create(parent);
     lv_obj_remove_style_all(container);
@@ -46,6 +46,7 @@ lv_obj_t* CircularColorPicker::create(lv_obj_t* parent, lv_coord_t size, uint8_t
     data->dragging = false;
     data->night_mode = false;
     data->last_tap_tick = 0;
+    data->mode_toggle_enabled = enable_mode_toggle;
 
     // Create canvas for color circle
     data->canvas = lv_canvas_create(container);
@@ -238,12 +239,14 @@ void CircularColorPicker::event_handler(lv_event_t* e) {
             parent = lv_obj_get_parent(parent);
         }
     } else if (code == LV_EVENT_SHORT_CLICKED || code == LV_EVENT_CLICKED) {
-        uint32_t now = lv_tick_get();
-        if (data->last_tap_tick != 0 && lv_tick_elaps(data->last_tap_tick) < kDoubleTapWindowMs) {
-            data->last_tap_tick = 0;
-            toggle_display_mode(obj);
-        } else {
-            data->last_tap_tick = now;
+        if (data->mode_toggle_enabled) {
+            uint32_t now = lv_tick_get();
+            if (data->last_tap_tick != 0 && lv_tick_elaps(data->last_tap_tick) < kDoubleTapWindowMs) {
+                data->last_tap_tick = 0;
+                toggle_display_mode(obj);
+            } else {
+                data->last_tap_tick = now;
+            }
         }
     } else if (code == LV_EVENT_DELETE) {
         // Cleanup
