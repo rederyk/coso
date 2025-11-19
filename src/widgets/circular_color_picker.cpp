@@ -4,17 +4,23 @@
 
 namespace {
 constexpr uint32_t kDoubleTapWindowMs = 350;
-constexpr float kDayBrightnessScale = 0.75f;
-constexpr float kNightBrightnessScale = 0.45f;
+constexpr float kDayBrightnessScale = 1.0f;      // Giorno: luminosità massima
+constexpr uint8_t kNightEdgeBrightness = 50;     // Notte: bordo fisso al 50%
+constexpr float kNightCurveExponent = 1.8f;      // Esponente per curva (ridotto per transizione più graduale)
 constexpr uint8_t kMinBrightness = 5;
 }  // namespace
 
 uint8_t CircularColorPicker::apply_mode_brightness(uint8_t brightness, bool night_mode) {
-    float scale = night_mode ? kNightBrightnessScale : kDayBrightnessScale;
-    int value = static_cast<int>(roundf(brightness * scale));
-    if (value < kMinBrightness) value = kMinBrightness;
-    if (value > 100) value = 100;
-    return static_cast<uint8_t>(value);
+    if (night_mode) {
+        // Modalità notte: valore non usato, gestiamo il gradiente direttamente in draw_color_circle
+        return kNightEdgeBrightness;
+    } else {
+        // Modalità giorno: usa brightness al massimo
+        int value = static_cast<int>(roundf(brightness * kDayBrightnessScale));
+        if (value < kMinBrightness) value = kMinBrightness;
+        if (value > 100) value = 100;
+        return static_cast<uint8_t>(value);
+    }
 }
 
 uint8_t CircularColorPicker::compute_mode_brightness(const PickerData* data) {
@@ -116,12 +122,25 @@ void CircularColorPicker::draw_color_circle(lv_obj_t* canvas,
                 float normalized = dist / radius;
                 if (normalized < 0.0f) normalized = 0.0f;
                 if (normalized > 1.0f) normalized = 1.0f;
+
+                // Saturazione: 0 al centro, 100 al bordo (sempre uguale per entrambe le modalità)
                 uint8_t saturation = (uint8_t)(normalized * 100.0f);
                 if (saturation > 100) saturation = 100;
 
-                // Slightly lower brightness near center for more contrast
-                float radial_factor = 0.85f + (normalized * 0.15f);
-                uint8_t pixel_value = static_cast<uint8_t>(effective_brightness * radial_factor);
+                uint8_t pixel_value;
+
+                if (night_mode) {
+                    // Modalità notte: curva esponenziale per colori più scuri e nero vero al centro
+                    // normalized^2.5 crea una curva che resta scura più a lungo
+                    // Al centro (normalized=0): 0^2.5 = 0 (nero puro)
+                    // Al bordo (normalized=1): 1^2.5 = 1 → 50%
+                    float brightness_factor = powf(normalized, kNightCurveExponent);
+                    pixel_value = static_cast<uint8_t>(kNightEdgeBrightness * brightness_factor);
+                } else {
+                    // Modalità giorno: cerchio HSV normale con brightness massima
+                    pixel_value = effective_brightness;
+                }
+
                 if (pixel_value > 100) pixel_value = 100;
 
                 // Set pixel with color
@@ -306,7 +325,19 @@ lv_color_t CircularColorPicker::get_rgb(lv_obj_t* obj) {
     PickerData* data = (PickerData*)lv_obj_get_user_data(obj);
     if (!data) return lv_color_black();
 
-    uint8_t value = compute_mode_brightness(data);
+    uint8_t value;
+    if (data->night_mode) {
+        // In modalità notte, calcola il brightness basato sulla saturazione (= distanza radiale)
+        // Saturazione 0% (centro) → brightness 0 (nero)
+        // Saturazione 100% (bordo) → brightness 50%
+        float normalized = data->saturation / 100.0f;
+        float brightness_factor = powf(normalized, kNightCurveExponent);
+        value = static_cast<uint8_t>(kNightEdgeBrightness * brightness_factor);
+    } else {
+        // Modalità giorno: brightness uniforme
+        value = compute_mode_brightness(data);
+    }
+
     return lv_color_hsv_to_rgb(data->hue, data->saturation, value);
 }
 
@@ -319,7 +350,17 @@ lv_color_hsv_t CircularColorPicker::get_hsv(lv_obj_t* obj) {
     lv_color_hsv_t hsv;
     hsv.h = data->hue;
     hsv.s = data->saturation;
-    hsv.v = compute_mode_brightness(data);
+
+    if (data->night_mode) {
+        // In modalità notte, calcola il brightness basato sulla saturazione (= distanza radiale)
+        float normalized = data->saturation / 100.0f;
+        float brightness_factor = powf(normalized, kNightCurveExponent);
+        hsv.v = static_cast<uint8_t>(kNightEdgeBrightness * brightness_factor);
+    } else {
+        // Modalità giorno: brightness uniforme
+        hsv.v = compute_mode_brightness(data);
+    }
+
     return hsv;
 }
 

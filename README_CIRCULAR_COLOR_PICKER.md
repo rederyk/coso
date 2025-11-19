@@ -1,17 +1,24 @@
 # Circular Color Picker
 
-Widget LVGL per la selezione di colori tramite un cerchio cromatico HSV.
+Widget LVGL per la selezione di colori tramite un cerchio cromatico HSV con modalità giorno/notte.
 
 ## Funzionamento
 
 Il widget mostra un cerchio dove:
-- **Centro**: Colori desaturati (grigio/nero)
-- **Bordo**: Colori saturi e vividi
 - **Angolo**: Tonalità (Hue 0-360°)
 - **Distanza dal centro**: Saturazione (0-100%)
-- **Brightness**: Luminosità fissa, modificabile tramite API
 
-Un cursore circolare bianco con ombra indica la posizione del colore selezionato.
+### Modalità Giorno (default)
+- Cerchio HSV standard con luminosità massima
+- Colori brillanti e vividi
+- Centro grigio desaturato
+
+### Modalità Notte
+- Gradiente radiale da nero al centro a colori scuri al bordo
+- Centro nero puro (0% brightness)
+- Bordo con colori scuri (50% brightness)
+- Curva esponenziale per transizione graduale
+- **Double-tap** sul cerchio per alternare tra giorno/notte
 
 ## API
 
@@ -85,60 +92,27 @@ lv_obj_add_event_cb(picker, on_color_change, LV_EVENT_VALUE_CHANGED, nullptr);
 
 ## Interazione Touch
 
-- **Tap/Click**: Sposta il cursore nella posizione toccata
-- **Drag**: Sposta il cursore seguendo il dito
-- **Auto scroll block**: Blocca automaticamente lo scroll dei container padre durante il drag
+- **Tap/Drag**: Seleziona il colore nella posizione toccata
+- **Double-tap**: Alterna tra modalità giorno e notte
+- **Auto scroll block**: Blocca automaticamente lo scroll durante il drag
 
-## Implementazione
+## Dettagli Tecnici
 
-### Struttura Interna
-
+### Modalità Notte - Curva Esponenziale
 ```cpp
-struct PickerData {
-    lv_obj_t* canvas;        // Canvas per il cerchio di colori
-    lv_obj_t* cursor;        // Cursore indicatore
-    lv_coord_t size;         // Diametro del picker
-    uint16_t hue;            // Tonalità corrente (0-359)
-    uint8_t saturation;      // Saturazione corrente (0-100)
-    uint8_t brightness;      // Luminosità corrente (0-100)
-    bool dragging;           // Stato di trascinamento
-};
+// Brightness = 50% × (normalized_distance)^1.8
+float brightness_factor = powf(normalized, 1.8f);
+pixel_brightness = 50 * brightness_factor;
 ```
 
-### Rendering
-
-Il cerchio viene disegnato pixel-per-pixel su un canvas LVGL:
-
-1. Canvas pulito con trasparenza
-2. Per ogni pixel dentro il raggio:
-   - Calcola angolo → Hue
-   - Calcola distanza dal centro → Saturazione
-   - Converte HSV → RGB
-   - Disegna il pixel
-
-```cpp
-void draw_color_circle(lv_obj_t* canvas, lv_coord_t size, uint8_t brightness) {
-    lv_canvas_fill_bg(canvas, lv_color_black(), LV_OPA_TRANSP);
-
-    for (y = 0; y < size; y++) {
-        for (x = 0; x < size; x++) {
-            if (pixel_inside_circle) {
-                hue = angle_from_center;
-                saturation = distance_from_center;
-                color = lv_color_hsv_to_rgb(hue, saturation, brightness);
-                lv_canvas_set_px_color(canvas, x, y, color);
-            }
-        }
-    }
-}
-```
+Questa curva garantisce:
+- Centro nero puro (0%)
+- Transizione graduale verso colori scuri
+- Bordo fisso al 50%
 
 ### Cursore
-
-- Dimensione: 14x14 pixel
-- Bordo bianco opaco (3px, 90% opacità)
-- Centro semi-trasparente nero (30% opacità)
-- Ombra nera sfumata (8px, 50% opacità, offset Y+2)
+- Dimensione: 14×14 px, bordo bianco (3px), centro semi-trasparente
+- Ombra per profondità visiva
 
 ## Memoria
 
@@ -185,6 +159,6 @@ public:
 ## Note
 
 - `set_brightness()` ridisegna l'intero cerchio (operazione costosa)
-- Il brightness NON viene modificato da `set_rgb()` o `set_hsv()`
-- Il widget gestisce automaticamente la conversione RGB ↔ HSV
-- La posizione del cursore viene calcolata automaticamente da hue/saturation
+- `get_rgb()` e `get_hsv()` restituiscono il colore effettivo considerando la modalità attiva
+- In modalità notte, il brightness dipende dalla posizione radiale del cursore
+- Double-tap con finestra di 350ms per cambio modalità
