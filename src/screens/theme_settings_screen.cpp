@@ -186,12 +186,19 @@ void ThemeSettingsScreen::build(lv_obj_t* parent) {
     lv_obj_t* targets_list = lv_obj_create(color_target_selector_container);
     lv_obj_remove_style_all(targets_list);
     lv_obj_set_width(targets_list, lv_pct(100));
-    lv_obj_set_layout(targets_list, LV_LAYOUT_FLEX);
-    lv_obj_set_flex_flow(targets_list, LV_FLEX_FLOW_ROW_WRAP);
-    lv_obj_set_flex_align(targets_list,
-                          LV_FLEX_ALIGN_SPACE_BETWEEN,
-                          LV_FLEX_ALIGN_START,
-                          LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_layout(targets_list, LV_LAYOUT_GRID);
+    static lv_coord_t target_selector_cols[] = {
+        LV_GRID_FR(1),
+        LV_GRID_FR(1),
+        LV_GRID_TEMPLATE_LAST,
+    };
+    static lv_coord_t target_selector_rows[] = {
+        LV_GRID_CONTENT,
+        LV_GRID_CONTENT,
+        LV_GRID_CONTENT,
+        LV_GRID_TEMPLATE_LAST,
+    };
+    lv_obj_set_grid_dsc_array(targets_list, target_selector_cols, target_selector_rows);
     lv_obj_set_style_pad_row(targets_list, 10, 0);
     lv_obj_set_style_pad_column(targets_list, 10, 0);
 
@@ -209,9 +216,10 @@ void ThemeSettingsScreen::build(lv_obj_t* parent) {
     };
 
     color_target_buttons_.clear();
-    for (const auto& desc : descriptors) {
+    const size_t descriptor_count = sizeof(descriptors) / sizeof(descriptors[0]);
+    for (size_t i = 0; i < descriptor_count; ++i) {
+        const auto& desc = descriptors[i];
         lv_obj_t* btn = lv_btn_create(targets_list);
-        lv_obj_set_width(btn, 140);
         lv_obj_set_height(btn, 38);
         lv_obj_set_style_radius(btn, 8, 0);
         lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, 0);
@@ -220,6 +228,13 @@ void ThemeSettingsScreen::build(lv_obj_t* parent) {
         lv_obj_set_style_border_opa(btn, LV_OPA_100, LV_PART_MAIN | LV_STATE_CHECKED);
         lv_obj_add_flag(btn, LV_OBJ_FLAG_CHECKABLE);
         lv_obj_add_event_cb(btn, handleColorTargetButton, LV_EVENT_CLICKED, this);
+        lv_obj_set_grid_cell(btn,
+                             LV_GRID_ALIGN_STRETCH,
+                             i % 2,
+                             1,
+                             LV_GRID_ALIGN_CENTER,
+                             i / 2,
+                             1);
 
         lv_obj_t* lbl = lv_label_create(btn);
         lv_label_set_text(lbl, desc.label);
