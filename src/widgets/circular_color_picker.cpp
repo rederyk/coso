@@ -128,9 +128,11 @@ void CircularColorPicker::event_handler(lv_event_t* e) {
         lv_point_t point;
         lv_indev_get_point(indev, &point);
 
-        // Convert to local coordinates
-        lv_coord_t x = point.x - lv_obj_get_x(obj);
-        lv_coord_t y = point.y - lv_obj_get_y(obj);
+        // Convert to local coordinates relative to the container
+        lv_area_t coords;
+        lv_obj_get_coords(obj, &coords);
+        lv_coord_t x = point.x - coords.x1;
+        lv_coord_t y = point.y - coords.y1;
 
         handle_touch(obj, x, y);
 
@@ -141,9 +143,11 @@ void CircularColorPicker::event_handler(lv_event_t* e) {
         lv_point_t point;
         lv_indev_get_point(indev, &point);
 
-        // Convert to local coordinates
-        lv_coord_t x = point.x - lv_obj_get_x(obj);
-        lv_coord_t y = point.y - lv_obj_get_y(obj);
+        // Convert to local coordinates relative to the container
+        lv_area_t coords;
+        lv_obj_get_coords(obj, &coords);
+        lv_coord_t x = point.x - coords.x1;
+        lv_coord_t y = point.y - coords.y1;
 
         handle_touch(obj, x, y);
 
