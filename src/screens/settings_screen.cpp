@@ -6,17 +6,6 @@
 #include "drivers/rgb_led_driver.h"
 
 namespace {
-struct ThemeOption {
-    const char* id;
-    const char* label;
-};
-
-constexpr ThemeOption THEME_OPTIONS[] = {
-    {"dark", "Dark"},
-    {"light", "Light"},
-    {"auto", "Auto"}
-};
-
 lv_obj_t* create_card(lv_obj_t* parent, const char* title, const char* subtitle = nullptr) {
     lv_obj_t* card = lv_obj_create(parent);
     lv_obj_set_width(card, lv_pct(100));
@@ -191,10 +180,6 @@ void SettingsScreen::applySnapshot(const SettingsSnapshot& snapshot) {
         lv_slider_set_value(led_brightness_slider, snapshot.ledBrightness, LV_ANIM_OFF);
         updateLedBrightnessLabel(snapshot.ledBrightness);
     }
-    if (theme_dropdown) {
-        const size_t index = themeIndexFromId(snapshot.theme);
-        lv_dropdown_set_selected(theme_dropdown, index);
-    }
     if (version_label) {
         const char* version = snapshot.version.empty() ? "unknown" : snapshot.version.c_str();
         lv_label_set_text_fmt(version_label, "Versione firmware: %s", version);
@@ -264,22 +249,6 @@ void SettingsScreen::updateLedBrightnessLabel(uint8_t value) {
     lv_label_set_text_fmt(led_brightness_value_label, "%u %%", value);
 }
 
-size_t SettingsScreen::themeIndexFromId(const std::string& theme_id) const {
-    for (size_t i = 0; i < sizeof(THEME_OPTIONS) / sizeof(THEME_OPTIONS[0]); ++i) {
-        if (theme_id == THEME_OPTIONS[i].id) {
-            return i;
-        }
-    }
-    return 0;
-}
-
-const char* SettingsScreen::themeIdFromIndex(size_t index) const {
-    if (index >= sizeof(THEME_OPTIONS) / sizeof(THEME_OPTIONS[0])) {
-        return THEME_OPTIONS[0].id;
-    }
-    return THEME_OPTIONS[index].id;
-}
-
 void SettingsScreen::handleTextInput(lv_event_t* e) {
     auto* screen = static_cast<SettingsScreen*>(lv_event_get_user_data(e));
     if (!screen || screen->updating_from_manager) {
@@ -316,16 +285,6 @@ void SettingsScreen::handleLedBrightnessChanged(lv_event_t* e) {
     uint16_t value = lv_slider_get_value(slider);
     screen->updateLedBrightnessLabel(value);
     SettingsManager::getInstance().setLedBrightness(static_cast<uint8_t>(value));
-}
-
-void SettingsScreen::handleThemeChanged(lv_event_t* e) {
-    auto* screen = static_cast<SettingsScreen*>(lv_event_get_user_data(e));
-    if (!screen || screen->updating_from_manager) {
-        return;
-    }
-    uint16_t selected = lv_dropdown_get_selected(screen->theme_dropdown);
-    const char* theme_id = screen->themeIdFromIndex(selected);
-    SettingsManager::getInstance().setTheme(theme_id ? theme_id : "dark");
 }
 
 void SettingsScreen::handleWifiSettingsButton(lv_event_t* e) {
