@@ -20,10 +20,12 @@ private:
     static void handleBorderRadius(lv_event_t* e);
     static void handleOrientation(lv_event_t* e);
     static void handlePaletteButton(lv_event_t* e);
+    static void handlePrimaryBrightness(lv_event_t* e);
 
     lv_obj_t* primary_wheel = nullptr;
     lv_obj_t* accent_wheel = nullptr;
     lv_obj_t* border_slider = nullptr;
+    lv_obj_t* brightness_slider = nullptr;
     lv_obj_t* orientation_switch = nullptr;
     lv_obj_t* preview_card = nullptr;
     lv_obj_t* preview_header = nullptr;
@@ -31,4 +33,5 @@ private:
 
     uint32_t settings_listener_id = 0;
     bool updating_from_manager = false;
+    lv_color_hsv_t current_primary_hsv = {0, 0, 70};  // Store HSV for brightness control
 };

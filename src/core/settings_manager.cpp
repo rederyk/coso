@@ -210,6 +210,13 @@ void SettingsManager::loadFromStorage() {
     current_.landscapeLayout = prefs_.getBool(KEY_LAYOUT_ORIENT, DEFAULT_LANDSCAPE);
     current_.brightness = std::min<uint8_t>(100, std::max<uint8_t>(0, current_.brightness));
     current_.borderRadius = std::min<uint8_t>(30, std::max<uint8_t>(0, current_.borderRadius));
+
+    // Fix corrupted black primary color (from previous conversion bugs)
+    if (current_.primaryColor == 0x000000) {
+        Serial.println("⚠️ Fixing corrupted primary color (was black)");
+        current_.primaryColor = DEFAULT_PRIMARY_COLOR;
+        prefs_.putUInt(KEY_PRIMARY_COLOR, current_.primaryColor);
+    }
 }
 
 void SettingsManager::persistString(const char* key, const std::string& value) {
