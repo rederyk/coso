@@ -121,6 +121,18 @@ void SettingsScreen::build(lv_obj_t* parent) {
 
     // RGB LED Brightness
     led_card = create_card(content_container, "💡 RGB LED", "luminosità (0-100%)");
+
+    // LED Settings button
+    lv_obj_t* led_settings_btn = lv_btn_create(led_card);
+    lv_obj_set_width(led_settings_btn, lv_pct(100));
+    lv_obj_set_height(led_settings_btn, 40);
+    lv_obj_add_event_cb(led_settings_btn, handleLedSettingsButton, LV_EVENT_CLICKED, this);
+    lv_obj_set_style_bg_color(led_settings_btn, lv_color_hex(0x0066cc), 0);
+    lv_obj_t* led_settings_btn_label = lv_label_create(led_settings_btn);
+    lv_label_set_text(led_settings_btn_label, UI_SYMBOL_LED " LED Avanzate");
+    lv_obj_center(led_settings_btn_label);
+    lv_obj_set_style_text_font(led_settings_btn_label, &lv_font_montserrat_14, 0);
+
     led_brightness_slider = lv_slider_create(led_card);
     lv_obj_set_width(led_brightness_slider, lv_pct(100));
     lv_slider_set_range(led_brightness_slider, 0, 100);
@@ -306,5 +318,16 @@ void SettingsScreen::handleBleSettingsButton(lv_event_t* e) {
     AppManager* app_manager = AppManager::getInstance();
     if (app_manager) {
         app_manager->launchApp("BleSettings");
+    }
+}
+
+void SettingsScreen::handleLedSettingsButton(lv_event_t* e) {
+    auto* screen = static_cast<SettingsScreen*>(lv_event_get_user_data(e));
+    if (!screen) return;
+
+    Logger::getInstance().info("[Settings] Launching LED settings...");
+    AppManager* app_manager = AppManager::getInstance();
+    if (app_manager) {
+        app_manager->launchApp("LedSettings");
     }
 }

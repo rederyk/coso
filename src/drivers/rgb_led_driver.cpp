@@ -81,11 +81,43 @@ void RgbLedManager::setBrightness(uint8_t brightness) {
     }
 }
 
-void RgbLedManager::setState(LedState state) {
+void RgbLedManager::setState(LedState state, bool temporary) {
+    // Log del cambio di stato
+    const char* state_name = "UNKNOWN";
+    switch (state) {
+        case LedState::OFF: state_name = "OFF"; break;
+        case LedState::WIFI_CONNECTING: state_name = "WIFI_CONNECTING"; break;
+        case LedState::WIFI_CONNECTED: state_name = "WIFI_CONNECTED"; break;
+        case LedState::WIFI_ERROR: state_name = "WIFI_ERROR"; break;
+        case LedState::BLE_ADVERTISING: state_name = "BLE_ADVERTISING"; break;
+        case LedState::BLE_CONNECTED: state_name = "BLE_CONNECTED"; break;
+        case LedState::BOOT: state_name = "BOOT"; break;
+        case LedState::ERROR: state_name = "ERROR"; break;
+        case LedState::CUSTOM: state_name = "CUSTOM"; break;
+        case LedState::RAINBOW: state_name = "RAINBOW"; break;
+        case LedState::STROBE: state_name = "STROBE"; break;
+        case LedState::PULSE: state_name = "PULSE"; break;
+        case LedState::RGB_CYCLE: state_name = "RGB_CYCLE"; break;
+        case LedState::PULSE_CUSTOM: state_name = "PULSE_CUSTOM"; break;
+        case LedState::STROBE_CUSTOM: state_name = "STROBE_CUSTOM"; break;
+    }
+
+    Logger::getInstance().infof("[RGB LED] State change: %s -> %s %s",
+        state_name,
+        temporary ? "(temporary)" : "",
+        is_temporary_ ? "[will revert after timeout]" : "");
+
+    // Salva lo stato precedente se è temporaneo
+    if (temporary && !is_temporary_) {
+        previous_state_ = current_state_;
+    }
+
     current_state_ = state;
+    is_temporary_ = temporary;
     animation_phase_ = 0;
     blink_on_ = false;
     last_update_ = millis();
+    last_activity_ = millis();  // Reset del timer di inattività
     updateAnimation();
 }
 
@@ -95,6 +127,29 @@ void RgbLedManager::setColor(uint8_t r, uint8_t g, uint8_t b) {
     custom_b_ = b;
     current_state_ = LedState::CUSTOM;
     setPixel(r, g, b);
+}
+
+void RgbLedManager::setPulseColor(uint8_t r, uint8_t g, uint8_t b) {
+    pulse_r_ = r;
+    pulse_g_ = g;
+    pulse_b_ = b;
+    current_state_ = LedState::PULSE_CUSTOM;
+    animation_phase_ = 0;
+    last_update_ = millis();
+    updateAnimation();
+    Logger::getInstance().infof("[RGB LED] Pulse color set to RGB(%d, %d, %d)", r, g, b);
+}
+
+void RgbLedManager::setStrobeColor(uint8_t r, uint8_t g, uint8_t b) {
+    strobe_r_ = r;
+    strobe_g_ = g;
+    strobe_b_ = b;
+    current_state_ = LedState::STROBE_CUSTOM;
+    animation_phase_ = 0;
+    blink_on_ = false;
+    last_update_ = millis();
+    updateAnimation();
+    Logger::getInstance().infof("[RGB LED] Strobe color set to RGB(%d, %d, %d)", r, g, b);
 }
 
 void RgbLedManager::off() {
@@ -108,6 +163,23 @@ void RgbLedManager::update() {
     uint32_t now = millis();
     uint32_t elapsed = now - last_update_;
 
+    // Controlla timeout di inattività per stati temporanei
+    if (is_temporary_ && idle_timeout_ms_ > 0) {
+        uint32_t idle_time = now - last_activity_;
+        if (idle_time >= idle_timeout_ms_) {
+            Logger::getInstance().infof("[RGB LED] Idle timeout reached, reverting to previous state");
+            LedState revert_to = previous_state_;
+            is_temporary_ = false;
+            setState(revert_to, false);
+            return;
+        }
+    }
+
+    // Calcola intervallo basato sulla velocità (più velocità = meno tempo)
+    uint32_t base_interval = 100;
+    uint32_t speed_factor = (101 - animation_speed_); // Inverte: speed 100 = factor 1, speed 1 = factor 100
+    uint32_t interval = (base_interval * speed_factor) / 50; // Normalizza
+
     switch (current_state_) {
         case LedState::WIFI_CONNECTING:
         case LedState::WIFI_ERROR:
@@ -115,12 +187,40 @@ void RgbLedManager::update() {
             if (elapsed >= 500) {
                 blink_on_ = !blink_on_;
                 last_update_ = now;
+                // Log del lampeggio
+                if (blink_on_) {
+                    Logger::getInstance().debugf("[RGB LED] Blink ON");
+                }
                 updateAnimation();
             }
             break;
         case LedState::BOOT:
-            if (elapsed >= 100) {
-                animation_phase_ = (animation_phase_ + 10) % 256;
+        case LedState::RAINBOW:
+            if (elapsed >= interval) {
+                animation_phase_ = (animation_phase_ + 5) % 256;
+                last_update_ = now;
+                updateAnimation();
+            }
+            break;
+        case LedState::STROBE:
+        case LedState::STROBE_CUSTOM:
+            if (elapsed >= (interval / 4)) { // Strobe più veloce
+                blink_on_ = !blink_on_;
+                last_update_ = now;
+                updateAnimation();
+            }
+            break;
+        case LedState::PULSE:
+        case LedState::PULSE_CUSTOM:
+            if (elapsed >= interval) {
+                animation_phase_ = (animation_phase_ + 2) % 256;
+                last_update_ = now;
+                updateAnimation();
+            }
+            break;
+        case LedState::RGB_CYCLE:
+            if (elapsed >= (interval * 2)) { // RGB Cycle più lento
+                animation_phase_ = (animation_phase_ + 1) % 3;
                 last_update_ = now;
                 updateAnimation();
             }
@@ -190,6 +290,8 @@ void RgbLedManager::updateAnimation() {
             r = 0; g = 255; b = 255; // Ciano
             break;
         case LedState::BOOT:
+        case LedState::RAINBOW:
+            // Arcobaleno fluido
             if (animation_phase_ < 85) {
                 r = animation_phase_ * 3;
                 g = 255 - animation_phase_ * 3;
@@ -204,6 +306,48 @@ void RgbLedManager::updateAnimation() {
                 b = 255 - (animation_phase_ - 170) * 3;
             }
             break;
+        case LedState::STROBE:
+            // Lampeggio bianco veloce
+            if (blink_on_) {
+                r = g = b = 255;
+            }
+            break;
+        case LedState::STROBE_CUSTOM:
+            // Strobe con colore personalizzato
+            if (blink_on_) {
+                r = strobe_r_;
+                g = strobe_g_;
+                b = strobe_b_;
+            }
+            break;
+        case LedState::PULSE:
+            // Respiro sinusoidale (colore fisso violet-blue)
+            {
+                float brightness_factor = (sin(animation_phase_ * 2.0f * PI / 256.0f) + 1.0f) / 2.0f;
+                r = (uint8_t)(255 * brightness_factor);
+                g = (uint8_t)(100 * brightness_factor);
+                b = (uint8_t)(200 * brightness_factor);
+            }
+            break;
+        case LedState::PULSE_CUSTOM:
+            // Pulse con colore personalizzato
+            {
+                float brightness_factor = (sin(animation_phase_ * 2.0f * PI / 256.0f) + 1.0f) / 2.0f;
+                r = (uint8_t)(pulse_r_ * brightness_factor);
+                g = (uint8_t)(pulse_g_ * brightness_factor);
+                b = (uint8_t)(pulse_b_ * brightness_factor);
+            }
+            break;
+        case LedState::RGB_CYCLE:
+            // Ciclo RGB: Rosso -> Verde -> Blu
+            if (animation_phase_ == 0) {
+                r = 255; g = 0; b = 0;
+            } else if (animation_phase_ == 1) {
+                r = 0; g = 255; b = 0;
+            } else {
+                r = 0; g = 0; b = 255;
+            }
+            break;
         case LedState::ERROR:
             r = 255; g = 0; b = 0; // Rosso fisso
             break;
@@ -214,6 +358,21 @@ void RgbLedManager::updateAnimation() {
             break;
     }
     setPixel(r, g, b);
+}
+
+void RgbLedManager::setAnimationSpeed(uint8_t speed) {
+    animation_speed_ = constrain(speed, 1, 100);
+    Logger::getInstance().infof("[RGB LED] Animation speed set to %u", animation_speed_);
+}
+
+void RgbLedManager::setIdleTimeout(uint32_t timeout_ms) {
+    idle_timeout_ms_ = timeout_ms;
+    Logger::getInstance().infof("[RGB LED] Idle timeout set to %u ms", timeout_ms);
+}
+
+void RgbLedManager::setIdleState(LedState state) {
+    idle_state_ = state;
+    Logger::getInstance().infof("[RGB LED] Idle state set");
 }
 
 void RgbLedManager::led_task(void* parameter) {

@@ -31,6 +31,7 @@
 #define UI_SYMBOL_THEME         LV_SYMBOL_TINT         // 🎨 Theme/Color picker
 #define UI_SYMBOL_WIFI          LV_SYMBOL_WIFI         // 📶 WiFi
 #define UI_SYMBOL_BRIGHTNESS    LV_SYMBOL_CHARGE       // 💡 Display brightness (lightning bolt)
+#define UI_SYMBOL_LED           LV_SYMBOL_CHARGE       // 💡 RGB LED
 #define UI_SYMBOL_TRASH         LV_SYMBOL_TRASH        // 🗑️ Delete/Trash
 
 // System info icons
