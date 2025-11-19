@@ -27,11 +27,10 @@
 
 static TFT_eSPI tft;
 static lv_disp_draw_buf_t draw_buf;
-// Ridotto a 15 righe per preservare RAM interna
-static constexpr int32_t DRAW_BUF_PIXELS = LV_HOR_RES_MAX * 15;
-// Buffer statico di fallback in RAM interna
-static lv_color_t draw_buf_fallback[DRAW_BUF_PIXELS];
-static lv_color_t* draw_buf_ptr = draw_buf_fallback;
+// Aumentato a 1/10 dell'altezza dello schermo per migliorare le performance
+static constexpr int32_t DRAW_BUF_PIXELS = LV_HOR_RES_MAX * (LV_VER_RES_MAX / 10);
+// Rimosso il buffer statico, verrà allocato dinamicamente se necessario
+static lv_color_t* draw_buf_ptr = nullptr;
 static bool draw_buf_in_psram = false;
 static constexpr const char* APP_VERSION = "0.5.0";
 
@@ -172,18 +171,24 @@ void setup() {
     logMemoryStats("After lv_init");
 
     const size_t draw_buf_bytes = DRAW_BUF_PIXELS * sizeof(lv_color_t);
-    lv_color_t* allocated = static_cast<lv_color_t*>(allocatePsramBuffer(draw_buf_bytes, "LVGL draw buffer"));
-    if (allocated) {
-        draw_buf_ptr = allocated;
+    draw_buf_ptr = static_cast<lv_color_t*>(allocatePsramBuffer(draw_buf_bytes, "LVGL draw buffer"));
+    if (draw_buf_ptr) {
         draw_buf_in_psram = true;
     } else {
-        draw_buf_ptr = draw_buf_fallback;
+        // Fallback: prova ad allocare in RAM interna (DRAM)
         draw_buf_in_psram = false;
-        logger.warnf("[PSRAM] Using internal fallback buffer (%u bytes)",
-                     static_cast<unsigned>(draw_buf_bytes));
+        logger.warn("[PSRAM] Allocation failed. Attempting to allocate LVGL draw buffer in internal RAM...");
+        draw_buf_ptr = static_cast<lv_color_t*>(heap_caps_malloc(draw_buf_bytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+        if (draw_buf_ptr) {
+             logger.warnf("[DRAM] Using internal fallback buffer (%u bytes)", static_cast<unsigned>(draw_buf_bytes));
+        } else {
+            logger.error("[Memory] FATAL: Failed to allocate LVGL draw buffer in both PSRAM and internal RAM.");
+            // A questo punto il sistema non può partire, blocchiamo l'esecuzione.
+            while(1) { vTaskDelay(portMAX_DELAY); }
+        }
     }
 
-    // Single buffering con buffer in PSRAM (fallback statico se necessario)
+    // Single buffering con buffer in PSRAM (o DRAM come fallback)
     lv_disp_draw_buf_init(&draw_buf, draw_buf_ptr, nullptr, DRAW_BUF_PIXELS);
     logLvglBufferInfo();
     logMemoryStats("After draw buffer");

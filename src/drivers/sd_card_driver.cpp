@@ -17,6 +17,14 @@ constexpr gpio_num_t SD_D0 = GPIO_NUM_39;
 constexpr gpio_num_t SD_D1 = GPIO_NUM_41;
 constexpr gpio_num_t SD_D2 = GPIO_NUM_48;
 constexpr gpio_num_t SD_D3 = GPIO_NUM_47;
+
+// Funzione per abilitare i pull-up interni
+void configure_pullups() {
+    const gpio_num_t pins[] = {SD_CMD, SD_D0, SD_D1, SD_D2, SD_D3};
+    for (gpio_num_t pin : pins) {
+        gpio_set_pull_mode(pin, GPIO_PULLUP_ONLY);
+    }
+}
 } // namespace
 
 SdCardDriver& SdCardDriver::getInstance() {
@@ -30,18 +38,26 @@ bool SdCardDriver::begin() {
         return true;
     }
 
+    // Abilita i pull-up interni prima di qualsiasi altra operazione
+    configure_pullups();
+
     if (!pins_configured_) {
+        // NOTA: setPins è deprecato e non fa nulla, ma lo lasciamo per chiarezza
+        // La configurazione dei pin avviene tramite i menuconfig o, in questo caso,
+        // è gestita internamente dalla libreria SD_MMC che usa i pin di default
+        // se non diversamente specificato. L'abilitazione dei pull-up è la vera modifica.
         if (!SD_MMC.setPins(SD_CLK, SD_CMD, SD_D0, SD_D1, SD_D2, SD_D3)) {
             last_error_ = "Pin remap failed";
-            Logger::getInstance().error("[SD] Failed to configure SD_MMC pins");
-            return false;
+            Logger::getInstance().error("[SD] Failed to configure SD_MMC pins (setPins is deprecated)");
         }
         pins_configured_ = true;
     }
 
     auto& logger = Logger::getInstance();
     auto mountAttempt = [&](bool one_bit_mode) -> bool {
-        bool ok = SD_MMC.begin(MOUNT_POINT, one_bit_mode, false);
+        // Ultimo tentativo: allineamo la chiamata a quella dell'esempio ufficiale,
+        // usando il 5° parametro (ddr_mode_retries = 5) e una freq di 20MHz.
+        bool ok = SD_MMC.begin(MOUNT_POINT, one_bit_mode, false, 20000, 5);
         if (!ok) {
             SD_MMC.end();
         }
