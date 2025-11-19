@@ -2,6 +2,8 @@
 #include <Arduino.h>
 #include "ui/ui_symbols.h"
 #include "utils/logger.h"
+#include "core/app_manager.h"
+#include "drivers/rgb_led_driver.h"
 
 namespace {
 struct ThemeOption {
@@ -86,8 +88,29 @@ void SettingsScreen::build(lv_obj_t* parent) {
     lv_obj_set_style_pad_row(content_container, 12, 0);
     lv_obj_clear_flag(content_container, LV_OBJ_FLAG_SCROLLABLE);
 
-    // WiFi credentials
-    wifi_card = create_card(content_container, UI_SYMBOL_WIFI " WiFi", "Configura SSID e password della rete");
+    // Connectivity Card (WiFi & BLE navigation buttons)
+    connectivity_card = create_card(content_container, UI_SYMBOL_SETTINGS " Connettività", "Configura WiFi e Bluetooth");
+
+    lv_obj_t* wifi_btn = lv_btn_create(connectivity_card);
+    lv_obj_set_width(wifi_btn, lv_pct(100));
+    lv_obj_set_height(wifi_btn, 50);
+    lv_obj_add_event_cb(wifi_btn, handleWifiSettingsButton, LV_EVENT_CLICKED, this);
+    lv_obj_t* wifi_btn_label = lv_label_create(wifi_btn);
+    lv_label_set_text(wifi_btn_label, UI_SYMBOL_WIFI " WiFi Settings " LV_SYMBOL_RIGHT);
+    lv_obj_center(wifi_btn_label);
+    lv_obj_set_style_text_font(wifi_btn_label, &lv_font_montserrat_16, 0);
+
+    lv_obj_t* ble_btn = lv_btn_create(connectivity_card);
+    lv_obj_set_width(ble_btn, lv_pct(100));
+    lv_obj_set_height(ble_btn, 50);
+    lv_obj_add_event_cb(ble_btn, handleBleSettingsButton, LV_EVENT_CLICKED, this);
+    lv_obj_t* ble_btn_label = lv_label_create(ble_btn);
+    lv_label_set_text(ble_btn_label, LV_SYMBOL_BLUETOOTH " BLE Settings " LV_SYMBOL_RIGHT);
+    lv_obj_center(ble_btn_label);
+    lv_obj_set_style_text_font(ble_btn_label, &lv_font_montserrat_16, 0);
+
+    // WiFi credentials (kept for quick access)
+    wifi_card = create_card(content_container, UI_SYMBOL_WIFI " WiFi Rapido", "Accesso veloce SSID e password");
 
     wifi_ssid_input = lv_textarea_create(wifi_card);
     lv_textarea_set_one_line(wifi_ssid_input, true);
@@ -115,6 +138,17 @@ void SettingsScreen::build(lv_obj_t* parent) {
     lv_obj_set_style_text_font(brightness_value_label, &lv_font_montserrat_16, 0);
     lv_obj_set_style_text_color(brightness_value_label, lv_color_hex(0xe0e0e0), 0);
 
+    // RGB LED Brightness
+    led_card = create_card(content_container, "💡 RGB LED", "Regola la luminosità del LED integrato (0-100%)");
+    led_brightness_slider = lv_slider_create(led_card);
+    lv_obj_set_width(led_brightness_slider, lv_pct(100));
+    lv_slider_set_range(led_brightness_slider, 0, 100);
+    lv_obj_add_event_cb(led_brightness_slider, handleLedBrightnessChanged, LV_EVENT_VALUE_CHANGED, this);
+
+    led_brightness_value_label = lv_label_create(led_card);
+    lv_obj_set_style_text_font(led_brightness_value_label, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_color(led_brightness_value_label, lv_color_hex(0xe0e0e0), 0);
+
     // Theme selector
     theme_card = create_card(content_container, UI_SYMBOL_THEME " Tema", "Seleziona la palette preferita");
     theme_dropdown = lv_dropdown_create(theme_card);
@@ -122,8 +156,31 @@ void SettingsScreen::build(lv_obj_t* parent) {
     lv_dropdown_set_options(theme_dropdown, "Dark\nLight\nAuto");
     lv_obj_add_event_cb(theme_dropdown, handleThemeChanged, LV_EVENT_VALUE_CHANGED, this);
 
-    // Version
-    info_card = create_card(content_container, UI_SYMBOL_INFO " Sistema", "Versione firmware e suggerimenti UI");
+    // System Controls
+    system_card = create_card(content_container, "⚙️  Controlli Sistema", "Operazioni di manutenzione");
+
+    lv_obj_t* reset_btn = lv_btn_create(system_card);
+    lv_obj_set_width(reset_btn, lv_pct(100));
+    lv_obj_set_height(reset_btn, 50);
+    lv_obj_add_event_cb(reset_btn, handleResetButton, LV_EVENT_CLICKED, this);
+    lv_obj_set_style_bg_color(reset_btn, lv_color_hex(0xff6600), 0);
+    lv_obj_t* reset_btn_label = lv_label_create(reset_btn);
+    lv_label_set_text(reset_btn_label, LV_SYMBOL_REFRESH " Reset Impostazioni");
+    lv_obj_center(reset_btn_label);
+    lv_obj_set_style_text_font(reset_btn_label, &lv_font_montserrat_16, 0);
+
+    lv_obj_t* reboot_btn = lv_btn_create(system_card);
+    lv_obj_set_width(reboot_btn, lv_pct(100));
+    lv_obj_set_height(reboot_btn, 50);
+    lv_obj_add_event_cb(reboot_btn, handleRebootButton, LV_EVENT_CLICKED, this);
+    lv_obj_set_style_bg_color(reboot_btn, lv_color_hex(0xff0000), 0);
+    lv_obj_t* reboot_btn_label = lv_label_create(reboot_btn);
+    lv_label_set_text(reboot_btn_label, LV_SYMBOL_POWER " Riavvia Sistema");
+    lv_obj_center(reboot_btn_label);
+    lv_obj_set_style_text_font(reboot_btn_label, &lv_font_montserrat_16, 0);
+
+    // Version Info
+    info_card = create_card(content_container, UI_SYMBOL_INFO " Info Sistema", "Versione firmware e suggerimenti");
     version_label = lv_label_create(info_card);
     lv_obj_set_style_text_font(version_label, &lv_font_montserrat_16, 0);
     lv_obj_set_style_text_color(version_label, lv_color_hex(0xc0c0c0), 0);
@@ -131,7 +188,7 @@ void SettingsScreen::build(lv_obj_t* parent) {
     hint_label = lv_label_create(info_card);
     lv_obj_set_style_text_font(hint_label, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(hint_label, lv_color_hex(0x909090), 0);
-    lv_label_set_text(hint_label, "Dati salvati automaticamente su NVS.");
+    lv_label_set_text(hint_label, "Dati salvati automaticamente su LittleFS.");
 
     applySnapshot(snapshot);
 
@@ -167,6 +224,10 @@ void SettingsScreen::applySnapshot(const SettingsSnapshot& snapshot) {
         lv_slider_set_value(brightness_slider, snapshot.brightness, LV_ANIM_OFF);
         updateBrightnessLabel(snapshot.brightness);
     }
+    if (led_brightness_slider) {
+        lv_slider_set_value(led_brightness_slider, snapshot.ledBrightness, LV_ANIM_OFF);
+        updateLedBrightnessLabel(snapshot.ledBrightness);
+    }
     if (theme_dropdown) {
         const size_t index = themeIndexFromId(snapshot.theme);
         lv_dropdown_set_selected(theme_dropdown, index);
@@ -200,9 +261,12 @@ void SettingsScreen::applyThemeStyles(const SettingsSnapshot& snapshot) {
         lv_obj_set_style_text_color(hint_label, hint_color, 0);
     }
 
+    styleCard(connectivity_card, false, snapshot);
     styleCard(wifi_card, true, snapshot);
     styleCard(display_card, true, snapshot);
+    styleCard(led_card, true, snapshot);
     styleCard(theme_card, true, snapshot);
+    styleCard(system_card, false, snapshot);
     styleCard(info_card, false, snapshot);
 }
 
@@ -230,6 +294,13 @@ void SettingsScreen::updateBrightnessLabel(uint8_t value) {
         return;
     }
     lv_label_set_text_fmt(brightness_value_label, "%u %%", value);
+}
+
+void SettingsScreen::updateLedBrightnessLabel(uint8_t value) {
+    if (!led_brightness_value_label) {
+        return;
+    }
+    lv_label_set_text_fmt(led_brightness_value_label, "%u %%", value);
 }
 
 size_t SettingsScreen::themeIndexFromId(const std::string& theme_id) const {
@@ -275,6 +346,17 @@ void SettingsScreen::handleBrightnessChanged(lv_event_t* e) {
     SettingsManager::getInstance().setBrightness(static_cast<uint8_t>(value));
 }
 
+void SettingsScreen::handleLedBrightnessChanged(lv_event_t* e) {
+    auto* screen = static_cast<SettingsScreen*>(lv_event_get_user_data(e));
+    if (!screen || screen->updating_from_manager) {
+        return;
+    }
+    lv_obj_t* slider = lv_event_get_target(e);
+    uint16_t value = lv_slider_get_value(slider);
+    screen->updateLedBrightnessLabel(value);
+    SettingsManager::getInstance().setLedBrightness(static_cast<uint8_t>(value));
+}
+
 void SettingsScreen::handleThemeChanged(lv_event_t* e) {
     auto* screen = static_cast<SettingsScreen*>(lv_event_get_user_data(e));
     if (!screen || screen->updating_from_manager) {
@@ -283,4 +365,78 @@ void SettingsScreen::handleThemeChanged(lv_event_t* e) {
     uint16_t selected = lv_dropdown_get_selected(screen->theme_dropdown);
     const char* theme_id = screen->themeIdFromIndex(selected);
     SettingsManager::getInstance().setTheme(theme_id ? theme_id : "dark");
+}
+
+void SettingsScreen::handleWifiSettingsButton(lv_event_t* e) {
+    auto* screen = static_cast<SettingsScreen*>(lv_event_get_user_data(e));
+    if (!screen) return;
+
+    // Get AppManager from root object user data
+    AppManager* app_manager = static_cast<AppManager*>(lv_obj_get_user_data(screen->root));
+    if (app_manager) {
+        app_manager->launchApp("WiFiSettings");
+    }
+}
+
+void SettingsScreen::handleBleSettingsButton(lv_event_t* e) {
+    auto* screen = static_cast<SettingsScreen*>(lv_event_get_user_data(e));
+    if (!screen) return;
+
+    AppManager* app_manager = static_cast<AppManager*>(lv_obj_get_user_data(screen->root));
+    if (app_manager) {
+        app_manager->launchApp("BleSettings");
+    }
+}
+
+void SettingsScreen::handleResetButton(lv_event_t* e) {
+    auto* screen = static_cast<SettingsScreen*>(lv_event_get_user_data(e));
+    if (!screen) return;
+
+    // Create confirmation dialog
+    static const char* reset_btns[] = {"Annulla", "Reset", ""};
+    lv_obj_t* mbox = lv_msgbox_create(NULL, "Conferma Reset",
+        "Ripristinare le impostazioni ai valori predefiniti?\n\nQuesta operazione è irreversibile.",
+        reset_btns, true);
+    lv_obj_center(mbox);
+    lv_obj_add_event_cb(mbox, confirmReset, LV_EVENT_VALUE_CHANGED, screen);
+}
+
+void SettingsScreen::handleRebootButton(lv_event_t* e) {
+    auto* screen = static_cast<SettingsScreen*>(lv_event_get_user_data(e));
+    if (!screen) return;
+
+    // Create confirmation dialog
+    static const char* reboot_btns[] = {"Annulla", "Riavvia", ""};
+    lv_obj_t* mbox = lv_msgbox_create(NULL, "Conferma Riavvio",
+        "Riavviare il sistema?\n\nTutte le impostazioni saranno salvate.",
+        reboot_btns, true);
+    lv_obj_center(mbox);
+    lv_obj_add_event_cb(mbox, confirmReboot, LV_EVENT_VALUE_CHANGED, screen);
+}
+
+void SettingsScreen::confirmReset(lv_event_t* e) {
+    lv_obj_t* mbox = lv_event_get_current_target(e);
+    uint16_t btn_id = lv_msgbox_get_active_btn(mbox);
+
+    if (btn_id == 1) { // "Reset" button
+        Logger::getInstance().warn("[Settings] Resetting to defaults...");
+        SettingsManager::getInstance().reset();
+        Logger::getInstance().info("[Settings] Reset complete");
+    }
+
+    lv_msgbox_close(mbox);
+}
+
+void SettingsScreen::confirmReboot(lv_event_t* e) {
+    lv_obj_t* mbox = lv_event_get_current_target(e);
+    uint16_t btn_id = lv_msgbox_get_active_btn(mbox);
+
+    if (btn_id == 1) { // "Riavvia" button
+        Logger::getInstance().warn("[System] Rebooting...");
+        lv_msgbox_close(mbox);
+        delay(500);
+        ESP.restart();
+    }
+
+    lv_msgbox_close(mbox);
 }

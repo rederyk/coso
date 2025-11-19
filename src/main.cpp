@@ -20,6 +20,8 @@
 #include "drivers/rgb_led_driver.h"
 #include "screens/dashboard_screen.h"
 #include "screens/settings_screen.h"
+#include "screens/wifi_settings_screen.h"
+#include "screens/ble_settings_screen.h"
 #include "screens/info_screen.h"
 #include "screens/system_log_screen.h"
 #include "screens/theme_settings_screen.h"
@@ -257,6 +259,8 @@ void setup() {
     // Crea le schermate (statiche)
     static DashboardScreen dashboard;
     static SettingsScreen settings;
+    static WifiSettingsScreen wifi_settings;
+    static BleSettingsScreen ble_settings;
     static InfoScreen info;
     static ThemeSettingsScreen theme_settings;
     static SystemLogScreen system_log;
@@ -269,6 +273,10 @@ void setup() {
     app_manager->registerApp("system_log", UI_SYMBOL_SYSLOG, "SysLog", &system_log);
     app_manager->registerApp("info", UI_SYMBOL_INFO, "Info", &info);
     app_manager->registerApp("sd_explorer", UI_SYMBOL_STORAGE, "SD Card", &sd_explorer);
+
+    // Registra le schermate supplementari (non nel dock, accessibili da Settings)
+    app_manager->registerApp("WiFiSettings", UI_SYMBOL_WIFI, "WiFi", &wifi_settings);
+    app_manager->registerApp("BleSettings", LV_SYMBOL_BLUETOOTH, "BLE", &ble_settings);
 
     // Lancia dashboard come app iniziale
     app_manager->launchApp("dashboard");

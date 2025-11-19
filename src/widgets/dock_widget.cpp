@@ -114,6 +114,14 @@ void DockView::ensureCreated(lv_obj_t* launcher_layer) {
     lv_obj_set_size(icon_container_, lv_pct(100), lv_pct(100));
     lv_obj_set_layout(icon_container_, LV_LAYOUT_FLEX);
     lv_obj_center(icon_container_);
+    // Enable horizontal scrolling for dock icons
+    lv_obj_set_scrollbar_mode(icon_container_, LV_SCROLLBAR_MODE_OFF);
+    lv_obj_set_scroll_dir(icon_container_, LV_DIR_HOR);
+    lv_obj_set_scroll_snap_x(icon_container_, LV_SCROLL_SNAP_NONE);
+    lv_obj_set_scroll_snap_y(icon_container_, LV_SCROLL_SNAP_NONE);
+    lv_obj_add_flag(icon_container_, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(icon_container_, LV_OBJ_FLAG_SCROLL_ELASTIC);
+    lv_obj_add_flag(icon_container_, LV_OBJ_FLAG_SCROLL_MOMENTUM);
     // Allow gestures to bubble up from icons to dock
     lv_obj_add_flag(icon_container_, LV_OBJ_FLAG_GESTURE_BUBBLE);
 
@@ -277,23 +285,35 @@ void DockView::onOrientationChanged(bool landscape) {
     lv_obj_set_y(dock_container_, target_y);
 
     if (icon_container_) {
+        lv_obj_set_scroll_dir(icon_container_, LV_DIR_HOR);
+        lv_obj_set_scroll_snap_x(icon_container_, LV_SCROLL_SNAP_NONE);
+        lv_obj_set_scroll_snap_y(icon_container_, LV_SCROLL_SNAP_NONE);
+
         if (landscape_mode_) {
             lv_obj_set_style_pad_row(icon_container_, 0, 0);
-            lv_obj_set_style_pad_column(icon_container_, 0, 0);
+            lv_obj_set_style_pad_column(icon_container_, 8, 0);
+            lv_obj_set_style_pad_left(icon_container_, 8, 0);
+            lv_obj_set_style_pad_right(icon_container_, 8, 0);
             lv_obj_set_flex_flow(icon_container_, LV_FLEX_FLOW_ROW);
             lv_obj_set_flex_align(icon_container_,
                                   LV_FLEX_ALIGN_SPACE_EVENLY,
                                   LV_FLEX_ALIGN_CENTER,
                                   LV_FLEX_ALIGN_CENTER);
         } else {
-            lv_obj_set_style_pad_row(icon_container_, 6, 0);
-            lv_obj_set_style_pad_column(icon_container_, 12, 0);
-            lv_obj_set_flex_flow(icon_container_, LV_FLEX_FLOW_COLUMN_WRAP);
+            lv_obj_set_style_pad_row(icon_container_, 2, 0);
+            lv_obj_set_style_pad_column(icon_container_, 10, 0);
+            lv_obj_set_style_pad_left(icon_container_, 10, 0);
+            lv_obj_set_style_pad_right(icon_container_, 10, 0);
+            lv_obj_set_flex_flow(icon_container_, LV_FLEX_FLOW_ROW);
             lv_obj_set_flex_align(icon_container_,
-                                  LV_FLEX_ALIGN_SPACE_AROUND,
+                                  LV_FLEX_ALIGN_START,
                                   LV_FLEX_ALIGN_CENTER,
                                   LV_FLEX_ALIGN_CENTER);
         }
+
+        // Reset scroll position so icons start from left
+        lv_obj_scroll_to_x(icon_container_, 0, LV_ANIM_OFF);
+        lv_obj_scroll_to_y(icon_container_, 0, LV_ANIM_OFF);
     }
     updateHandlePosition();
 }
