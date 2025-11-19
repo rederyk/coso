@@ -1,8 +1,10 @@
 #pragma once
 
 #include <Arduino.h>
+#include <array>
 #include <cstdint>
 #include <driver/rmt.h>
+#include <vector>
 
 /**
  * @brief Singleton class for managing the integrated RGB LED on ESP32-S3
@@ -82,6 +84,7 @@ public:
      * @param b Blu (0-255)
      */
     void setStrobeColor(uint8_t r, uint8_t g, uint8_t b);
+    void setStrobePalette(const std::vector<uint32_t>& colors, size_t start_index = 0);
 
     /**
      * @brief Imposta la velocità delle animazioni
@@ -166,6 +169,8 @@ private:
     uint8_t strobe_r_ = 255; // Default strobe color (white)
     uint8_t strobe_g_ = 255;
     uint8_t strobe_b_ = 255;
+    std::vector<std::array<uint8_t, 3>> strobe_palette_;
+    size_t strobe_palette_index_ = 0;
 
     // Per animazioni
     uint32_t last_update_ = 0;

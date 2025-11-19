@@ -3,6 +3,7 @@
 #include "core/screen.h"
 #include "core/settings_manager.h"
 #include <lvgl.h>
+#include <cstddef>
 #include <vector>
 
 /**
@@ -24,10 +25,19 @@ public:
     void onHide() override;
 
 private:
+    enum class PatternType {
+        Pulse,
+        Rainbow,
+        Strobe,
+    };
+
     struct PatternButton {
         lv_obj_t* button;
         int pattern_id;
+        const char* label;
         uint32_t color; // Stores RGB color for this pattern
+        int variant_index;
+        PatternType type;
     };
 
     void applySnapshot(const SettingsSnapshot& snapshot);
@@ -36,7 +46,11 @@ private:
     void updateSpeedLabel(uint8_t value);
     void updateTimeoutLabel(uint32_t value);
     void updateColorPicker();
-    void updatePatternButtonColor(int pattern_id, uint32_t color);
+    void updatePatternButtonColor(int button_index, uint32_t color);
+    std::vector<uint32_t> collectPatternColors(PatternType type, size_t button_index, size_t& selected_position) const;
+    void syncStrobePalette(size_t button_index_override = SIZE_MAX);
+    void applyPatternSelection(int button_index);
+    void configureColorPickerForType(PatternType type);
 
     // Event handlers
     static void handlePatternButton(lv_event_t* e);
@@ -78,5 +92,6 @@ private:
     // State
     bool updating_from_manager = false;
     uint32_t settings_listener_id = 0;
-    int current_pattern = 0; // 0=Pulse1, 1=Pulse2, 2=Rainbow, 3=Strobe1, 4=Strobe2, 5=Strobe3
+    int current_pattern_index = 0; // Index of last selected button
+    PatternType current_pattern_type = PatternType::Pulse;
 };

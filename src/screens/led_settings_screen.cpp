@@ -4,6 +4,7 @@
 #include "widgets/circular_color_picker.h"
 #include "ui/ui_symbols.h"
 #include "utils/logger.h"
+#include <algorithm>
 
 namespace {
 lv_obj_t* create_card(lv_obj_t* parent, const char* title) {
@@ -270,71 +271,73 @@ void LedSettingsScreen::build(lv_obj_t* parent) {
     lv_obj_set_style_pad_row(pattern_grid, 8, 0);     // 8px vertical spacing between buttons
     lv_obj_set_style_pad_column(pattern_grid, 8, 0);  // 8px horizontal spacing between buttons
 
-    // Pattern definitions with default colors
+    // Pattern definitions with default colors grouped by type
     struct PatternDef {
         const char* label;
         uint32_t default_color;
-        int pattern_id;
+        PatternType type;
+        int variant_index;
     };
 
     static constexpr PatternDef patterns[] = {
-        {"Pulse 1", 0xFF64C8, 0},  // Bright pink
-        {"Pulse 2", 0x6496FF, 1},  // Light blue
-        {"Rainbow", 0xFF00FF, 2},  // Magenta (multicolor hint)
-        {"Strobe 1", 0xFFFFFF, 3}, // White
-        {"Strobe 2", 0xFF0000, 4}, // Red
-        {"Strobe 3", 0x00FF00, 5}, // Green
+        {"Pulse 1", 0xFF64C8, PatternType::Pulse, 0},
+        {"Pulse 2", 0x6496FF, PatternType::Pulse, 1},
+        {"Rainbow", 0xFF00FF, PatternType::Rainbow, 0},
+        {"Strobe 1", 0xFFFFFF, PatternType::Strobe, 0},
+        {"Strobe 2", 0xFF0000, PatternType::Strobe, 1},
+        {"Strobe 3", 0x00FF00, PatternType::Strobe, 2},
     };
 
-    // Create 6 pattern buttons (3x2 grid)
+    // Create pattern buttons (3x2 grid)
     pattern_buttons_.clear();
-    for (size_t i = 0; i < 6; ++i) {
+    constexpr size_t pattern_count = sizeof(patterns) / sizeof(patterns[0]);
+    for (size_t i = 0; i < pattern_count; ++i) {
         const auto& pat = patterns[i];
 
         // Create button
         lv_obj_t* btn = lv_btn_create(pattern_grid);
-        lv_obj_set_height(btn, 38);  // Button height: 38px (same as theme settings)
-        lv_obj_set_style_radius(btn, 8, 0);  // Rounded corners: 8px
-        lv_obj_set_style_bg_color(btn, lv_color_hex(pat.default_color), 0);  // Pattern's default color
+        lv_obj_set_height(btn, 38);
+        lv_obj_set_style_radius(btn, 8, 0);
+        lv_obj_set_style_bg_color(btn, lv_color_hex(pat.default_color), 0);
         lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, 0);
 
-        // Border: hidden by default, visible when checked
-        lv_obj_set_style_border_width(btn, 0, LV_PART_MAIN);  // No border when unchecked
-        lv_obj_set_style_border_width(btn, 3, LV_PART_MAIN | LV_STATE_CHECKED);  // 3px border when checked
-        lv_obj_set_style_border_color(btn, lv_color_hex(0x00d4ff), LV_PART_MAIN | LV_STATE_CHECKED);  // Accent color
+        lv_obj_set_style_border_width(btn, 0, LV_PART_MAIN);
+        lv_obj_set_style_border_width(btn, 3, LV_PART_MAIN | LV_STATE_CHECKED);
+        lv_obj_set_style_border_color(btn, lv_color_hex(0x00d4ff), LV_PART_MAIN | LV_STATE_CHECKED);
         lv_obj_set_style_border_opa(btn, LV_OPA_100, LV_PART_MAIN | LV_STATE_CHECKED);
 
-        lv_obj_add_flag(btn, LV_OBJ_FLAG_CHECKABLE);  // Button can be checked/unchecked
+        lv_obj_add_flag(btn, LV_OBJ_FLAG_CHECKABLE);
         lv_obj_add_event_cb(btn, handlePatternButton, LV_EVENT_CLICKED, this);
 
-        // Position in grid: (column, row)
-        // i % 3 = column (0, 1, 2), i / 3 = row (0, 1)
         lv_obj_set_grid_cell(btn,
-                             LV_GRID_ALIGN_STRETCH,  // Stretch horizontally to fill column
-                             i % 3,                  // Column index
-                             1,                      // Span 1 column
-                             LV_GRID_ALIGN_CENTER,   // Center vertically
-                             i / 3,                  // Row index
-                             1);                     // Span 1 row
+                             LV_GRID_ALIGN_STRETCH,
+                             i % 3,
+                             1,
+                             LV_GRID_ALIGN_CENTER,
+                             i / 3,
+                             1);
 
-        // Button label (pattern name)
         lv_obj_t* lbl = lv_label_create(btn);
         lv_label_set_text(lbl, pat.label);
-        lv_obj_set_style_text_font(lbl, &lv_font_montserrat_14, 0);  // Font size: 14px
-        lv_obj_set_style_text_color(lbl, lv_color_hex(0xffffff), 0);  // White text
-        lv_obj_center(lbl);  // Center label in button
+        lv_obj_set_style_text_font(lbl, &lv_font_montserrat_14, 0);
+        lv_obj_set_style_text_color(lbl, lv_color_hex(0xffffff), 0);
+        lv_obj_center(lbl);
 
-        PatternButton pb;
+        PatternButton pb{};
         pb.button = btn;
-        pb.pattern_id = pat.pattern_id;
+        pb.pattern_id = static_cast<int>(i);
+        pb.label = pat.label;
         pb.color = pat.default_color;
+        pb.variant_index = pat.variant_index;
+        pb.type = pat.type;
         pattern_buttons_.push_back(pb);
     }
 
-    // Set initial pattern (Pulse 1)
     if (!pattern_buttons_.empty()) {
+        current_pattern_index = 0;
+        current_pattern_type = pattern_buttons_[0].type;
         lv_obj_add_state(pattern_buttons_[0].button, LV_STATE_CHECKED);
-        current_pattern = 0;
+        applyPatternSelection(0);
     }
 
     // Apply theme and initial values
@@ -426,21 +429,116 @@ void LedSettingsScreen::updateTimeoutLabel(uint32_t value) {
 }
 
 void LedSettingsScreen::updateColorPicker() {
-    if (!color_picker_widget || current_pattern < 0 || current_pattern >= (int)pattern_buttons_.size()) {
+    if (!color_picker_widget || current_pattern_index < 0 || current_pattern_index >= (int)pattern_buttons_.size()) {
         return;
     }
 
-    uint32_t color = pattern_buttons_[current_pattern].color;
+    configureColorPickerForType(current_pattern_type);
+    if (current_pattern_type == PatternType::Rainbow) {
+        return;
+    }
+
+    uint32_t color = pattern_buttons_[current_pattern_index].color;
     CircularColorPicker::set_rgb(color_picker_widget, lv_color_hex(color));
 }
 
-void LedSettingsScreen::updatePatternButtonColor(int pattern_id, uint32_t color) {
-    for (auto& pb : pattern_buttons_) {
-        if (pb.pattern_id == pattern_id) {
-            pb.color = color;
-            lv_obj_set_style_bg_color(pb.button, lv_color_hex(color), 0);
+void LedSettingsScreen::updatePatternButtonColor(int button_index, uint32_t color) {
+    if (button_index < 0 || button_index >= (int)pattern_buttons_.size()) {
+        return;
+    }
+
+    auto& pb = pattern_buttons_[button_index];
+    pb.color = color;
+    lv_obj_set_style_bg_color(pb.button, lv_color_hex(color), 0);
+}
+
+void LedSettingsScreen::configureColorPickerForType(PatternType type) {
+    if (!color_picker_card) return;
+
+    if (type == PatternType::Rainbow) {
+        lv_obj_add_flag(color_picker_card, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_clear_flag(color_picker_card, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
+std::vector<uint32_t> LedSettingsScreen::collectPatternColors(PatternType type, size_t button_index, size_t& selected_position) const {
+    struct ColorEntry {
+        int variant;
+        uint32_t color;
+        size_t button_index;
+    };
+
+    std::vector<ColorEntry> entries;
+    entries.reserve(pattern_buttons_.size());
+    for (size_t i = 0; i < pattern_buttons_.size(); ++i) {
+        const auto& pb = pattern_buttons_[i];
+        if (pb.type != type) continue;
+        entries.push_back({pb.variant_index, pb.color, i});
+    }
+
+    selected_position = 0;
+    if (entries.empty()) {
+        return {};
+    }
+
+    std::sort(entries.begin(), entries.end(), [](const ColorEntry& a, const ColorEntry& b) {
+        return a.variant < b.variant;
+    });
+
+    size_t match_index = (button_index == SIZE_MAX) ? current_pattern_index : button_index;
+    for (size_t i = 0; i < entries.size(); ++i) {
+        if (entries[i].button_index == match_index) {
+            selected_position = i;
             break;
         }
+    }
+
+    std::vector<uint32_t> colors;
+    colors.reserve(entries.size());
+    for (const auto& entry : entries) {
+        colors.push_back(entry.color);
+    }
+
+    return colors;
+}
+
+void LedSettingsScreen::syncStrobePalette(size_t button_index_override) {
+    size_t selected_position = 0;
+    size_t target_index = (button_index_override == SIZE_MAX) ? current_pattern_index : button_index_override;
+    auto colors = collectPatternColors(PatternType::Strobe, target_index, selected_position);
+    if (colors.empty()) {
+        return;
+    }
+
+    RgbLedManager::getInstance().setStrobePalette(colors, selected_position);
+}
+
+void LedSettingsScreen::applyPatternSelection(int button_index) {
+    if (button_index < 0 || button_index >= (int)pattern_buttons_.size()) {
+        return;
+    }
+
+    const auto& pb = pattern_buttons_[button_index];
+    current_pattern_type = pb.type;
+    configureColorPickerForType(pb.type);
+
+    RgbLedManager& led = RgbLedManager::getInstance();
+    if (pb.type == PatternType::Rainbow) {
+        led.setState(RgbLedManager::LedState::RAINBOW);
+        return;
+    }
+
+    uint32_t color = pb.color;
+    uint8_t r = (color >> 16) & 0xFF;
+    uint8_t g = (color >> 8) & 0xFF;
+    uint8_t b = color & 0xFF;
+
+    if (pb.type == PatternType::Pulse) {
+        led.setPulseColor(r, g, b);
+    } else if (pb.type == PatternType::Strobe) {
+        syncStrobePalette(button_index);
+        led.setState(RgbLedManager::LedState::STROBE_CUSTOM);
     }
 }
 
@@ -453,46 +551,24 @@ void LedSettingsScreen::handlePatternButton(lv_event_t* e) {
     lv_obj_t* clicked_btn = lv_event_get_target(e);
 
     // Find which pattern was clicked
-    int selected_pattern = -1;
+    int selected_index = -1;
     for (size_t i = 0; i < screen->pattern_buttons_.size(); ++i) {
         if (screen->pattern_buttons_[i].button == clicked_btn) {
-            selected_pattern = screen->pattern_buttons_[i].pattern_id;
+            selected_index = static_cast<int>(i);
             lv_obj_add_state(clicked_btn, LV_STATE_CHECKED);
         } else {
             lv_obj_clear_state(screen->pattern_buttons_[i].button, LV_STATE_CHECKED);
         }
     }
 
-    if (selected_pattern < 0) return;
+    if (selected_index < 0) return;
 
-    screen->current_pattern = selected_pattern;
-    RgbLedManager& led = RgbLedManager::getInstance();
-
-    // Update color picker to match selected pattern
+    screen->current_pattern_index = selected_index;
+    screen->applyPatternSelection(selected_index);
     screen->updateColorPicker();
 
-    // Apply pattern to LED with stored color
-    uint32_t color = screen->pattern_buttons_[selected_pattern].color;
-    uint8_t r = (color >> 16) & 0xFF;
-    uint8_t g = (color >> 8) & 0xFF;
-    uint8_t b = color & 0xFF;
-
-    // Hide/show color picker for Rainbow
-    if (selected_pattern == 2) { // Rainbow
-        lv_obj_add_flag(screen->color_picker_card, LV_OBJ_FLAG_HIDDEN);
-        led.setState(RgbLedManager::LedState::RAINBOW);
-    } else {
-        lv_obj_clear_flag(screen->color_picker_card, LV_OBJ_FLAG_HIDDEN);
-
-        // Apply pattern
-        if (selected_pattern == 0 || selected_pattern == 1) { // Pulse 1/2
-            led.setPulseColor(r, g, b);
-        } else if (selected_pattern >= 3 && selected_pattern <= 5) { // Strobe 1/2/3
-            led.setStrobeColor(r, g, b);
-        }
-    }
-
-    Logger::getInstance().infof("[LED Settings] Pattern changed to: %d", selected_pattern);
+    const char* label = screen->pattern_buttons_[selected_index].label;
+    Logger::getInstance().infof("[LED Settings] Pattern changed to: %s", label ? label : "unknown");
 }
 
 void LedSettingsScreen::handleColorPickerChanged(lv_event_t* e) {
@@ -504,7 +580,7 @@ void LedSettingsScreen::handleColorPickerChanged(lv_event_t* e) {
     uint32_t color_hex = toLvColorHex(color);
 
     // Update current pattern's color
-    screen->updatePatternButtonColor(screen->current_pattern, color_hex);
+    screen->updatePatternButtonColor(screen->current_pattern_index, color_hex);
 
     // Apply to LED
     uint8_t r = (color_hex >> 16) & 0xFF;
@@ -513,10 +589,10 @@ void LedSettingsScreen::handleColorPickerChanged(lv_event_t* e) {
 
     RgbLedManager& led = RgbLedManager::getInstance();
 
-    if (screen->current_pattern == 0 || screen->current_pattern == 1) { // Pulse
+    if (screen->current_pattern_type == PatternType::Pulse) {
         led.setPulseColor(r, g, b);
-    } else if (screen->current_pattern >= 3 && screen->current_pattern <= 5) { // Strobe
-        led.setStrobeColor(r, g, b);
+    } else if (screen->current_pattern_type == PatternType::Strobe) {
+        screen->syncStrobePalette();
     }
 
     Logger::getInstance().infof("[LED Settings] Color changed to #%06X", color_hex);

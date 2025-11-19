@@ -141,15 +141,44 @@ void RgbLedManager::setPulseColor(uint8_t r, uint8_t g, uint8_t b) {
 }
 
 void RgbLedManager::setStrobeColor(uint8_t r, uint8_t g, uint8_t b) {
-    strobe_r_ = r;
-    strobe_g_ = g;
-    strobe_b_ = b;
+    uint32_t hex_color = (static_cast<uint32_t>(r) << 16) | (static_cast<uint32_t>(g) << 8) | b;
+    setStrobePalette({hex_color}, 0);
     current_state_ = LedState::STROBE_CUSTOM;
     animation_phase_ = 0;
     blink_on_ = false;
     last_update_ = millis();
     updateAnimation();
     Logger::getInstance().infof("[RGB LED] Strobe color set to RGB(%d, %d, %d)", r, g, b);
+}
+
+void RgbLedManager::setStrobePalette(const std::vector<uint32_t>& colors, size_t start_index) {
+    strobe_palette_.clear();
+    strobe_palette_index_ = 0;
+
+    for (uint32_t color : colors) {
+        uint8_t r = (color >> 16) & 0xFF;
+        uint8_t g = (color >> 8) & 0xFF;
+        uint8_t b = color & 0xFF;
+        strobe_palette_.push_back({r, g, b});
+    }
+
+    if (strobe_palette_.empty()) {
+        strobe_palette_.push_back({strobe_r_, strobe_g_, strobe_b_});
+    }
+
+    size_t palette_size = strobe_palette_.size();
+    if (palette_size > 0) {
+        if (start_index >= palette_size) {
+            start_index %= palette_size;
+        }
+        strobe_palette_index_ = start_index;
+        const auto& entry = strobe_palette_[strobe_palette_index_];
+        strobe_r_ = entry[0];
+        strobe_g_ = entry[1];
+        strobe_b_ = entry[2];
+    }
+
+    Logger::getInstance().infof("[RGB LED] Strobe palette configured (%u colors)", (unsigned)strobe_palette_.size());
 }
 
 void RgbLedManager::off() {
@@ -313,11 +342,18 @@ void RgbLedManager::updateAnimation() {
             }
             break;
         case LedState::STROBE_CUSTOM:
-            // Strobe con colore personalizzato
             if (blink_on_) {
-                r = strobe_r_;
-                g = strobe_g_;
-                b = strobe_b_;
+                if (!strobe_palette_.empty()) {
+                    const auto& entry = strobe_palette_[strobe_palette_index_];
+                    r = entry[0];
+                    g = entry[1];
+                    b = entry[2];
+                    strobe_palette_index_ = (strobe_palette_index_ + 1) % strobe_palette_.size();
+                } else {
+                    r = strobe_r_;
+                    g = strobe_g_;
+                    b = strobe_b_;
+                }
             }
             break;
         case LedState::PULSE:
