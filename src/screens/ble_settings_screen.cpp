@@ -1,5 +1,6 @@
 #include "screens/ble_settings_screen.h"
 #include "core/app_manager.h"
+#include "core/keyboard_manager.h"
 #include "ui/ui_symbols.h"
 #include "utils/logger.h"
 #include <BLEDevice.h>
@@ -148,6 +149,10 @@ void BleSettingsScreen::build(lv_obj_t* parent) {
     lv_textarea_set_placeholder_text(device_name_input, "ESP32-S3");
     lv_obj_set_width(device_name_input, lv_pct(100));
     lv_obj_add_event_cb(device_name_input, handleDeviceNameInput, LV_EVENT_VALUE_CHANGED, this);
+    lv_obj_add_event_cb(device_name_input, [](lv_event_t* e) {
+        lv_obj_t* ta = lv_event_get_target(e);
+        KeyboardManager::getInstance().showForTextArea(ta);
+    }, LV_EVENT_FOCUSED, nullptr);
 
     // Show current device name
     if (BLEDevice::getInitialized()) {

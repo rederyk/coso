@@ -154,6 +154,17 @@ void SettingsScreen::build(lv_obj_t* parent) {
     lv_obj_set_style_text_color(hint_label, lv_color_hex(0x909090), 0);
     lv_label_set_text(hint_label, "Dati salvati automaticamente su LittleFS.");
 
+    // Developer button (at bottom)
+    lv_obj_t* developer_btn = lv_btn_create(content_container);
+    lv_obj_set_width(developer_btn, lv_pct(100));
+    lv_obj_set_height(developer_btn, 50);
+    lv_obj_add_event_cb(developer_btn, handleDeveloperButton, LV_EVENT_CLICKED, this);
+    lv_obj_set_style_bg_color(developer_btn, lv_color_hex(0x404040), 0);
+    lv_obj_t* developer_btn_label = lv_label_create(developer_btn);
+    lv_label_set_text(developer_btn_label, UI_SYMBOL_SETTINGS " Developer");
+    lv_obj_center(developer_btn_label);
+    lv_obj_set_style_text_font(developer_btn_label, &lv_font_montserrat_16, 0);
+
     applySnapshot(snapshot);
 
     if (settings_listener_id == 0) {
@@ -329,5 +340,16 @@ void SettingsScreen::handleLedSettingsButton(lv_event_t* e) {
     AppManager* app_manager = AppManager::getInstance();
     if (app_manager) {
         app_manager->launchApp("LedSettings");
+    }
+}
+
+void SettingsScreen::handleDeveloperButton(lv_event_t* e) {
+    auto* screen = static_cast<SettingsScreen*>(lv_event_get_user_data(e));
+    if (!screen) return;
+
+    Logger::getInstance().info("[Settings] Launching Developer screen...");
+    AppManager* app_manager = AppManager::getInstance();
+    if (app_manager) {
+        app_manager->launchApp("Developer");
     }
 }

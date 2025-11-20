@@ -24,6 +24,7 @@ private:
     static void handleWifiSettingsButton(lv_event_t* e);
     static void handleBleSettingsButton(lv_event_t* e);
     static void handleLedSettingsButton(lv_event_t* e);
+    static void handleDeveloperButton(lv_event_t* e);
 
     lv_obj_t* wifi_ssid_input = nullptr;
     lv_obj_t* wifi_pass_input = nullptr;

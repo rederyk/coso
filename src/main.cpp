@@ -4,6 +4,8 @@
 #include <esp_chip_info.h>
 #include <esp_heap_caps.h>
 #include <esp_system.h>
+#include <soc/rtc_cntl_reg.h>
+#include <rom/rtc.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <lvgl.h>
@@ -12,6 +14,7 @@
 #include "core/app_manager.h"
 #include "core/backlight_manager.h"
 #include "core/display_manager.h"
+#include "core/keyboard_manager.h"
 #include "core/settings_manager.h"
 #include "core/wifi_manager.h"
 #include "core/ble_manager.h"
@@ -23,6 +26,7 @@
 #include "screens/wifi_settings_screen.h"
 #include "screens/ble_settings_screen.h"
 #include "screens/led_settings_screen.h"
+#include "screens/developer_screen.h"
 #include "screens/info_screen.h"
 #include "screens/system_log_screen.h"
 #include "screens/theme_settings_screen.h"
@@ -155,8 +159,42 @@ void setup() {
     bool initial_landscape = true;
     uint8_t initial_brightness = 80;
     uint8_t initial_led_brightness = 50;
+
+    // Check reset reason for diagnostics
+    RESET_REASON reset_reason = rtc_get_reset_reason(0);
+    const char* reset_reason_str = "UNKNOWN";
+    switch (reset_reason) {
+        case POWERON_RESET: reset_reason_str = "POWERON"; break;
+        case DEEPSLEEP_RESET: reset_reason_str = "DEEP_SLEEP"; break;
+        case TG0WDT_SYS_RESET: reset_reason_str = "TG0_WATCHDOG"; break;
+        case TG1WDT_SYS_RESET: reset_reason_str = "TG1_WATCHDOG"; break;
+        case RTCWDT_SYS_RESET: reset_reason_str = "RTC_WATCHDOG"; break;
+        case INTRUSION_RESET: reset_reason_str = "INTRUSION"; break;
+        case RTCWDT_CPU_RESET: reset_reason_str = "RTC_CPU_WATCHDOG"; break;
+        case RTCWDT_BROWN_OUT_RESET: reset_reason_str = "BROWNOUT"; break;
+        case RTCWDT_RTC_RESET: reset_reason_str = "RTC"; break;
+        default: break;
+    }
+    logger.infof("[System] Reset reason: %s", reset_reason_str);
+
     if (settings_mgr.begin()) {
         settings_mgr.setVersion(APP_VERSION);
+
+        // Increment boot count
+        settings_mgr.incrementBootCount();
+        logger.infof("[System] Boot count: %u", settings_mgr.getBootCount());
+
+        // If brown-out detected, try to restore from SD backup
+        if (reset_reason == RTCWDT_BROWN_OUT_RESET) {
+            logger.warn("[System] Brown-out detected on last boot - checking for backup");
+            if (settings_mgr.hasBackup()) {
+                logger.info("[System] Attempting to restore settings from SD backup");
+                if (settings_mgr.restoreFromSD()) {
+                    logger.info("[System] Settings restored successfully from backup");
+                }
+            }
+        }
+
         initial_landscape = settings_mgr.isLandscapeLayout();
         initial_brightness = settings_mgr.getBrightness();
         initial_led_brightness = settings_mgr.getLedBrightness();
@@ -252,6 +290,10 @@ void setup() {
     lv_obj_t* screen = lv_scr_act();
     lv_obj_clear_flag(screen, LV_OBJ_FLAG_SCROLLABLE);
 
+    // Initialize global keyboard manager
+    KeyboardManager::getInstance().init(screen);
+    logger.info("[KeyboardManager] Global keyboard initialized");
+
     // Inizializza App Manager e crea le app
     AppManager* app_manager = AppManager::getInstance();
     app_manager->init(screen);
@@ -263,6 +305,7 @@ void setup() {
     static WifiSettingsScreen wifi_settings;
     static BleSettingsScreen ble_settings;
     static LedSettingsScreen led_settings;
+    static DeveloperScreen developer;
     static InfoScreen info;
     static ThemeSettingsScreen theme_settings;
     static SystemLogScreen system_log;
@@ -280,6 +323,7 @@ void setup() {
     app_manager->registerHiddenApp("WiFiSettings", &wifi_settings);
     app_manager->registerHiddenApp("BleSettings", &ble_settings);
     app_manager->registerHiddenApp("LedSettings", &led_settings);
+    app_manager->registerHiddenApp("Developer", &developer);
 
     // Lancia dashboard come app iniziale
     app_manager->launchApp("dashboard");
@@ -304,6 +348,21 @@ void setup() {
 
     xTaskCreatePinnedToCore(lvgl_task, "lvgl", 6144, nullptr, 3, nullptr, 1);
     logMemoryStats("LVGL task started");
+
+    // Create auto-backup timer (every 30 minutes)
+    static lv_timer_t* backup_timer = lv_timer_create([](lv_timer_t* t) {
+        SettingsManager& settings = SettingsManager::getInstance();
+        Logger& log = Logger::getInstance();
+
+        log.info("[Settings] Performing periodic backup to SD card");
+        if (settings.backupToSD()) {
+            log.info("[Settings] Periodic backup completed successfully");
+        } else {
+            log.warn("[Settings] Periodic backup failed (SD card may not be present)");
+        }
+    }, 30 * 60 * 1000, nullptr);  // 30 minutes in milliseconds
+
+    logger.info("[Settings] Auto-backup timer started (every 30 minutes)");
 
     // Inizializza RGB LED dopo che tutto il resto è pronto
     RgbLedManager& rgb_led = RgbLedManager::getInstance();

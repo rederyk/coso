@@ -7,12 +7,33 @@
 #include <vector>
 
 struct SettingsSnapshot {
+    // WiFi & Network
     std::string wifiSsid;
     std::string wifiPassword;
+    bool wifiAutoConnect = true;
+    std::string hostname = "esp32-s3-touch";
+
+    // BLE
+    std::string bleDeviceName = "ESP32-S3";
+    bool bleEnabled = true;
+    bool bleAdvertising = true;
+
+    // Display & UI
     uint8_t brightness = 80;
+    uint8_t screenTimeout = 0;  // 0 = never, in minutes
+    bool autoSleep = false;
+    bool landscapeLayout = true;
+
+    // LED
     uint8_t ledBrightness = 50;
+    bool ledEnabled = true;
+
+    // Audio
+    uint8_t audioVolume = 80;
+    bool audioEnabled = true;
+
+    // Theme
     std::string theme;
-    std::string version;
     uint32_t primaryColor = 0x0b2035;
     uint32_t accentColor = 0x5df4ff;
     uint32_t cardColor = 0x10182c;
@@ -21,18 +42,44 @@ struct SettingsSnapshot {
     uint32_t dockIconSymbolColor = 0xffffff;
     uint8_t dockIconRadius = 24;
     uint8_t borderRadius = 12;
-    bool landscapeLayout = true;
+
+    // System
+    std::string version;
+    uint32_t bootCount = 0;
+    uint32_t settingsVersion = 1;  // For migration support
+    std::string lastBackupTime;
 };
 
 class SettingsManager {
 public:
     enum class SettingKey : uint8_t {
+        // WiFi & Network
         WifiSsid,
         WifiPassword,
+        WifiAutoConnect,
+        Hostname,
+
+        // BLE
+        BleDeviceName,
+        BleEnabled,
+        BleAdvertising,
+
+        // Display & UI
         Brightness,
+        ScreenTimeout,
+        AutoSleep,
+        LayoutOrientation,
+
+        // LED
         LedBrightness,
+        LedEnabled,
+
+        // Audio
+        AudioVolume,
+        AudioEnabled,
+
+        // Theme
         Theme,
-        Version,
         ThemePrimaryColor,
         ThemeAccentColor,
         ThemeCardColor,
@@ -41,7 +88,10 @@ public:
         ThemeDockIconSymbolColor,
         ThemeDockIconRadius,
         ThemeBorderRadius,
-        LayoutOrientation
+
+        // System
+        Version,
+        BootCount
     };
 
     using Callback = std::function<void(SettingKey, const SettingsSnapshot&)>;
@@ -95,6 +145,51 @@ public:
     bool isLandscapeLayout() const { return current_.landscapeLayout; }
     void setLandscapeLayout(bool landscape);
 
+    // WiFi Network
+    bool getWifiAutoConnect() const { return current_.wifiAutoConnect; }
+    void setWifiAutoConnect(bool autoConnect);
+
+    const std::string& getHostname() const { return current_.hostname; }
+    void setHostname(const std::string& hostname);
+
+    // BLE
+    const std::string& getBleDeviceName() const { return current_.bleDeviceName; }
+    void setBleDeviceName(const std::string& name);
+
+    bool getBleEnabled() const { return current_.bleEnabled; }
+    void setBleEnabled(bool enabled);
+
+    bool getBleAdvertising() const { return current_.bleAdvertising; }
+    void setBleAdvertising(bool advertising);
+
+    // Display
+    uint8_t getScreenTimeout() const { return current_.screenTimeout; }
+    void setScreenTimeout(uint8_t timeout);
+
+    bool getAutoSleep() const { return current_.autoSleep; }
+    void setAutoSleep(bool autoSleep);
+
+    // LED
+    bool getLedEnabled() const { return current_.ledEnabled; }
+    void setLedEnabled(bool enabled);
+
+    // Audio
+    uint8_t getAudioVolume() const { return current_.audioVolume; }
+    void setAudioVolume(uint8_t volume);
+
+    bool getAudioEnabled() const { return current_.audioEnabled; }
+    void setAudioEnabled(bool enabled);
+
+    // System
+    uint32_t getBootCount() const { return current_.bootCount; }
+    void incrementBootCount();
+
+    // Backup & Restore
+    bool backupToSD();
+    bool restoreFromSD();
+    bool hasBackup() const;
+    const std::string& getLastBackupTime() const { return current_.lastBackupTime; }
+
     const std::vector<ThemePalette>& getThemePalettes() const { return palettes_; }
     bool addThemePalette(const ThemePalette& palette);
 
@@ -123,10 +218,31 @@ private:
     std::vector<CallbackEntry> callbacks_;
     uint32_t next_callback_id_ = 1;
 
+    // WiFi & Network defaults
+    static constexpr bool DEFAULT_WIFI_AUTO_CONNECT = true;
+    static constexpr const char* DEFAULT_HOSTNAME = "esp32-s3-touch";
+
+    // BLE defaults
+    static constexpr const char* DEFAULT_BLE_DEVICE_NAME = "ESP32-S3";
+    static constexpr bool DEFAULT_BLE_ENABLED = true;
+    static constexpr bool DEFAULT_BLE_ADVERTISING = true;
+
+    // Display & UI defaults
     static constexpr uint8_t DEFAULT_BRIGHTNESS = 80;
+    static constexpr uint8_t DEFAULT_SCREEN_TIMEOUT = 0;  // Never
+    static constexpr bool DEFAULT_AUTO_SLEEP = false;
+    static constexpr bool DEFAULT_LANDSCAPE = true;
+
+    // LED defaults
     static constexpr uint8_t DEFAULT_LED_BRIGHTNESS = 50;
+    static constexpr bool DEFAULT_LED_ENABLED = true;
+
+    // Audio defaults
+    static constexpr uint8_t DEFAULT_AUDIO_VOLUME = 80;
+    static constexpr bool DEFAULT_AUDIO_ENABLED = true;
+
+    // Theme defaults
     static constexpr const char* DEFAULT_THEME = "dark";
-    static constexpr const char* DEFAULT_VERSION = "0.5.0";
     static constexpr uint32_t DEFAULT_PRIMARY_COLOR = 0x0b2035;
     static constexpr uint32_t DEFAULT_ACCENT_COLOR = 0x5df4ff;
     static constexpr uint32_t DEFAULT_CARD_COLOR = 0x10182c;
@@ -136,5 +252,8 @@ private:
     static constexpr uint8_t DEFAULT_DOCK_ICON_RADIUS = 24;
     static constexpr uint8_t MAX_DOCK_ICON_RADIUS = 24;
     static constexpr uint8_t DEFAULT_BORDER_RADIUS = 12;
-    static constexpr bool DEFAULT_LANDSCAPE = true;
+
+    // System defaults
+    static constexpr const char* DEFAULT_VERSION = "0.6.0";
+    static constexpr uint32_t SETTINGS_VERSION = 1;
 };

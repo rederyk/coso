@@ -1,6 +1,10 @@
 #include "core/settings_manager.h"
 #include "core/storage_manager.h"
+#include "drivers/sd_card_driver.h"
 #include <Arduino.h>
+#include <ArduinoJson.h>
+#include <SD_MMC.h>
+#include <LittleFS.h>
 #include <algorithm>
 #include "ui/ui_symbols.h"
 #include "utils/logger.h"
@@ -299,12 +303,33 @@ void SettingsManager::loadFromStorage() {
 }
 
 void SettingsManager::loadDefaults() {
+    // WiFi & Network
     current_.wifiSsid.clear();
     current_.wifiPassword.clear();
+    current_.wifiAutoConnect = DEFAULT_WIFI_AUTO_CONNECT;
+    current_.hostname = DEFAULT_HOSTNAME;
+
+    // BLE
+    current_.bleDeviceName = DEFAULT_BLE_DEVICE_NAME;
+    current_.bleEnabled = DEFAULT_BLE_ENABLED;
+    current_.bleAdvertising = DEFAULT_BLE_ADVERTISING;
+
+    // Display & UI
     current_.brightness = DEFAULT_BRIGHTNESS;
+    current_.screenTimeout = DEFAULT_SCREEN_TIMEOUT;
+    current_.autoSleep = DEFAULT_AUTO_SLEEP;
+    current_.landscapeLayout = DEFAULT_LANDSCAPE;
+
+    // LED
     current_.ledBrightness = DEFAULT_LED_BRIGHTNESS;
+    current_.ledEnabled = DEFAULT_LED_ENABLED;
+
+    // Audio
+    current_.audioVolume = DEFAULT_AUDIO_VOLUME;
+    current_.audioEnabled = DEFAULT_AUDIO_ENABLED;
+
+    // Theme
     current_.theme = DEFAULT_THEME;
-    current_.version = DEFAULT_VERSION;
     current_.primaryColor = DEFAULT_PRIMARY_COLOR;
     current_.accentColor = DEFAULT_ACCENT_COLOR;
     current_.cardColor = DEFAULT_CARD_COLOR;
@@ -313,7 +338,12 @@ void SettingsManager::loadDefaults() {
     current_.dockIconSymbolColor = DEFAULT_DOCK_ICON_SYMBOL_COLOR;
     current_.dockIconRadius = DEFAULT_DOCK_ICON_RADIUS;
     current_.borderRadius = DEFAULT_BORDER_RADIUS;
-    current_.landscapeLayout = DEFAULT_LANDSCAPE;
+
+    // System
+    current_.version = DEFAULT_VERSION;
+    current_.bootCount = 0;
+    current_.settingsVersion = SETTINGS_VERSION;
+    current_.lastBackupTime.clear();
 }
 
 void SettingsManager::loadThemePalettes() {
@@ -382,6 +412,237 @@ void SettingsManager::persistSnapshot() {
         return;
     }
     StorageManager::getInstance().saveSettings(current_);
+}
+
+// WiFi & Network setters
+void SettingsManager::setWifiAutoConnect(bool autoConnect) {
+    if (!initialized_ || autoConnect == current_.wifiAutoConnect) {
+        return;
+    }
+    current_.wifiAutoConnect = autoConnect;
+    persistSnapshot();
+    notify(SettingKey::WifiAutoConnect);
+}
+
+void SettingsManager::setHostname(const std::string& hostname) {
+    if (!initialized_ || hostname == current_.hostname) {
+        return;
+    }
+    current_.hostname = hostname;
+    persistSnapshot();
+    notify(SettingKey::Hostname);
+}
+
+// BLE setters
+void SettingsManager::setBleDeviceName(const std::string& name) {
+    if (!initialized_ || name == current_.bleDeviceName) {
+        return;
+    }
+    current_.bleDeviceName = name;
+    persistSnapshot();
+    notify(SettingKey::BleDeviceName);
+}
+
+void SettingsManager::setBleEnabled(bool enabled) {
+    if (!initialized_ || enabled == current_.bleEnabled) {
+        return;
+    }
+    current_.bleEnabled = enabled;
+    persistSnapshot();
+    notify(SettingKey::BleEnabled);
+}
+
+void SettingsManager::setBleAdvertising(bool advertising) {
+    if (!initialized_ || advertising == current_.bleAdvertising) {
+        return;
+    }
+    current_.bleAdvertising = advertising;
+    persistSnapshot();
+    notify(SettingKey::BleAdvertising);
+}
+
+// Display setters
+void SettingsManager::setScreenTimeout(uint8_t timeout) {
+    if (!initialized_ || timeout == current_.screenTimeout) {
+        return;
+    }
+    current_.screenTimeout = timeout;
+    persistSnapshot();
+    notify(SettingKey::ScreenTimeout);
+}
+
+void SettingsManager::setAutoSleep(bool autoSleep) {
+    if (!initialized_ || autoSleep == current_.autoSleep) {
+        return;
+    }
+    current_.autoSleep = autoSleep;
+    persistSnapshot();
+    notify(SettingKey::AutoSleep);
+}
+
+// LED setters
+void SettingsManager::setLedEnabled(bool enabled) {
+    if (!initialized_ || enabled == current_.ledEnabled) {
+        return;
+    }
+    current_.ledEnabled = enabled;
+    persistSnapshot();
+    notify(SettingKey::LedEnabled);
+}
+
+// Audio setters
+void SettingsManager::setAudioVolume(uint8_t volume) {
+    if (!initialized_) {
+        return;
+    }
+    uint8_t clamped = std::min<uint8_t>(100, std::max<uint8_t>(0, volume));
+    if (clamped == current_.audioVolume) {
+        return;
+    }
+    current_.audioVolume = clamped;
+    persistSnapshot();
+    notify(SettingKey::AudioVolume);
+}
+
+void SettingsManager::setAudioEnabled(bool enabled) {
+    if (!initialized_ || enabled == current_.audioEnabled) {
+        return;
+    }
+    current_.audioEnabled = enabled;
+    persistSnapshot();
+    notify(SettingKey::AudioEnabled);
+}
+
+// System setters
+void SettingsManager::incrementBootCount() {
+    if (!initialized_) {
+        return;
+    }
+    current_.bootCount++;
+    persistSnapshot();
+    notify(SettingKey::BootCount);
+}
+
+// Backup & Restore
+bool SettingsManager::backupToSD() {
+    if (!initialized_) {
+        Logger::getInstance().error("[Settings] Cannot backup: not initialized");
+        return false;
+    }
+
+    // Check if SD card driver is available
+    SdCardDriver& sd = SdCardDriver::getInstance();
+    if (!sd.isMounted()) {
+        Logger::getInstance().warn("[Settings] Cannot backup: SD card not mounted");
+        return false;
+    }
+
+    // Create /config directory if needed
+    if (!SD_MMC.exists("/config")) {
+        if (!SD_MMC.mkdir("/config")) {
+            Logger::getInstance().error("[Settings] Failed to create /config directory");
+            return false;
+        }
+    }
+
+    // Open backup file
+    File backup = SD_MMC.open("/config/settings_backup.json", FILE_WRITE);
+    if (!backup) {
+        Logger::getInstance().error("[Settings] Failed to open backup file for writing");
+        return false;
+    }
+
+    // Use StorageManager to save (it has the serialization logic)
+    backup.close();
+
+    // Use a temporary settings snapshot and save via StorageManager
+    // Actually, simpler: just copy the LittleFS settings.json to SD card
+    File src = LittleFS.open("/settings.json", FILE_READ);
+    if (!src) {
+        Logger::getInstance().error("[Settings] Failed to open settings file for reading");
+        return false;
+    }
+
+    backup = SD_MMC.open("/config/settings_backup.json", FILE_WRITE);
+    if (!backup) {
+        src.close();
+        Logger::getInstance().error("[Settings] Failed to open backup file for writing");
+        return false;
+    }
+
+    // Copy file contents
+    uint8_t buf[512];
+    while (src.available()) {
+        size_t len = src.read(buf, sizeof(buf));
+        backup.write(buf, len);
+    }
+
+    src.close();
+    backup.close();
+
+    // Update backup timestamp
+    char timestamp[32];
+    snprintf(timestamp, sizeof(timestamp), "%lu", millis() / 1000);
+    current_.lastBackupTime = timestamp;
+    persistSnapshot();
+
+    Logger::getInstance().info("[Settings] Backup created successfully");
+    return true;
+}
+
+bool SettingsManager::restoreFromSD() {
+    if (!initialized_) {
+        Logger::getInstance().error("[Settings] Cannot restore: not initialized");
+        return false;
+    }
+
+    // Check if SD card driver is available
+    SdCardDriver& sd = SdCardDriver::getInstance();
+    if (!sd.isMounted()) {
+        Logger::getInstance().warn("[Settings] Cannot restore: SD card not mounted");
+        return false;
+    }
+
+    // Check if backup exists
+    if (!SD_MMC.exists("/config/settings_backup.json")) {
+        Logger::getInstance().warn("[Settings] No backup file found");
+        return false;
+    }
+
+    // Copy backup from SD to LittleFS
+    File backup = SD_MMC.open("/config/settings_backup.json", FILE_READ);
+    if (!backup) {
+        Logger::getInstance().error("[Settings] Failed to open backup file for reading");
+        return false;
+    }
+
+    File dest = LittleFS.open("/settings.json", FILE_WRITE);
+    if (!dest) {
+        backup.close();
+        Logger::getInstance().error("[Settings] Failed to open settings file for writing");
+        return false;
+    }
+
+    // Copy file contents
+    uint8_t buf[512];
+    while (backup.available()) {
+        size_t len = backup.read(buf, sizeof(buf));
+        dest.write(buf, len);
+    }
+
+    backup.close();
+    dest.close();
+
+    // Reload settings from storage
+    StorageManager::getInstance().loadSettings(current_);
+
+    Logger::getInstance().info("[Settings] Settings restored from backup");
+    return true;
+}
+
+bool SettingsManager::hasBackup() const {
+    SdCardDriver& sd = SdCardDriver::getInstance();
+    return sd.isMounted() && SD_MMC.exists("/config/settings_backup.json");
 }
 
 void SettingsManager::notify(SettingKey key) {

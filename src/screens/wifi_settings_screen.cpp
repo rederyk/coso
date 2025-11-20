@@ -1,5 +1,6 @@
 #include "screens/wifi_settings_screen.h"
 #include "core/app_manager.h"
+#include "core/keyboard_manager.h"
 #include "ui/ui_symbols.h"
 #include "utils/logger.h"
 #include <WiFi.h>
@@ -145,6 +146,10 @@ void WifiSettingsScreen::build(lv_obj_t* parent) {
     lv_textarea_set_placeholder_text(ssid_input, "Nome rete WiFi");
     lv_obj_set_width(ssid_input, lv_pct(100));
     lv_obj_add_event_cb(ssid_input, handleSsidInput, LV_EVENT_VALUE_CHANGED, this);
+    lv_obj_add_event_cb(ssid_input, [](lv_event_t* e) {
+        lv_obj_t* ta = lv_event_get_target(e);
+        KeyboardManager::getInstance().showForTextArea(ta);
+    }, LV_EVENT_FOCUSED, nullptr);
 
     lv_obj_t* pass_label = lv_label_create(config_card);
     lv_label_set_text(pass_label, "Password:");
@@ -157,6 +162,10 @@ void WifiSettingsScreen::build(lv_obj_t* parent) {
     lv_textarea_set_placeholder_text(password_input, "Password rete");
     lv_obj_set_width(password_input, lv_pct(100));
     lv_obj_add_event_cb(password_input, handlePasswordInput, LV_EVENT_VALUE_CHANGED, this);
+    lv_obj_add_event_cb(password_input, [](lv_event_t* e) {
+        lv_obj_t* ta = lv_event_get_target(e);
+        KeyboardManager::getInstance().showForTextArea(ta);
+    }, LV_EVENT_FOCUSED, nullptr);
 
     connect_btn = lv_btn_create(config_card);
     lv_obj_set_width(connect_btn, lv_pct(100));
