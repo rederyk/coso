@@ -19,9 +19,13 @@ private:
     static void handleBackButton(lv_event_t* e);
     static void handleBackupButton(lv_event_t* e);
     static void handleRestoreButton(lv_event_t* e);
-    static void handleResetSettingsButton(lv_event_t* e);
     static void updateStatsTimer(lv_timer_t* timer);
-
+    static void handleResetButton(lv_event_t* e);
+    static void handleRebootButton(lv_event_t* e);
+    static void confirmBackup(lv_event_t* e);
+    static void confirmRestore(lv_event_t* e);
+    static void confirmReset(lv_event_t* e);
+    static void confirmReboot(lv_event_t* e);
     lv_obj_t* back_btn = nullptr;
     lv_obj_t* header_label = nullptr;
     lv_obj_t* content_container = nullptr;
@@ -36,6 +40,9 @@ private:
     lv_obj_t* backup_btn = nullptr;
     lv_obj_t* restore_btn = nullptr;
     lv_obj_t* reset_btn = nullptr;
+    lv_obj_t* reboot_btn = nullptr;
+    lv_obj_t* controls_card = nullptr;
+    lv_obj_t* controls_title_label = nullptr;
 
     lv_timer_t* stats_timer = nullptr;
     uint32_t settings_listener_id = 0;

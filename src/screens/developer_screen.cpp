@@ -143,15 +143,39 @@ void DeveloperScreen::build(lv_obj_t* parent) {
     lv_label_set_text(restore_btn_label, "Restore from SD Card");
     lv_obj_center(restore_btn_label);
 
-    // Reset settings button
-    reset_btn = lv_btn_create(actions_card);
+
+
+    
+    // System Controls card
+    controls_card = lv_obj_create(content_container);
+    lv_obj_remove_style_all(controls_card);
+    lv_obj_set_width(controls_card, LV_PCT(100));
+    lv_obj_set_layout(controls_card, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(controls_card, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_all(controls_card, 14, 0);
+    lv_obj_set_style_pad_row(controls_card, 10, 0);
+
+    controls_title_label = lv_label_create(controls_card);
+    lv_label_set_text(controls_title_label, "System Controls");
+    lv_obj_set_style_text_font(controls_title_label, &lv_font_montserrat_16, 0);
+
+    // Reset button
+    reset_btn = lv_btn_create(controls_card);
     lv_obj_set_width(reset_btn, LV_PCT(100));
     lv_obj_set_height(reset_btn, 48);
-    lv_obj_add_event_cb(reset_btn, handleResetSettingsButton, LV_EVENT_CLICKED, this);
-
+    lv_obj_add_event_cb(reset_btn, handleResetButton, LV_EVENT_CLICKED, this);
     lv_obj_t* reset_btn_label = lv_label_create(reset_btn);
-    lv_label_set_text(reset_btn_label, "Reset All Settings");
+    lv_label_set_text(reset_btn_label, LV_SYMBOL_REFRESH " Reset Settings");
     lv_obj_center(reset_btn_label);
+
+    // Reboot button
+    reboot_btn = lv_btn_create(controls_card);
+    lv_obj_set_width(reboot_btn, LV_PCT(100));
+    lv_obj_set_height(reboot_btn, 48);
+    lv_obj_add_event_cb(reboot_btn, handleRebootButton, LV_EVENT_CLICKED, this);
+    lv_obj_t* reboot_btn_label = lv_label_create(reboot_btn);
+    lv_label_set_text(reboot_btn_label, LV_SYMBOL_POWER " Reboot System");
+    lv_obj_center(reboot_btn_label);
 
     // Apply theme
     applyThemeStyles(snapshot);
@@ -287,6 +311,7 @@ void DeveloperScreen::applyThemeStyles(const SettingsSnapshot& snapshot) {
     style_card(stats_card);
     style_card(backup_card);
     style_card(actions_card);
+    style_card(controls_card);
 
     if (stats_title_label) {
         lv_obj_set_style_text_color(stats_title_label, accent, 0);
@@ -296,6 +321,9 @@ void DeveloperScreen::applyThemeStyles(const SettingsSnapshot& snapshot) {
     }
     if (actions_title_label) {
         lv_obj_set_style_text_color(actions_title_label, accent, 0);
+    }
+    if (controls_title_label) {
+        lv_obj_set_style_text_color(controls_title_label, accent, 0);
     }
     if (stats_label) {
         lv_obj_set_style_text_color(stats_label, subtle_text, 0);
@@ -320,6 +348,7 @@ void DeveloperScreen::applyThemeStyles(const SettingsSnapshot& snapshot) {
     style_button(backup_btn, primary_button);
     style_button(restore_btn, subtle_button);
     style_button(reset_btn, danger_button);
+    style_button(reboot_btn, danger_button);
 }
 
 void DeveloperScreen::handleBackButton(lv_event_t* e) {
@@ -334,45 +363,136 @@ void DeveloperScreen::handleBackButton(lv_event_t* e) {
 }
 
 void DeveloperScreen::handleBackupButton(lv_event_t* e) {
-    auto* screen = static_cast<DeveloperScreen*>(e->user_data);
-    auto& settings = SettingsManager::getInstance();
-    auto& logger = Logger::getInstance();
+    auto* screen = static_cast<DeveloperScreen*>(lv_event_get_user_data(e));
+    if (!screen) return;
 
-    if (settings.backupToSD()) {
-        logger.info("[Developer] Backup to SD card successful");
-        screen->updateBackupStatus();
-    } else {
-        logger.error("[Developer] Backup to SD card failed");
-    }
+    static const char* backup_btns[] = {"Annulla", "Backup", ""};
+    lv_obj_t* mbox = lv_msgbox_create(NULL, "Conferma Backup",
+        "Eseguire il backup delle impostazioni sulla scheda SD?",
+        backup_btns, true);
+    lv_obj_center(mbox);
+    lv_obj_add_event_cb(mbox, confirmBackup, LV_EVENT_VALUE_CHANGED, screen);
 }
 
 void DeveloperScreen::handleRestoreButton(lv_event_t* e) {
-    auto* screen = static_cast<DeveloperScreen*>(e->user_data);
-    auto& settings = SettingsManager::getInstance();
-    auto& logger = Logger::getInstance();
+    auto* screen = static_cast<DeveloperScreen*>(lv_event_get_user_data(e));
+    if (!screen) return;
 
-    if (settings.restoreFromSD()) {
-        logger.info("[Developer] Restore from SD card successful");
-        screen->updateStats();
-        screen->updateBackupStatus();
-    } else {
-        logger.error("[Developer] Restore from SD card failed");
-    }
-}
-
-void DeveloperScreen::handleResetSettingsButton(lv_event_t* e) {
-    auto& settings = SettingsManager::getInstance();
-    auto& logger = Logger::getInstance();
-
-    logger.warn("[Developer] Resetting all settings to defaults");
-    settings.reset();
-
-    auto* screen = static_cast<DeveloperScreen*>(e->user_data);
-    screen->updateStats();
-    screen->updateBackupStatus();
+    static const char* restore_btns[] = {"Annulla", "Ripristina", ""};
+    lv_obj_t* mbox = lv_msgbox_create(NULL, "Conferma Ripristino",
+        "Ripristinare le impostazioni dalla scheda SD?\n\nL'operazione sovrascriverà le impostazioni correnti.",
+        restore_btns, true);
+    lv_obj_center(mbox);
+    lv_obj_add_event_cb(mbox, confirmRestore, LV_EVENT_VALUE_CHANGED, screen);
 }
 
 void DeveloperScreen::updateStatsTimer(lv_timer_t* timer) {
     auto* screen = static_cast<DeveloperScreen*>(timer->user_data);
     screen->updateStats();
+}
+
+void DeveloperScreen::confirmBackup(lv_event_t* e) {
+    lv_obj_t* mbox = lv_event_get_current_target(e);
+    auto* screen = static_cast<DeveloperScreen*>(lv_event_get_user_data(e));
+    uint16_t btn_id = lv_msgbox_get_active_btn(mbox);
+
+    if (btn_id == 1) { // "Backup" button
+        auto& settings = SettingsManager::getInstance();
+        auto& logger = Logger::getInstance();
+
+        if (settings.backupToSD()) {
+            logger.info("[Developer] Backup to SD card successful");
+            if (screen) {
+                screen->updateBackupStatus();
+            }
+        } else {
+            logger.error("[Developer] Backup to SD card failed");
+        }
+    }
+
+    lv_msgbox_close(mbox);
+}
+
+void DeveloperScreen::confirmRestore(lv_event_t* e) {
+    lv_obj_t* mbox = lv_event_get_current_target(e);
+    auto* screen = static_cast<DeveloperScreen*>(lv_event_get_user_data(e));
+    uint16_t btn_id = lv_msgbox_get_active_btn(mbox);
+
+    if (btn_id == 1) { // "Ripristina" button
+        auto& settings = SettingsManager::getInstance();
+        auto& logger = Logger::getInstance();
+
+        if (settings.restoreFromSD()) {
+            logger.info("[Developer] Restore from SD card successful");
+            if (screen) {
+                screen->updateStats();
+                screen->updateBackupStatus();
+            }
+        } else {
+            logger.error("[Developer] Restore from SD card failed");
+        }
+    }
+
+    lv_msgbox_close(mbox);
+}
+
+
+
+void DeveloperScreen::handleResetButton(lv_event_t* e) {
+    auto* screen = static_cast<DeveloperScreen*>(lv_event_get_user_data(e));
+    if (!screen) return;
+
+    // Create confirmation dialog
+    static const char* reset_btns[] = {"Annulla", "Reset", ""};
+    lv_obj_t* mbox = lv_msgbox_create(NULL, "Conferma Reset",
+        "Ripristinare le impostazioni ai valori predefiniti?\n\nQuesta operazione è irreversibile.",
+        reset_btns, true);
+    lv_obj_center(mbox);
+    lv_obj_add_event_cb(mbox, confirmReset, LV_EVENT_VALUE_CHANGED, screen);
+}
+
+void DeveloperScreen::handleRebootButton(lv_event_t* e) {
+    auto* screen = static_cast<DeveloperScreen*>(lv_event_get_user_data(e));
+    if (!screen) return;
+
+    // Create confirmation dialog
+    static const char* reboot_btns[] = {"Annulla", "Riavvia", ""};
+    lv_obj_t* mbox = lv_msgbox_create(NULL, "Conferma Riavvio",
+        "Riavviare il sistema?\n\nTutte le impostazioni saranno salvate.",
+        reboot_btns, true);
+    lv_obj_center(mbox);
+    lv_obj_add_event_cb(mbox, confirmReboot, LV_EVENT_VALUE_CHANGED, screen);
+}
+
+void DeveloperScreen::confirmReset(lv_event_t* e) {
+    lv_obj_t* mbox = lv_event_get_current_target(e);
+    auto* screen = static_cast<DeveloperScreen*>(lv_event_get_user_data(e));
+    uint16_t btn_id = lv_msgbox_get_active_btn(mbox);
+
+    if (btn_id == 1) { // "Reset" button
+        Logger::getInstance().warn("[System] Resetting to defaults...");
+        SettingsManager::getInstance().reset();
+        Logger::getInstance().info("[System] Reset complete");
+
+        if (screen) {
+            screen->updateStats();
+            screen->updateBackupStatus();
+        }
+    }
+
+    lv_msgbox_close(mbox);
+}
+
+void DeveloperScreen::confirmReboot(lv_event_t* e) {
+    lv_obj_t* mbox = lv_event_get_current_target(e);
+    uint16_t btn_id = lv_msgbox_get_active_btn(mbox);
+
+    if (btn_id == 1) { // "Riavvia" button
+        Logger::getInstance().warn("[System] Rebooting...");
+        lv_msgbox_close(mbox);
+        delay(500);
+        ESP.restart();
+    }
+
+    lv_msgbox_close(mbox);
 }
