@@ -26,10 +26,16 @@ private:
     lv_obj_t* header_label = nullptr;
     lv_obj_t* content_container = nullptr;
     lv_obj_t* stats_card = nullptr;
+    lv_obj_t* stats_title_label = nullptr;
     lv_obj_t* stats_label = nullptr;
     lv_obj_t* backup_card = nullptr;
+    lv_obj_t* backup_title_label = nullptr;
     lv_obj_t* backup_status_label = nullptr;
     lv_obj_t* actions_card = nullptr;
+    lv_obj_t* actions_title_label = nullptr;
+    lv_obj_t* backup_btn = nullptr;
+    lv_obj_t* restore_btn = nullptr;
+    lv_obj_t* reset_btn = nullptr;
 
     lv_timer_t* stats_timer = nullptr;
     uint32_t settings_listener_id = 0;

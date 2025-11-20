@@ -2,7 +2,6 @@
 
 #include "core/app_manager.h"
 #include "core/settings_manager.h"
-#include "core/theme_palette.h"
 #include "utils/logger.h"
 #include <Arduino.h>
 #include <SD_MMC.h>
@@ -23,78 +22,111 @@ void DeveloperScreen::build(lv_obj_t* parent) {
     auto& settings = SettingsManager::getInstance();
     const SettingsSnapshot& snapshot = settings.getSnapshot();
 
+    root = lv_obj_create(parent);
+    lv_obj_remove_style_all(root);
+    lv_obj_set_size(root, LV_PCT(100), LV_PCT(100));
+    lv_obj_set_layout(root, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(root, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_all(root, 12, 0);
+    lv_obj_set_style_pad_row(root, 12, 0);
+    lv_obj_set_style_border_width(root, 0, 0);
+    lv_obj_set_style_outline_width(root, 0, 0);
+
     // Header
-    header_label = lv_label_create(parent);
-    lv_label_set_text(header_label, "Developer");
-    lv_obj_set_style_text_font(header_label, &lv_font_montserrat_20, 0);
-    lv_obj_set_style_text_color(header_label, lv_color_hex(0xffffff), 0);
-    lv_obj_align(header_label, LV_ALIGN_TOP_MID, 0, 10);
+    lv_obj_t* header = lv_obj_create(root);
+    lv_obj_remove_style_all(header);
+    lv_obj_set_width(header, LV_PCT(100));
+    lv_obj_set_height(header, LV_SIZE_CONTENT);
+    lv_obj_set_layout(header, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(header, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(header, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_column(header, 10, 0);
 
-    // Back button
-    back_btn = lv_btn_create(parent);
-    lv_obj_set_size(back_btn, 60, 40);
-    lv_obj_align(back_btn, LV_ALIGN_TOP_LEFT, 10, 8);
+    back_btn = lv_btn_create(header);
+    lv_obj_set_size(back_btn, 44, 44);
     lv_obj_add_event_cb(back_btn, handleBackButton, LV_EVENT_CLICKED, this);
-
     lv_obj_t* back_label = lv_label_create(back_btn);
     lv_label_set_text(back_label, LV_SYMBOL_LEFT);
     lv_obj_center(back_label);
 
+    header_label = lv_label_create(header);
+    lv_label_set_text(header_label, "Developer");
+    lv_obj_set_style_text_font(header_label, &lv_font_montserrat_24, 0);
+    lv_obj_set_flex_grow(header_label, 1);
+    lv_obj_set_style_text_align(header_label, LV_TEXT_ALIGN_CENTER, 0);
+
+    // Spacer keeps the title centered in the flex row
+    lv_obj_t* header_spacer = lv_obj_create(header);
+    lv_obj_remove_style_all(header_spacer);
+    lv_obj_set_size(header_spacer, 44, 44);
+
     // Scrollable content container
-    content_container = lv_obj_create(parent);
-    lv_obj_set_size(content_container, LV_PCT(100), LV_PCT(100) - 60);
-    lv_obj_align(content_container, LV_ALIGN_BOTTOM_MID, 0, 0);
+    content_container = lv_obj_create(root);
+    lv_obj_remove_style_all(content_container);
+    lv_obj_set_width(content_container, LV_PCT(100));
+    lv_obj_set_flex_grow(content_container, 1);
+    lv_obj_set_layout(content_container, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(content_container, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_all(content_container, 6, 0);
+    lv_obj_set_style_pad_row(content_container, 12, 0);
     lv_obj_set_style_bg_opa(content_container, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(content_container, 0, 0);
-    lv_obj_set_style_pad_all(content_container, 10, 0);
-    lv_obj_set_flex_flow(content_container, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_flex_align(content_container, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_row(content_container, 10, 0);
+    lv_obj_add_flag(content_container, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scroll_dir(content_container, LV_DIR_VER);
 
     // System Statistics Card
     stats_card = lv_obj_create(content_container);
-    lv_obj_set_size(stats_card, LV_PCT(95), LV_SIZE_CONTENT);
-    lv_obj_set_style_pad_all(stats_card, 15, 0);
+    lv_obj_remove_style_all(stats_card);
+    lv_obj_set_width(stats_card, LV_PCT(100));
+    lv_obj_set_layout(stats_card, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(stats_card, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_all(stats_card, 14, 0);
+    lv_obj_set_style_pad_row(stats_card, 6, 0);
 
-    lv_obj_t* stats_title = lv_label_create(stats_card);
-    lv_label_set_text(stats_title, "System Statistics");
-    lv_obj_set_style_text_font(stats_title, &lv_font_montserrat_16, 0);
-    lv_obj_align(stats_title, LV_ALIGN_TOP_LEFT, 0, 0);
+    stats_title_label = lv_label_create(stats_card);
+    lv_label_set_text(stats_title_label, "System Statistics");
+    lv_obj_set_style_text_font(stats_title_label, &lv_font_montserrat_16, 0);
 
     stats_label = lv_label_create(stats_card);
+    lv_label_set_long_mode(stats_label, LV_LABEL_LONG_WRAP);
     lv_obj_set_style_text_font(stats_label, &lv_font_montserrat_14, 0);
-    lv_obj_align(stats_label, LV_ALIGN_TOP_LEFT, 0, 30);
     lv_obj_set_width(stats_label, LV_PCT(100));
 
     // Backup Status Card
     backup_card = lv_obj_create(content_container);
-    lv_obj_set_size(backup_card, LV_PCT(95), LV_SIZE_CONTENT);
-    lv_obj_set_style_pad_all(backup_card, 15, 0);
+    lv_obj_remove_style_all(backup_card);
+    lv_obj_set_width(backup_card, LV_PCT(100));
+    lv_obj_set_layout(backup_card, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(backup_card, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_all(backup_card, 14, 0);
+    lv_obj_set_style_pad_row(backup_card, 6, 0);
 
-    lv_obj_t* backup_title = lv_label_create(backup_card);
-    lv_label_set_text(backup_title, "Backup Status");
-    lv_obj_set_style_text_font(backup_title, &lv_font_montserrat_16, 0);
-    lv_obj_align(backup_title, LV_ALIGN_TOP_LEFT, 0, 0);
+    backup_title_label = lv_label_create(backup_card);
+    lv_label_set_text(backup_title_label, "Backup Status");
+    lv_obj_set_style_text_font(backup_title_label, &lv_font_montserrat_16, 0);
 
     backup_status_label = lv_label_create(backup_card);
+    lv_label_set_long_mode(backup_status_label, LV_LABEL_LONG_WRAP);
     lv_obj_set_style_text_font(backup_status_label, &lv_font_montserrat_14, 0);
-    lv_obj_align(backup_status_label, LV_ALIGN_TOP_LEFT, 0, 30);
     lv_obj_set_width(backup_status_label, LV_PCT(100));
 
     // Actions Card
     actions_card = lv_obj_create(content_container);
-    lv_obj_set_size(actions_card, LV_PCT(95), LV_SIZE_CONTENT);
-    lv_obj_set_style_pad_all(actions_card, 15, 0);
+    lv_obj_remove_style_all(actions_card);
+    lv_obj_set_width(actions_card, LV_PCT(100));
+    lv_obj_set_layout(actions_card, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(actions_card, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_all(actions_card, 14, 0);
+    lv_obj_set_style_pad_row(actions_card, 10, 0);
 
-    lv_obj_t* actions_title = lv_label_create(actions_card);
-    lv_label_set_text(actions_title, "Actions");
-    lv_obj_set_style_text_font(actions_title, &lv_font_montserrat_16, 0);
-    lv_obj_align(actions_title, LV_ALIGN_TOP_LEFT, 0, 0);
+    actions_title_label = lv_label_create(actions_card);
+    lv_label_set_text(actions_title_label, "Actions");
+    lv_obj_set_style_text_font(actions_title_label, &lv_font_montserrat_16, 0);
 
     // Backup button
-    lv_obj_t* backup_btn = lv_btn_create(actions_card);
-    lv_obj_set_size(backup_btn, LV_PCT(95), 50);
-    lv_obj_align(backup_btn, LV_ALIGN_TOP_MID, 0, 35);
+    backup_btn = lv_btn_create(actions_card);
+    lv_obj_set_width(backup_btn, LV_PCT(100));
+    lv_obj_set_height(backup_btn, 48);
     lv_obj_add_event_cb(backup_btn, handleBackupButton, LV_EVENT_CLICKED, this);
 
     lv_obj_t* backup_btn_label = lv_label_create(backup_btn);
@@ -102,9 +134,9 @@ void DeveloperScreen::build(lv_obj_t* parent) {
     lv_obj_center(backup_btn_label);
 
     // Restore button
-    lv_obj_t* restore_btn = lv_btn_create(actions_card);
-    lv_obj_set_size(restore_btn, LV_PCT(95), 50);
-    lv_obj_align(restore_btn, LV_ALIGN_TOP_MID, 0, 95);
+    restore_btn = lv_btn_create(actions_card);
+    lv_obj_set_width(restore_btn, LV_PCT(100));
+    lv_obj_set_height(restore_btn, 48);
     lv_obj_add_event_cb(restore_btn, handleRestoreButton, LV_EVENT_CLICKED, this);
 
     lv_obj_t* restore_btn_label = lv_label_create(restore_btn);
@@ -112,18 +144,14 @@ void DeveloperScreen::build(lv_obj_t* parent) {
     lv_obj_center(restore_btn_label);
 
     // Reset settings button
-    lv_obj_t* reset_btn = lv_btn_create(actions_card);
-    lv_obj_set_size(reset_btn, LV_PCT(95), 50);
-    lv_obj_align(reset_btn, LV_ALIGN_TOP_MID, 0, 155);
+    reset_btn = lv_btn_create(actions_card);
+    lv_obj_set_width(reset_btn, LV_PCT(100));
+    lv_obj_set_height(reset_btn, 48);
     lv_obj_add_event_cb(reset_btn, handleResetSettingsButton, LV_EVENT_CLICKED, this);
-    lv_obj_set_style_bg_color(reset_btn, lv_color_hex(0xff0000), 0);
 
     lv_obj_t* reset_btn_label = lv_label_create(reset_btn);
     lv_label_set_text(reset_btn_label, "Reset All Settings");
     lv_obj_center(reset_btn_label);
-
-    // Update card height
-    lv_obj_set_height(actions_card, 220);
 
     // Apply theme
     applyThemeStyles(snapshot);
@@ -219,24 +247,79 @@ void DeveloperScreen::updateBackupStatus() {
 }
 
 void DeveloperScreen::applyThemeStyles(const SettingsSnapshot& snapshot) {
-    lv_obj_set_style_text_color(header_label, lv_color_hex(0xffffff), 0);
+    lv_color_t primary = lv_color_hex(snapshot.primaryColor);
+    lv_color_t accent = lv_color_hex(snapshot.accentColor);
+    lv_color_t card = lv_color_hex(snapshot.cardColor);
+    lv_color_t card_tint = lv_color_mix(accent, card, LV_OPA_40);
+    lv_color_t text = lv_color_hex(0xffffff);
+    lv_color_t subtle_text = lv_color_mix(accent, text, LV_OPA_30);
+    lv_color_t shadow = lv_color_mix(accent, lv_color_hex(0x000000), LV_OPA_50);
 
-    // Style back button
-    lv_obj_set_style_bg_color(back_btn, lv_color_hex(snapshot.cardColor), 0);
-    lv_obj_set_style_radius(back_btn, snapshot.borderRadius, 0);
+    if (root) {
+        lv_obj_set_style_bg_color(root, primary, 0);
+        lv_obj_set_style_bg_opa(root, LV_OPA_COVER, 0);
+    }
+    if (header_label) {
+        lv_obj_set_style_text_color(header_label, accent, 0);
+    }
 
-    // Style cards
-    lv_obj_set_style_bg_color(stats_card, lv_color_hex(snapshot.cardColor), 0);
-    lv_obj_set_style_radius(stats_card, snapshot.borderRadius, 0);
-    lv_obj_set_style_border_width(stats_card, 0, 0);
+    if (back_btn) {
+        lv_obj_set_style_bg_color(back_btn, card_tint, 0);
+        lv_obj_set_style_radius(back_btn, snapshot.borderRadius, 0);
+        lv_obj_set_style_border_width(back_btn, 0, 0);
+        lv_obj_set_style_text_color(back_btn, text, 0);
+    }
 
-    lv_obj_set_style_bg_color(backup_card, lv_color_hex(snapshot.cardColor), 0);
-    lv_obj_set_style_radius(backup_card, snapshot.borderRadius, 0);
-    lv_obj_set_style_border_width(backup_card, 0, 0);
+    auto style_card = [&](lv_obj_t* card_obj) {
+        if (!card_obj) {
+            return;
+        }
+        lv_obj_set_style_bg_color(card_obj, card_tint, 0);
+        lv_obj_set_style_bg_opa(card_obj, LV_OPA_COVER, 0);
+        lv_obj_set_style_radius(card_obj, snapshot.borderRadius, 0);
+        lv_obj_set_style_border_width(card_obj, 0, 0);
+        lv_obj_set_style_shadow_width(card_obj, 10, 0);
+        lv_obj_set_style_shadow_spread(card_obj, 2, 0);
+        lv_obj_set_style_shadow_color(card_obj, shadow, 0);
+        lv_obj_set_style_shadow_opa(card_obj, LV_OPA_30, 0);
+    };
 
-    lv_obj_set_style_bg_color(actions_card, lv_color_hex(snapshot.cardColor), 0);
-    lv_obj_set_style_radius(actions_card, snapshot.borderRadius, 0);
-    lv_obj_set_style_border_width(actions_card, 0, 0);
+    style_card(stats_card);
+    style_card(backup_card);
+    style_card(actions_card);
+
+    if (stats_title_label) {
+        lv_obj_set_style_text_color(stats_title_label, accent, 0);
+    }
+    if (backup_title_label) {
+        lv_obj_set_style_text_color(backup_title_label, accent, 0);
+    }
+    if (actions_title_label) {
+        lv_obj_set_style_text_color(actions_title_label, accent, 0);
+    }
+    if (stats_label) {
+        lv_obj_set_style_text_color(stats_label, subtle_text, 0);
+    }
+    if (backup_status_label) {
+        lv_obj_set_style_text_color(backup_status_label, subtle_text, 0);
+    }
+
+    lv_color_t primary_button = lv_color_mix(accent, primary, LV_OPA_80);
+    lv_color_t subtle_button = lv_color_mix(accent, card, LV_OPA_60);
+    lv_color_t danger_button = lv_color_mix(lv_color_hex(0xff4d4f), accent, LV_OPA_60);
+    auto style_button = [&](lv_obj_t* button, lv_color_t bg) {
+        if (!button) {
+            return;
+        }
+        lv_obj_set_style_bg_color(button, bg, 0);
+        lv_obj_set_style_radius(button, snapshot.borderRadius, 0);
+        lv_obj_set_style_border_width(button, 0, 0);
+        lv_obj_set_style_text_color(button, text, 0);
+    };
+
+    style_button(backup_btn, primary_button);
+    style_button(restore_btn, subtle_button);
+    style_button(reset_btn, danger_button);
 }
 
 void DeveloperScreen::handleBackButton(lv_event_t* e) {
