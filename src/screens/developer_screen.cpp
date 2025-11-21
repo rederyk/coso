@@ -2,6 +2,7 @@
 
 #include "core/app_manager.h"
 #include "core/ble_hid_manager.h"
+#include "screens/ble_manager.h"
 #include "core/settings_manager.h"
 #include "utils/logger.h"
 #include <Arduino.h>
@@ -476,10 +477,10 @@ void DeveloperScreen::confirmReset(lv_event_t* e) {
         SettingsManager::getInstance().reset();
         // Disconnetti qualsiasi host BLE collegato e cancella i bond
         BleHidManager& ble = BleHidManager::getInstance();
-        ble.disconnectAll();
+        BleManager::getInstance().disconnectAll();
         NimBLEDevice::deleteAllBonds();
         if (ble.isInitialized() && ble.isEnabled() && !ble.isConnected()) {
-            ble.startAdvertising();
+            BleManager::getInstance().startAdvertising();
         }
         Logger::getInstance().info("[BLE] Bonding cancellati e connessioni chiuse dopo reset");
         Logger::getInstance().info("[System] Reset complete");

@@ -1,4 +1,5 @@
 #include "screens/ble_settings_screen.h"
+#include "screens/ble_manager.h"
 #include "core/app_manager.h"
 #include "core/ble_hid_manager.h"
 #include "core/keyboard_manager.h"
@@ -11,16 +12,16 @@ lv_obj_t* create_card(lv_obj_t* parent, const char* title, lv_color_t bg_color) 
     lv_obj_set_width(card, lv_pct(100));
     lv_obj_set_style_bg_color(card, bg_color, 0);
     lv_obj_set_style_border_width(card, 0, 0);
-    lv_obj_set_style_radius(card, 12, 0);
-    lv_obj_set_style_pad_all(card, 12, 0);
+    lv_obj_set_style_radius(card, 8, 0);
+    lv_obj_set_style_pad_all(card, 8, 0);
     lv_obj_set_layout(card, LV_LAYOUT_FLEX);
     lv_obj_set_flex_flow(card, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_style_pad_row(card, 8, 0);
+    lv_obj_set_style_pad_row(card, 4, 0);
 
     if (title) {
         lv_obj_t* title_lbl = lv_label_create(card);
         lv_label_set_text(title_lbl, title);
-        lv_obj_set_style_text_font(title_lbl, &lv_font_montserrat_16, 0);
+        lv_obj_set_style_text_font(title_lbl, &lv_font_montserrat_14, 0);
         lv_obj_set_style_text_color(title_lbl, lv_color_hex(0xf0f0f0), 0);
     }
 
@@ -54,8 +55,8 @@ void BleSettingsScreen::build(lv_obj_t* parent) {
     lv_obj_set_layout(root, LV_LAYOUT_FLEX);
     lv_obj_set_flex_flow(root, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_style_bg_opa(root, LV_OPA_COVER, 0);
-    lv_obj_set_style_pad_all(root, 6, 0);
-    lv_obj_set_style_pad_row(root, 8, 0);
+    lv_obj_set_style_pad_all(root, 4, 0);
+    lv_obj_set_style_pad_row(root, 4, 0);
 
     // Header with back button
     lv_obj_t* header_container = lv_obj_create(root);
@@ -68,16 +69,16 @@ void BleSettingsScreen::build(lv_obj_t* parent) {
     lv_obj_set_style_pad_all(header_container, 0, 0);
 
     back_btn = lv_btn_create(header_container);
-    lv_obj_set_size(back_btn, 40, 40);
+    lv_obj_set_size(back_btn, 36, 36);
     lv_obj_add_event_cb(back_btn, handleBackButton, LV_EVENT_CLICKED, this);
     lv_obj_t* back_label = lv_label_create(back_btn);
     lv_label_set_text(back_label, LV_SYMBOL_LEFT);
     lv_obj_center(back_label);
 
     header_label = lv_label_create(header_container);
-    lv_label_set_text(header_label, LV_SYMBOL_BLUETOOTH " BLE Settings");
-    lv_obj_set_style_text_font(header_label, &lv_font_montserrat_24, 0);
-    lv_obj_set_style_pad_left(header_label, 12, 0);
+    lv_label_set_text(header_label, LV_SYMBOL_BLUETOOTH " BLE");
+    lv_obj_set_style_text_font(header_label, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_pad_left(header_label, 8, 0);
 
     // Content container
     content_container = lv_obj_create(root);
@@ -88,7 +89,7 @@ void BleSettingsScreen::build(lv_obj_t* parent) {
     lv_obj_set_layout(content_container, LV_LAYOUT_FLEX);
     lv_obj_set_flex_flow(content_container, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_style_pad_all(content_container, 0, 0);
-    lv_obj_set_style_pad_row(content_container, 12, 0);
+    lv_obj_set_style_pad_row(content_container, 6, 0);
 
     // Enable BLE Card
     enable_card = create_card(content_container, nullptr, lv_color_hex(0x1a2332));
@@ -101,8 +102,8 @@ void BleSettingsScreen::build(lv_obj_t* parent) {
     lv_obj_set_flex_align(enable_row, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
     enable_label = lv_label_create(enable_row);
-    lv_label_set_text(enable_label, "Abilita BLE");
-    lv_obj_set_style_text_font(enable_label, &lv_font_montserrat_16, 0);
+    lv_label_set_text(enable_label, "Abilita");
+    lv_obj_set_style_text_font(enable_label, &lv_font_montserrat_14, 0);
 
     enable_switch = lv_switch_create(enable_row);
     lv_obj_add_event_cb(enable_switch, handleEnableToggle, LV_EVENT_VALUE_CHANGED, this);
@@ -114,58 +115,22 @@ void BleSettingsScreen::build(lv_obj_t* parent) {
     }
 
     // Status Card
-    status_card = create_card(content_container, "Stato Connessione", lv_color_hex(0x1a2332));
+    status_card = create_card(content_container, "Stato", lv_color_hex(0x1a2332));
 
     status_label = lv_label_create(status_card);
-    lv_obj_set_style_text_font(status_label, &lv_font_montserrat_16, 0);
-    lv_label_set_text(status_label, "BLE HID pronto");
+    lv_obj_set_style_text_font(status_label, &lv_font_montserrat_14, 0);
+    lv_label_set_text(status_label, "Pronto");
 
     clients_label = lv_label_create(status_card);
     lv_obj_set_style_text_font(clients_label, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(clients_label, lv_color_hex(0xa0a0a0), 0);
-    lv_label_set_text(clients_label, "Client connessi: 0");
-
-    mac_label = lv_label_create(status_card);
-    lv_obj_set_style_text_font(mac_label, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(mac_label, lv_color_hex(0x808080), 0);
-    lv_label_set_text(mac_label, "BLE Address: ---");
-
-    // Bonded peers Card
-    bonded_card = create_card(content_container, "Host accoppiati", lv_color_hex(0x1a2332));
-    lv_obj_t* bonded_hint = lv_label_create(bonded_card);
-    lv_obj_set_style_text_font(bonded_hint, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(bonded_hint, lv_color_hex(0xa0a0a0), 0);
-    lv_label_set_text(bonded_hint, "Seleziona un host accoppiato per connetterti o rimuoverlo.");
-
-    lv_obj_t* bonded_actions = lv_obj_create(bonded_card);
-    lv_obj_remove_style_all(bonded_actions);
-    lv_obj_set_width(bonded_actions, lv_pct(100));
-    lv_obj_set_height(bonded_actions, LV_SIZE_CONTENT);
-    lv_obj_set_layout(bonded_actions, LV_LAYOUT_FLEX);
-    lv_obj_set_flex_flow(bonded_actions, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(bonded_actions, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_gap(bonded_actions, 8, 0);
-
-    disconnect_btn = lv_btn_create(bonded_actions);
-    lv_obj_set_size(disconnect_btn, 130, 36);
-    lv_obj_add_event_cb(disconnect_btn, handleDisconnectCurrent, LV_EVENT_CLICKED, this);
-    lv_obj_t* disconnect_label = lv_label_create(disconnect_btn);
-    lv_label_set_text(disconnect_label, "Disconnetti");
-    lv_obj_center(disconnect_label);
-
-    bonded_list = lv_obj_create(bonded_card);
-    lv_obj_remove_style_all(bonded_list);
-    lv_obj_set_width(bonded_list, lv_pct(100));
-    lv_obj_set_layout(bonded_list, LV_LAYOUT_FLEX);
-    lv_obj_set_flex_flow(bonded_list, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_style_pad_all(bonded_list, 0, 0);
-    lv_obj_set_style_pad_row(bonded_list, 6, 0);
+    lv_label_set_text(clients_label, "Host: 0");
 
     // Configuration Card
-    config_card = create_card(content_container, "Configurazione", lv_color_hex(0x1a2332));
+    config_card = create_card(content_container, "Config", lv_color_hex(0x1a2332));
 
     lv_obj_t* name_label = lv_label_create(config_card);
-    lv_label_set_text(name_label, "Nome Dispositivo:");
+    lv_label_set_text(name_label, "Nome:");
     lv_obj_set_style_text_font(name_label, &lv_font_montserrat_14, 0);
 
     device_name_input = lv_textarea_create(config_card);
@@ -184,26 +149,8 @@ void BleSettingsScreen::build(lv_obj_t* parent) {
     lv_textarea_set_text(device_name_input, ble.getDeviceName().c_str());
     last_device_name_ = ble.getDeviceName();
 
-    lv_obj_t* uuid_label = lv_label_create(config_card);
-    lv_label_set_text(uuid_label, "Servizio HID:");
-    lv_obj_set_style_text_font(uuid_label, &lv_font_montserrat_14, 0);
-
-    service_uuid_label = lv_label_create(config_card);
-    lv_obj_set_style_text_font(service_uuid_label, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(service_uuid_label, lv_color_hex(0xc0c0c0), 0);
-    lv_label_set_text(service_uuid_label, "0x1812 (Keyboard + Mouse)");
-
-    lv_obj_t* char_label = lv_label_create(config_card);
-    lv_label_set_text(char_label, "Report ID:");
-    lv_obj_set_style_text_font(char_label, &lv_font_montserrat_14, 0);
-
-    char_uuid_label = lv_label_create(config_card);
-    lv_obj_set_style_text_font(char_uuid_label, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(char_uuid_label, lv_color_hex(0xc0c0c0), 0);
-    lv_label_set_text(char_uuid_label, "Keyboard #1 / Mouse #2");
-
     // Advertising Card
-    advertising_card = create_card(content_container, "Advertising", lv_color_hex(0x1a2332));
+    advertising_card = create_card(content_container, "Adv", lv_color_hex(0x1a2332));
 
     lv_obj_t* adv_row = lv_obj_create(advertising_card);
     lv_obj_remove_style_all(adv_row);
@@ -214,7 +161,7 @@ void BleSettingsScreen::build(lv_obj_t* parent) {
     lv_obj_set_flex_align(adv_row, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
     lv_obj_t* adv_label = lv_label_create(adv_row);
-    lv_label_set_text(adv_label, "Advertising Attivo");
+    lv_label_set_text(adv_label, "Visibile");
     lv_obj_set_style_text_font(adv_label, &lv_font_montserrat_14, 0);
 
     advertising_switch = lv_switch_create(adv_row);
@@ -226,20 +173,34 @@ void BleSettingsScreen::build(lv_obj_t* parent) {
         lv_obj_add_state(advertising_switch, LV_STATE_CHECKED);
     }
 
-    advertising_status_label = lv_label_create(advertising_card);
-    lv_obj_set_style_text_font(advertising_status_label, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(advertising_status_label, lv_color_hex(0x00ffff), 0);
-    lv_label_set_text(advertising_status_label, "● Il dispositivo è visibile ad altri dispositivi BLE");
+    // Bonded peers Card - spostata in fondo
+    bonded_card = create_card(content_container, "Host", lv_color_hex(0x1a2332));
 
-    // Info Card
-    info_card = create_card(content_container, UI_SYMBOL_INFO " Informazioni", lv_color_hex(0x1a2332));
+    bonded_list = lv_obj_create(bonded_card);
+    lv_obj_remove_style_all(bonded_list);
+    lv_obj_set_width(bonded_list, lv_pct(100));
+    lv_obj_set_height(bonded_list, LV_SIZE_CONTENT);
+    lv_obj_set_layout(bonded_list, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(bonded_list, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_all(bonded_list, 0, 0);
+    lv_obj_set_style_pad_row(bonded_list, 4, 0);
 
-    info_label = lv_label_create(info_card);
-    lv_obj_set_style_text_font(info_label, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(info_label, lv_color_hex(0xa0a0a0), 0);
-    lv_label_set_text(info_label,
-        "Profilo HID (tastiera + mouse) basato su NimBLE.\n\n"
-        "Nota: Le modifiche al nome richiedono riavvio dell'advertising.");
+    lv_obj_t* bonded_actions = lv_obj_create(bonded_card);
+    lv_obj_remove_style_all(bonded_actions);
+    lv_obj_set_width(bonded_actions, lv_pct(100));
+    lv_obj_set_height(bonded_actions, LV_SIZE_CONTENT);
+    lv_obj_set_layout(bonded_actions, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(bonded_actions, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(bonded_actions, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_gap(bonded_actions, 4, 0);
+
+    disconnect_btn = lv_btn_create(bonded_actions);
+    lv_obj_set_size(disconnect_btn, 75, 28);
+    lv_obj_add_event_cb(disconnect_btn, handleDisconnectCurrent, LV_EVENT_CLICKED, this);
+    lv_obj_t* disconnect_label = lv_label_create(disconnect_btn);
+    lv_label_set_text(disconnect_label, "Disconn");
+    lv_obj_set_style_text_font(disconnect_label, &lv_font_montserrat_14, 0);
+    lv_obj_center(disconnect_label);
 
     // Apply theme
     applySnapshot(snapshot);
@@ -248,8 +209,8 @@ void BleSettingsScreen::build(lv_obj_t* parent) {
     // Populate bonded peers list
     refreshBondedPeers();
 
-    // Create status update timer (every 2 seconds)
-    status_timer = lv_timer_create(updateStatusTimer, 2000, this);
+    // Create status update timer (every 1 second for more responsive UI)
+    status_timer = lv_timer_create(updateStatusTimer, 1000, this);
 
     // Register settings listener
     if (settings_listener_id == 0) {
@@ -307,12 +268,13 @@ void BleSettingsScreen::refreshBondedPeers() {
         lv_obj_t* empty = lv_label_create(bonded_list);
         lv_obj_set_style_text_font(empty, &lv_font_montserrat_14, 0);
         lv_obj_set_style_text_color(empty, lv_color_hex(0xa0a0a0), 0);
-        lv_label_set_text(empty, "Nessun host associato.");
+        lv_label_set_text(empty, "Nessuno");
         return;
     }
 
     for (const auto& peer : peers) {
-        bonded_addresses_.push_back(peer.address.toString());
+        std::string full_addr = peer.address.toString();
+        bonded_addresses_.push_back(full_addr);
         size_t index = bonded_addresses_.size() - 1;
 
         lv_obj_t* row = lv_obj_create(bonded_list);
@@ -320,48 +282,53 @@ void BleSettingsScreen::refreshBondedPeers() {
         lv_obj_set_width(row, lv_pct(100));
         lv_obj_set_height(row, LV_SIZE_CONTENT);
         lv_obj_set_layout(row, LV_LAYOUT_FLEX);
-        lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
-        lv_obj_set_flex_align(row, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-        lv_obj_set_style_pad_all(row, 4, 0);
-
-        lv_obj_t* addr_label = lv_label_create(row);
-        lv_obj_set_style_text_font(addr_label, &lv_font_montserrat_14, 0);
-        std::string text = bonded_addresses_.back();
-        if (peer.isConnected) {
-            text += " (connesso)";
-            lv_obj_set_style_text_color(addr_label, lv_color_hex(0x00ff80), 0);
-        } else {
-            lv_obj_set_style_text_color(addr_label, lv_color_hex(0xf0f0f0), 0);
-        }
-        lv_label_set_text(addr_label, text.c_str());
+        lv_obj_set_flex_flow(row, LV_FLEX_FLOW_COLUMN);
+        lv_obj_set_flex_align(row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
+        lv_obj_set_style_pad_all(row, 2, 0);
+        lv_obj_set_style_pad_row(row, 2, 0);
 
         lv_obj_t* actions = lv_obj_create(row);
         lv_obj_remove_style_all(actions);
+        lv_obj_set_width(actions, LV_SIZE_CONTENT);
         lv_obj_set_layout(actions, LV_LAYOUT_FLEX);
         lv_obj_set_flex_flow(actions, LV_FLEX_FLOW_ROW);
-        lv_obj_set_style_pad_gap(actions, 6, 0);
+        lv_obj_set_style_pad_gap(actions, 3, 0);
 
         lv_obj_t* connect_btn = lv_btn_create(actions);
-        lv_obj_set_size(connect_btn, 96, 32);
+        lv_obj_set_size(connect_btn, 55, 24);
         lv_obj_add_event_cb(connect_btn, handlePeerConnect, LV_EVENT_CLICKED, this);
         lv_obj_set_user_data(connect_btn, (void*)index);
         lv_obj_t* connect_label = lv_label_create(connect_btn);
-        lv_label_set_text(connect_label, "Connetti");
+        lv_label_set_text(connect_label, "Conn");
+        lv_obj_set_style_text_font(connect_label, &lv_font_montserrat_14, 0);
         lv_obj_center(connect_label);
         if (peer.isConnected) {
             lv_obj_add_state(connect_btn, LV_STATE_DISABLED);
         }
 
         lv_obj_t* forget_btn = lv_btn_create(actions);
-        lv_obj_set_size(forget_btn, 96, 32);
+        lv_obj_set_size(forget_btn, 60, 24);
         lv_obj_add_event_cb(forget_btn, handlePeerForget, LV_EVENT_CLICKED, this);
         lv_obj_set_user_data(forget_btn, (void*)index);
         lv_obj_t* forget_label = lv_label_create(forget_btn);
-        lv_label_set_text(forget_label, "Dimentica");
+        lv_label_set_text(forget_label, "Diment");
+        lv_obj_set_style_text_font(forget_label, &lv_font_montserrat_14, 0);
         lv_obj_center(forget_label);
         if (peer.isConnected) {
             lv_obj_add_state(forget_btn, LV_STATE_DISABLED);
         }
+
+        lv_obj_t* addr_label = lv_label_create(row);
+        lv_obj_set_style_text_font(addr_label, &lv_font_montserrat_14, 0);
+        // Abbreviate address: show last 8 chars
+        std::string text = full_addr.length() > 12 ? full_addr.substr(full_addr.length() - 11) : full_addr;
+        if (peer.isConnected) {
+            text = "● " + text;
+            lv_obj_set_style_text_color(addr_label, lv_color_hex(0x00ff80), 0);
+        } else {
+            lv_obj_set_style_text_color(addr_label, lv_color_hex(0xf0f0f0), 0);
+        }
+        lv_label_set_text(addr_label, text.c_str());
     }
 }
 
@@ -373,7 +340,8 @@ void BleSettingsScreen::updateBleStatus() {
     bool initialized = ble.isInitialized();
     is_advertising = ble.isAdvertising();
     bool directed = ble.isAdvertisingDirected();
-    std::string current_peer = ble.getCurrentPeerAddress();
+    size_t connected_count = ble.getConnectedCount();
+    auto connected_addrs = ble.getConnectedPeerAddresses();
     std::string directed_target = ble.getDirectedTarget();
 
     if (enable_switch) {
@@ -394,7 +362,7 @@ void BleSettingsScreen::updateBleStatus() {
         }
     }
     if (disconnect_btn) {
-        if (ble.isConnected()) {
+        if (connected_count > 0) {
             lv_obj_clear_state(disconnect_btn, LV_STATE_DISABLED);
         } else {
             lv_obj_add_state(disconnect_btn, LV_STATE_DISABLED);
@@ -402,78 +370,55 @@ void BleSettingsScreen::updateBleStatus() {
     }
 
     if (!initialized) {
-        lv_label_set_text(status_label, "○ BLE HID non inizializzato");
+        lv_label_set_text(status_label, "○ Non inizializzato");
         lv_obj_set_style_text_color(status_label, lv_color_hex(0xa0a0a0), 0);
         if (clients_label) {
-            lv_label_set_text(clients_label, "Client connessi: ---");
-        }
-        if (mac_label) {
-            lv_label_set_text(mac_label, "BLE Address: ---");
+            lv_label_set_text(clients_label, "Host: ---");
         }
         return;
     } else if (!ble_enabled) {
-        lv_label_set_text(status_label, "○ BLE HID disabilitato");
+        lv_label_set_text(status_label, "○ Disabilitato");
         lv_obj_set_style_text_color(status_label, lv_color_hex(0xa0a0a0), 0);
         if (clients_label) {
-            lv_label_set_text(clients_label, "Client connessi: 0");
-        }
-        if (mac_label) {
-            lv_label_set_text(mac_label, "BLE Address: ---");
+            lv_label_set_text(clients_label, "Host: 0");
         }
         return;
     }
 
-    if (ble.isConnected()) {
+    if (connected_count > 0) {
         std::string text = "● Connesso";
-        if (!current_peer.empty()) {
-            text += " a " + current_peer;
-        } else {
-            text += " a un host";
+        if (connected_count == 1 && !connected_addrs.empty()) {
+            // Show abbreviated address for single connection
+            std::string addr = connected_addrs[0];
+            if (addr.length() > 12) {
+                addr = addr.substr(addr.length() - 8);
+            }
+            text += " (" + addr + ")";
+        } else if (connected_count > 1) {
+            text += " (" + std::to_string(connected_count) + " host)";
         }
         lv_label_set_text(status_label, text.c_str());
         lv_obj_set_style_text_color(status_label, lv_color_hex(0x00ff80), 0);
         if (clients_label) {
-            lv_label_set_text(clients_label, "Client connessi: 1");
+            lv_label_set_text_fmt(clients_label, "Host: %d", connected_count);
         }
     } else if (directed) {
-        std::string text = "◌ In attesa di ";
-        text += directed_target.empty() ? "host associato" : directed_target;
-        text += " (adv diretto)";
-        lv_label_set_text(status_label, text.c_str());
+        lv_label_set_text(status_label, "◌ Adv diretto");
         lv_obj_set_style_text_color(status_label, lv_color_hex(0x00ffff), 0);
         if (clients_label) {
-            lv_label_set_text(clients_label, "Client connessi: 0");
+            lv_label_set_text(clients_label, "Host: 0");
         }
     } else if (is_advertising) {
-        lv_label_set_text(status_label, "◌ In attesa di connessioni...");
+        lv_label_set_text(status_label, "◌ In attesa...");
         lv_obj_set_style_text_color(status_label, lv_color_hex(0x00ffff), 0);
         if (clients_label) {
-            lv_label_set_text(clients_label, "Client connessi: 0");
+            lv_label_set_text(clients_label, "Host: 0");
         }
     } else {
-        lv_label_set_text(status_label, "○ Advertising disabilitato");
+        lv_label_set_text(status_label, "○ Adv off");
         lv_obj_set_style_text_color(status_label, lv_color_hex(0xffaa00), 0);
         if (clients_label) {
-            lv_label_set_text(clients_label, "Client connessi: 0");
-        }
-    }
-
-    if (mac_label) {
-        lv_label_set_text_fmt(mac_label, "BLE Address: %s", ble.getAddress().c_str());
-    }
-
-    if (advertising_status_label) {
-        if (directed) {
-            std::string text = "● Advertising diretto verso ";
-            text += directed_target.empty() ? "host target" : directed_target;
-            lv_label_set_text(advertising_status_label, text.c_str());
-            lv_obj_set_style_text_color(advertising_status_label, lv_color_hex(0x00ffff), 0);
-        } else if (is_advertising) {
-            lv_label_set_text(advertising_status_label, "● Il dispositivo è visibile ad altri dispositivi BLE");
-            lv_obj_set_style_text_color(advertising_status_label, lv_color_hex(0x00ffff), 0);
-        } else {
-            lv_label_set_text(advertising_status_label, "○ Il dispositivo non è visibile");
-            lv_obj_set_style_text_color(advertising_status_label, lv_color_hex(0xa0a0a0), 0);
+            lv_label_set_text(clients_label, "Host: 0");
         }
     }
 
@@ -487,8 +432,7 @@ void BleSettingsScreen::handleEnableToggle(lv_event_t* e) {
     bool enabled = lv_obj_has_state(screen->enable_switch, LV_STATE_CHECKED);
     screen->ble_enabled = enabled;
 
-    BleHidManager& ble = BleHidManager::getInstance();
-    ble.setEnabled(enabled);
+    BleManager::getInstance().enable(enabled);
     if (!enabled) {
         Logger::getInstance().info("[BLE] HID disabilitato");
     } else {
@@ -508,7 +452,7 @@ void BleSettingsScreen::handleDeviceNameInput(lv_event_t* e) {
         return;
     }
 
-    BleHidManager::getInstance().setDeviceName(name);
+    BleManager::getInstance().setDeviceName(name);
     screen->last_device_name_ = name;
     Logger::getInstance().infof("[BLE HID] Nome dispositivo impostato su: %s", name.c_str());
 }
@@ -528,10 +472,10 @@ void BleSettingsScreen::handleAdvertisingToggle(lv_event_t* e) {
     }
 
     if (enabled) {
-        ble.startAdvertising();
+        BleManager::getInstance().startAdvertising();
         Logger::getInstance().info("[BLE HID] Advertising avviato");
     } else {
-        ble.stopAdvertising();
+        BleManager::getInstance().stopAdvertising();
         Logger::getInstance().info("[BLE HID] Advertising fermato");
     }
 
@@ -542,8 +486,7 @@ void BleSettingsScreen::handleDisconnectCurrent(lv_event_t* e) {
     auto* screen = static_cast<BleSettingsScreen*>(lv_event_get_user_data(e));
     if (!screen) return;
 
-    BleHidManager& ble = BleHidManager::getInstance();
-    ble.disconnectAll();
+    BleManager::getInstance().disconnectAll();
     Logger::getInstance().info("[BLE HID] Disconnessione richiesta dall'utente");
     screen->updateBleStatus();
 }
@@ -555,14 +498,9 @@ void BleSettingsScreen::handlePeerConnect(lv_event_t* e) {
     size_t index = (size_t)lv_obj_get_user_data(lv_event_get_target(e));
     if (index >= screen->bonded_addresses_.size()) return;
 
-    BleHidManager& ble = BleHidManager::getInstance();
     NimBLEAddress target(screen->bonded_addresses_[index]);
-
-    if (!ble.startDirectedAdvertisingTo(target, 15)) {
-        Logger::getInstance().warnf("[BLE HID] Avvio advertising diretto fallito per %s", target.toString().c_str());
-    } else {
-        Logger::getInstance().infof("[BLE HID] In attesa di connessione da %s", target.toString().c_str());
-    }
+    BleManager::getInstance().startDirectedAdvertising(target, 15);
+    Logger::getInstance().infof("[BLE HID] In attesa di connessione da %s", target.toString().c_str());
     screen->updateBleStatus();
 }
 
@@ -573,12 +511,9 @@ void BleSettingsScreen::handlePeerForget(lv_event_t* e) {
     size_t index = (size_t)lv_obj_get_user_data(lv_event_get_target(e));
     if (index >= screen->bonded_addresses_.size()) return;
 
-    BleHidManager& ble = BleHidManager::getInstance();
     NimBLEAddress target(screen->bonded_addresses_[index]);
-
-    if (ble.forgetPeer(target)) {
-        Logger::getInstance().infof("[BLE HID] Host rimosso: %s", target.toString().c_str());
-    }
+    BleManager::getInstance().forgetPeer(target);
+    Logger::getInstance().infof("[BLE HID] Host rimosso: %s", target.toString().c_str());
     screen->updateBleStatus();
 }
 

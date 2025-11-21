@@ -119,6 +119,11 @@ constexpr uint8_t KEY_EQUAL = 0x2E;
 constexpr uint8_t KEY_COMMA = 0x36;
 constexpr uint8_t KEY_PERIOD = 0x37;
 constexpr uint8_t KEY_SLASH = 0x38;
+
+bool is_adv_active() {
+    NimBLEAdvertising* adv = NimBLEDevice::getAdvertising();
+    return adv && adv->isAdvertising();
+}
 } // namespace
 
 BleHidManager& BleHidManager::getInstance() {
@@ -142,6 +147,9 @@ bool BleHidManager::init(const std::string& device_name) {
 
     server_ = NimBLEDevice::createServer();
     server_->setCallbacks(new BleHidServerCallbacks(*this));
+
+    // Configure server for multiple connections
+    server_->advertiseOnDisconnect(true);  // Re-advertise on disconnect
 
     hid_device_ = new NimBLEHIDDevice(server_);
     hid_device_->manufacturer()->setValue("Freenove");
@@ -177,8 +185,30 @@ bool BleHidManager::init(const std::string& device_name) {
 
 void BleHidManager::startAdvertising() {
     if (!initialized_) return;
+
     NimBLEAdvertising* advertising = NimBLEDevice::getAdvertising();
+    if (!advertising) return;
+
+    if (advertising->isAdvertising()) {
+        // Already advertising; keep flags consistent and skip churn.
+        is_advertising_ = true;
+        is_directed_advertising_ = false;
+        directed_target_ = NimBLEAddress();
+        return;
+    }
+
+    // Stop first to reset state
+    advertising->stop();
+    vTaskDelay(50 / portTICK_PERIOD_MS);
+
+    // Configure advertising parameters for multiple connections
+    advertising->setScanResponse(true);
+    advertising->setMinPreferred(0x20); // 40ms - more stable, less aggressive
+    advertising->setMaxPreferred(0x40); // 80ms - standard connection interval
+
+    // Start advertising
     advertising->start();
+
     is_advertising_ = true;
     is_directed_advertising_ = false;
     directed_target_ = NimBLEAddress();
@@ -212,7 +242,9 @@ void BleHidManager::setEnabled(bool enable) {
 void BleHidManager::ensureAdvertising() {
     if (!initialized_) return;
     if (!enabled_) return;
-    if (is_connected_) return;
+    // Sync with stack state to avoid redundant start/stop churn.
+    is_advertising_ = is_adv_active();
+    // Continue advertising even with connections for multi-host support
     if (is_directed_advertising_) return;
     if (is_advertising_) return;
     startAdvertising();
@@ -220,45 +252,133 @@ void BleHidManager::ensureAdvertising() {
 
 void BleHidManager::handleServerConnect(ble_gap_conn_desc* desc) {
     if (desc) {
-        conn_handle_ = desc->conn_handle;
-        current_peer_address_ = NimBLEAddress(desc->peer_ota_addr).toString();
-        Logger::getInstance().infof("[BLE HID] Client connected (%s)", current_peer_address_.c_str());
+        ConnectedPeer peer;
+        peer.conn_handle = desc->conn_handle;
+        peer.address = NimBLEAddress(desc->peer_ota_addr).toString();
+
+        // Check if this peer recently disconnected (within last 2 seconds)
+        uint32_t now = millis();
+        constexpr uint32_t reconnect_throttle_ms = 2000;
+        auto recent = std::find_if(recent_disconnects_.begin(), recent_disconnects_.end(),
+            [&](const ConnectedPeer& p) { return p.address == peer.address; });
+        if (recent != recent_disconnects_.end() && (now - recent->last_disconnect_time) < reconnect_throttle_ms) {
+            // Too soon after disconnect - reject this connection to break the loop
+            Logger::getInstance().warnf("[BLE HID] Throttling rapid reconnect from %s (%u ms since disconnect)",
+                peer.address.c_str(), now - recent->last_disconnect_time);
+            if (server_) {
+                server_->disconnect(peer.conn_handle);
+            }
+            return;
+        }
+
+        // Check for existing connection with same address
+        auto dup = std::find_if(connected_peers_.begin(), connected_peers_.end(),
+            [&](const ConnectedPeer& p) { return p.address == peer.address; });
+        if (dup != connected_peers_.end()) {
+            // Same MAC already connected: replace old handle with new one (reconnection scenario)
+            Logger::getInstance().warnf("[BLE HID] Duplicate connect from %s - replacing old handle %d with %d",
+                peer.address.c_str(), dup->conn_handle, peer.conn_handle);
+            dup->conn_handle = peer.conn_handle;
+            return;
+        }
+
+        connected_peers_.push_back(peer);
+        Logger::getInstance().infof("[BLE HID] Client connected (%s), total: %d", peer.address.c_str(), connected_peers_.size());
+
+        // Remove from recent disconnects if present
+        recent_disconnects_.erase(std::remove_if(recent_disconnects_.begin(), recent_disconnects_.end(),
+            [&](const ConnectedPeer& p) { return p.address == peer.address; }), recent_disconnects_.end());
     } else {
-        Logger::getInstance().info("[BLE HID] Client connected");
-        conn_handle_ = 0;
-        current_peer_address_.clear();
+        Logger::getInstance().info("[BLE HID] Client connected (no descriptor)");
     }
-    is_connected_ = true;
-    stopAdvertising();
+
+    // NimBLE stops advertising on connect; keep internal flags in sync so ensureAdvertising() can restart it.
+    is_advertising_ = is_adv_active();
+    // Stop directed advertising if active
+    if (is_directed_advertising_) {
+        is_directed_advertising_ = false;
+        directed_target_ = NimBLEAddress();
+    }
+
+    // Continue advertising for more connections if below max
+    constexpr size_t max_connections = CONFIG_BT_NIMBLE_MAX_CONNECTIONS;
+    if (connected_peers_.size() < max_connections) {
+        // Give adequate delay to stabilize the connection before restarting advertising
+        vTaskDelay(500 / portTICK_PERIOD_MS);
+        ensureAdvertising();
+    } else {
+        // Max connections reached, stop advertising
+        if (is_advertising_) {
+            stopAdvertising();
+        }
+    }
+
     updateLedState();
 }
 
 void BleHidManager::handleServerDisconnect(ble_gap_conn_desc* desc) {
     if (desc) {
-        Logger::getInstance().infof("[BLE HID] Client disconnected (%s)", NimBLEAddress(desc->peer_ota_addr).toString().c_str());
-    } else if (!current_peer_address_.empty()) {
-        Logger::getInstance().infof("[BLE HID] Client disconnected (%s)", current_peer_address_.c_str());
+        std::string addr = NimBLEAddress(desc->peer_ota_addr).toString();
+        uint32_t disconnect_time = millis();
+
+        auto it = std::find_if(connected_peers_.begin(), connected_peers_.end(),
+            [&](const ConnectedPeer& p) { return p.conn_handle == desc->conn_handle; });
+        if (it != connected_peers_.end()) {
+            // Track this disconnect for throttling
+            ConnectedPeer recent;
+            recent.address = it->address;
+            recent.last_disconnect_time = disconnect_time;
+            recent.conn_handle = 0;  // Not needed for tracking
+
+            // Add to recent disconnects, keep only last 5
+            recent_disconnects_.push_back(recent);
+            if (recent_disconnects_.size() > 5) {
+                recent_disconnects_.erase(recent_disconnects_.begin());
+            }
+
+            connected_peers_.erase(it);
+            Logger::getInstance().infof("[BLE HID] Client disconnected (%s), remaining: %d", addr.c_str(), connected_peers_.size());
+        } else {
+            Logger::getInstance().infof("[BLE HID] Client disconnected (%s) - not in list", addr.c_str());
+        }
+        // Clean up any stale entries for this address
+        connected_peers_.erase(std::remove_if(connected_peers_.begin(), connected_peers_.end(),
+            [&](const ConnectedPeer& p) { return p.address == addr && p.conn_handle != desc->conn_handle; }), connected_peers_.end());
     } else {
-        Logger::getInstance().info("[BLE HID] Client disconnected");
+        Logger::getInstance().info("[BLE HID] Client disconnected (no descriptor)");
     }
-    conn_handle_ = 0xFFFF;
-    current_peer_address_.clear();
-    is_connected_ = false;
-    is_directed_advertising_ = false;
+
+    // Advertising might have been auto-restarted by NimBLE; align our flags.
+    is_advertising_ = is_adv_active();
+
+    // Give a brief delay before restarting advertising to avoid rapid reconnection loops
+    vTaskDelay(300 / portTICK_PERIOD_MS);
+
     ensureAdvertising();
     updateLedState();
 }
 
 void BleHidManager::disconnectAll() {
-    if (server_ && is_connected_ && conn_handle_ != 0xFFFF) {
-        server_->disconnect(conn_handle_);
+    if (!server_) return;
+
+    // Request disconnection for all peers; callbacks will clean up the list.
+    for (const auto& peer : connected_peers_) {
+        server_->disconnect(peer.conn_handle);
     }
-    is_connected_ = false;
-    conn_handle_ = 0xFFFF;
-    current_peer_address_.clear();
+
     is_directed_advertising_ = false;
     ensureAdvertising();
-    updateLedState();
+    // Do not force-clear LED state here; let callbacks reflect the actual disconnects.
+}
+
+void BleHidManager::disconnect(uint16_t conn_handle) {
+    if (!server_) return;
+    server_->disconnect(conn_handle);
+    auto it = std::find_if(connected_peers_.begin(), connected_peers_.end(),
+        [conn_handle](const ConnectedPeer& p) { return p.conn_handle == conn_handle; });
+    if (it != connected_peers_.end()) {
+        Logger::getInstance().infof("[BLE HID] Disconnecting %s", it->address.c_str());
+    }
 }
 
 std::string BleHidManager::getAddress() const {
@@ -281,16 +401,34 @@ std::vector<BleHidManager::BondedPeer> BleHidManager::getBondedPeers() const {
         if (addr == NimBLEAddress()) {
             continue;
         }
-        BondedPeer peer{addr, addr.toString() == current_peer_address_ && is_connected_};
+        std::string addr_str = addr.toString();
+        bool connected = std::any_of(connected_peers_.begin(), connected_peers_.end(),
+            [&addr_str](const ConnectedPeer& p) { return p.address == addr_str; });
+        BondedPeer peer{addr, connected};
         peers.push_back(peer);
     }
     return peers;
 }
 
+std::vector<std::string> BleHidManager::getConnectedPeerAddresses() const {
+    std::vector<std::string> addresses;
+    addresses.reserve(connected_peers_.size());
+    for (const auto& peer : connected_peers_) {
+        addresses.push_back(peer.address);
+    }
+    return addresses;
+}
+
 bool BleHidManager::forgetPeer(const NimBLEAddress& address) {
     if (!initialized_) return false;
-    if (is_connected_ && address.toString() == current_peer_address_) {
-        Logger::getInstance().warn("[BLE HID] Cannot forget currently connected peer");
+
+    // Check if this peer is currently connected
+    std::string addr_str = address.toString();
+    auto it = std::find_if(connected_peers_.begin(), connected_peers_.end(),
+        [&addr_str](const ConnectedPeer& p) { return p.address == addr_str; });
+
+    if (it != connected_peers_.end()) {
+        Logger::getInstance().warnf("[BLE HID] Cannot forget currently connected peer %s", addr_str.c_str());
         return false;
     }
 
@@ -305,8 +443,14 @@ bool BleHidManager::forgetPeer(const NimBLEAddress& address) {
 
 bool BleHidManager::startDirectedAdvertisingTo(const NimBLEAddress& address, uint32_t timeout_seconds) {
     if (!initialized_ || !enabled_) return false;
-    if (is_connected_) {
-        Logger::getInstance().warn("[BLE HID] Already connected - disconnect before directed advertising");
+
+    // Check if this peer is already connected
+    std::string addr_str = address.toString();
+    auto it = std::find_if(connected_peers_.begin(), connected_peers_.end(),
+        [&addr_str](const ConnectedPeer& p) { return p.address == addr_str; });
+
+    if (it != connected_peers_.end()) {
+        Logger::getInstance().warnf("[BLE HID] Peer %s already connected", addr_str.c_str());
         return false;
     }
 
@@ -381,7 +525,7 @@ BleHidManager::KeyMapping BleHidManager::mapCharToKey(char c) const {
 }
 
 bool BleHidManager::sendKey(uint8_t keycode, uint8_t modifier) {
-    if (!initialized_ || !input_keyboard_ || !is_connected_) {
+    if (!initialized_ || !input_keyboard_ || connected_peers_.empty()) {
         return false;
     }
 
@@ -397,7 +541,7 @@ bool BleHidManager::sendKey(uint8_t keycode, uint8_t modifier) {
 }
 
 bool BleHidManager::sendText(const std::string& text) {
-    if (!initialized_ || !input_keyboard_ || !is_connected_) {
+    if (!initialized_ || !input_keyboard_ || connected_peers_.empty()) {
         return false;
     }
 
@@ -416,7 +560,7 @@ bool BleHidManager::sendText(const std::string& text) {
 }
 
 bool BleHidManager::sendMouseMove(int8_t dx, int8_t dy, int8_t wheel, uint8_t buttons) {
-    if (!initialized_ || !input_mouse_ || !is_connected_) {
+    if (!initialized_ || !input_mouse_ || connected_peers_.empty()) {
         return false;
     }
 
@@ -445,7 +589,7 @@ void BleHidManager::updateLedState() {
         return;
     }
 
-    if (is_connected_) {
+    if (!connected_peers_.empty()) {
         led.setState(RgbLedManager::LedState::BLE_CONNECTED);
     } else if (is_advertising_) {
         led.setState(RgbLedManager::LedState::BLE_ADVERTISING);
