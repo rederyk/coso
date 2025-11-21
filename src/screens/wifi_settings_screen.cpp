@@ -90,20 +90,23 @@ void WifiSettingsScreen::build(lv_obj_t* parent) {
     lv_obj_set_style_pad_row(content_container, 12, 0);
 
     // Enable WiFi Card
-    enable_card = create_card(content_container, nullptr, lv_color_hex(0x1a2332));
-    lv_obj_t* enable_row = lv_obj_create(enable_card);
-    lv_obj_remove_style_all(enable_row);
-    lv_obj_set_width(enable_row, lv_pct(100));
-    lv_obj_set_height(enable_row, LV_SIZE_CONTENT);
-    lv_obj_set_layout(enable_row, LV_LAYOUT_FLEX);
-    lv_obj_set_flex_flow(enable_row, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(enable_row, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    enable_card = lv_obj_create(content_container);
+    lv_obj_set_width(enable_card, lv_pct(100));
+    lv_obj_set_height(enable_card, LV_SIZE_CONTENT);
+    lv_obj_set_style_bg_color(enable_card, lv_color_hex(0x1a2332), 0);
+    lv_obj_set_style_border_width(enable_card, 0, 0);
+    lv_obj_set_style_radius(enable_card, 12, 0);
+    lv_obj_set_style_pad_all(enable_card, 12, 0);
+    lv_obj_set_layout(enable_card, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(enable_card, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(enable_card, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
-    enable_label = lv_label_create(enable_row);
+    enable_label = lv_label_create(enable_card);
     lv_label_set_text(enable_label, "Abilita WiFi");
     lv_obj_set_style_text_font(enable_label, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_color(enable_label, lv_color_hex(0xf0f0f0), 0);
 
-    enable_switch = lv_switch_create(enable_row);
+    enable_switch = lv_switch_create(enable_card);
     lv_obj_add_event_cb(enable_switch, handleEnableToggle, LV_EVENT_VALUE_CHANGED, this);
 
     wifi_enabled = !snapshot.wifiSsid.empty();
