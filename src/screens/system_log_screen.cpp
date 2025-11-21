@@ -147,8 +147,9 @@ void SystemLogScreen::refreshLogView() {
         return;
     }
 
+    LogLevel effective_filter = show_all ? LogLevel::Debug : current_filter;
     uint32_t t_start = millis();
-    auto entries = Logger::getInstance().getBufferedLogs(current_filter);
+    auto entries = Logger::getInstance().getBufferedLogs(effective_filter);
     uint32_t t_get = millis();
 
     const size_t new_count = entries.size();
@@ -273,11 +274,11 @@ void SystemLogScreen::updateFilterButtons() {
         }
     };
 
-    set_btn_active(btn_all, current_filter == LogLevel::Debug);
-    set_btn_active(btn_debug, current_filter == LogLevel::Debug && btn_all != nullptr);
-    set_btn_active(btn_info, current_filter == LogLevel::Info);
-    set_btn_active(btn_warn, current_filter == LogLevel::Warn);
-    set_btn_active(btn_error, current_filter == LogLevel::Error);
+    set_btn_active(btn_all, show_all);
+    set_btn_active(btn_debug, !show_all && current_filter == LogLevel::Debug);
+    set_btn_active(btn_info, !show_all && current_filter == LogLevel::Info);
+    set_btn_active(btn_warn, !show_all && current_filter == LogLevel::Warn);
+    set_btn_active(btn_error, !show_all && current_filter == LogLevel::Error);
 
     // Update auto-scroll button state
     if (btn_auto_scroll) {
@@ -343,10 +344,13 @@ void SystemLogScreen::filterEventHandler(lv_event_t* event) {
     int level = (int)(intptr_t)lv_obj_get_user_data(btn);
 
     if (screen) {
-        if (level == -1) {
-            screen->current_filter = LogLevel::Debug;  // Show all
-        } else {
+        if (level == -1) {  // "All"
+            screen->show_all = true;
+        } else if (level >= (int)LogLevel::Debug && level <= (int)LogLevel::Error) {
+            screen->show_all = false;
             screen->current_filter = static_cast<LogLevel>(level);
+        } else {
+            return;  // Unknown value
         }
         screen->last_log_count = 0;  // Force refresh
         screen->refreshLogView();
