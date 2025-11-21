@@ -2,6 +2,7 @@
 
 #include "core/screen.h"
 #include "core/settings_manager.h"
+#include "core/ble_hid_manager.h"
 #include <lvgl.h>
 #include <string>
 #include <vector>
@@ -34,6 +35,7 @@ private:
     void sendTextFromField();
     bool canSendCommands() const;
     void refreshHint(const char* text);
+    void updateTargetButtons();
 
     // Event callbacks
     static void statusTimerCb(lv_timer_t* timer);
@@ -43,6 +45,7 @@ private:
     static void shortcutButtonCb(lv_event_t* e);
     static void keyboardToggleCb(lv_event_t* e);
     static void sendTextCb(lv_event_t* e);
+    static void targetButtonCb(lv_event_t* e);
 
     // UI nodes
     lv_obj_t* header_container = nullptr;
@@ -60,6 +63,9 @@ private:
     lv_obj_t* keyboard_textarea = nullptr;
     lv_obj_t* keyboard_toggle_btn = nullptr;
     lv_obj_t* send_text_btn = nullptr;
+    lv_obj_t* target_row = nullptr;
+    lv_obj_t* target_label = nullptr;
+    std::vector<lv_obj_t*> target_buttons;
 
     std::vector<lv_obj_t*> control_buttons;
 
@@ -67,4 +73,6 @@ private:
     uint32_t settings_listener_id = 0;
     bool landscape_layout = true;
     bool controls_enabled = false;
+    BleHidTarget current_target = BleHidTarget::ALL;
+    std::string selected_host_mac;
 };

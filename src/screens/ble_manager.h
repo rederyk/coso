@@ -57,6 +57,8 @@ struct BleCommand {
     int8_t int8_param3;
     char str_param[128];  // For text and names
     NimBLEAddress address_param;  // For BLE addresses
+    BleHidTarget target;          // Target peer for HID commands
+    char target_mac[32];          // Specific MAC address for HID target
 
     // Optional callback for async responses
     std::function<void(bool success)> callback;
@@ -65,8 +67,9 @@ struct BleCommand {
     BleCommand() : type(BleCommandType::ENABLE), bool_param(false), uint8_param(0),
                    uint8_param2(0), uint16_param(0), uint32_param(0),
                    int8_param(0), int8_param2(0), int8_param3(0),
-                   address_param() {
+                   address_param(), target(BleHidTarget::ALL) {
         memset(str_param, 0, sizeof(str_param));
+        memset(target_mac, 0, sizeof(target_mac));
     }
 };
 
@@ -97,10 +100,10 @@ public:
     void startDirectedAdvertising(const NimBLEAddress& address, uint32_t timeout_seconds = 15);
 
     // HID convenience methods
-    void sendKey(uint8_t keycode, uint8_t modifier = 0);
-    void sendText(const std::string& text);
-    void sendMouseMove(int8_t dx, int8_t dy, int8_t wheel = 0, uint8_t buttons = 0);
-    void mouseClick(uint8_t buttons);
+    void sendKey(uint8_t keycode, uint8_t modifier = 0, BleHidTarget target = BleHidTarget::ALL, const std::string& specific_mac = "");
+    void sendText(const std::string& text, BleHidTarget target = BleHidTarget::ALL, const std::string& specific_mac = "");
+    void sendMouseMove(int8_t dx, int8_t dy, int8_t wheel = 0, uint8_t buttons = 0, BleHidTarget target = BleHidTarget::ALL, const std::string& specific_mac = "");
+    void mouseClick(uint8_t buttons, BleHidTarget target = BleHidTarget::ALL, const std::string& specific_mac = "");
 
     // Client/Central convenience methods
     void startScan(uint32_t duration_ms = 5000);

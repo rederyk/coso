@@ -143,6 +143,21 @@ void BleRemoteScreen::build(lv_obj_t* parent) {
     lv_obj_set_style_text_font(status_body_label, &lv_font_montserrat_14, 0);
     lv_label_set_text(status_body_label, "Connessione HID");
 
+    // Target selection
+    target_label = lv_label_create(status_card);
+    lv_label_set_text(target_label, "Target host:");
+    lv_obj_set_style_text_font(target_label, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_pad_top(target_label, 8, 0);
+
+    target_row = lv_obj_create(status_card);
+    lv_obj_remove_style_all(target_row);
+    lv_obj_set_width(target_row, lv_pct(100));
+    lv_obj_set_layout(target_row, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(target_row, LV_FLEX_FLOW_ROW_WRAP);
+    lv_obj_set_flex_align(target_row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_column(target_row, 6, 0);
+    lv_obj_set_style_pad_row(target_row, 6, 0);
+
     hint_label = lv_label_create(status_card);
     lv_label_set_long_mode(hint_label, LV_LABEL_LONG_WRAP);
     lv_obj_set_width(hint_label, lv_pct(100));
@@ -334,9 +349,20 @@ void BleRemoteScreen::applyTheme(const SettingsSnapshot& snapshot) {
         lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, LV_PART_MAIN);
         lv_obj_set_style_text_color(btn, text, LV_PART_MAIN);
         lv_obj_set_style_radius(btn, snapshot.borderRadius / 2 + 6, LV_PART_MAIN);
+
+        // Style for checked state
+        lv_obj_set_style_bg_color(btn, accent, LV_PART_MAIN | LV_STATE_CHECKED);
+        lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, LV_PART_MAIN | LV_STATE_CHECKED);
     };
     for (auto* btn : control_buttons) {
         style_btn(btn);
+    }
+    for (auto* btn : target_buttons) {
+        style_btn(btn);
+    }
+
+    if (target_label) {
+        lv_obj_set_style_text_color(target_label, text, 0);
     }
 
     if (keyboard_textarea) {
@@ -401,7 +427,67 @@ void BleRemoteScreen::updateStatus() {
         lv_label_set_text(status_body_label, text.c_str());
     }
 
+    updateTargetButtons();
     setControlsEnabled(controls_enabled && ready);
+}
+
+void BleRemoteScreen::updateTargetButtons() {
+    if (!target_row) return;
+
+    // Clear existing target buttons
+    for (auto* btn : target_buttons) {
+        if (btn) {
+            lv_obj_del(btn);
+        }
+    }
+    target_buttons.clear();
+
+    BleHidManager& ble = BleHidManager::getInstance();
+    auto connected_hosts = ble.getConnectedPeerAddresses();
+
+    if (connected_hosts.empty()) {
+        // No hosts connected - show message
+        lv_obj_t* no_host_lbl = lv_label_create(target_row);
+        lv_label_set_text(no_host_lbl, "Nessun host connesso");
+        lv_obj_set_style_text_font(no_host_lbl, &lv_font_montserrat_14, 0);
+        target_buttons.push_back(no_host_lbl);
+        return;
+    }
+
+    // Add "Tutti" button if multiple hosts
+    if (connected_hosts.size() > 1) {
+        lv_obj_t* all_btn = create_chip_button(target_row, "Tutti", targetButtonCb, this);
+        lv_obj_set_user_data(all_btn, nullptr); // nullptr = ALL
+        target_buttons.push_back(all_btn);
+
+        if (current_target == BleHidTarget::ALL) {
+            lv_obj_add_state(all_btn, LV_STATE_CHECKED);
+        }
+    }
+
+    // Add button for each connected host
+    for (const auto& mac : connected_hosts) {
+        // Shorten MAC address for display (last 8 chars)
+        std::string short_mac = mac.length() > 8 ? mac.substr(mac.length() - 8) : mac;
+
+        lv_obj_t* host_btn = create_chip_button(target_row, short_mac.c_str(), targetButtonCb, this);
+
+        // Store MAC address in button
+        char* mac_copy = new char[mac.length() + 1];
+        strcpy(mac_copy, mac.c_str());
+        lv_obj_set_user_data(host_btn, mac_copy);
+
+        target_buttons.push_back(host_btn);
+
+        // Check if this is the selected host
+        if (selected_host_mac == mac) {
+            lv_obj_add_state(host_btn, LV_STATE_CHECKED);
+        }
+    }
+
+    // Apply theme to new buttons
+    SettingsManager& settings = SettingsManager::getInstance();
+    applyTheme(settings.getSnapshot());
 }
 
 void BleRemoteScreen::setControlsEnabled(bool enabled) {
@@ -443,7 +529,7 @@ void BleRemoteScreen::dispatchMouse(int8_t dx, int8_t dy, int8_t wheel, uint8_t 
         return;
     }
 
-    BleManager::getInstance().sendMouseMove(dx, dy, wheel, buttons);
+    BleManager::getInstance().sendMouseMove(dx, dy, wheel, buttons, current_target, selected_host_mac);
 }
 
 void BleRemoteScreen::dispatchClick(uint8_t buttons) {
@@ -451,7 +537,7 @@ void BleRemoteScreen::dispatchClick(uint8_t buttons) {
     if (!canSendCommands()) {
         return;
     }
-    BleManager::getInstance().mouseClick(buttons);
+    BleManager::getInstance().mouseClick(buttons, current_target, selected_host_mac);
 }
 
 void BleRemoteScreen::dispatchShortcut(Shortcut s) {
@@ -476,7 +562,7 @@ void BleRemoteScreen::dispatchShortcut(Shortcut s) {
         return;
     }
 
-    BleManager::getInstance().sendKey(keycode, modifier);
+    BleManager::getInstance().sendKey(keycode, modifier, current_target, selected_host_mac);
 }
 
 void BleRemoteScreen::sendTextFromField() {
@@ -493,7 +579,7 @@ void BleRemoteScreen::sendTextFromField() {
         return;
     }
 
-    BleManager::getInstance().sendText(text);
+    BleManager::getInstance().sendText(text, current_target, selected_host_mac);
 }
 
 void BleRemoteScreen::statusTimerCb(lv_timer_t* timer) {
@@ -561,4 +647,44 @@ void BleRemoteScreen::sendTextCb(lv_event_t* e) {
     auto* screen = static_cast<BleRemoteScreen*>(lv_event_get_user_data(e));
     if (!screen) return;
     screen->sendTextFromField();
+}
+
+void BleRemoteScreen::targetButtonCb(lv_event_t* e) {
+    auto* screen = static_cast<BleRemoteScreen*>(lv_event_get_user_data(e));
+    if (!screen) return;
+
+    lv_obj_t* clicked_btn = lv_event_get_target(e);
+    void* user_data = lv_obj_get_user_data(clicked_btn);
+
+    // Clear all button states
+    for (auto* btn : screen->target_buttons) {
+        if (btn) {
+            lv_obj_clear_state(btn, LV_STATE_CHECKED);
+        }
+    }
+
+    // Set clicked button as checked
+    lv_obj_add_state(clicked_btn, LV_STATE_CHECKED);
+
+    if (user_data == nullptr) {
+        // "Tutti" button clicked
+        screen->current_target = BleHidTarget::ALL;
+        screen->selected_host_mac.clear();
+        screen->refreshHint("Invio a tutti gli host");
+    } else {
+        // Specific host button clicked
+        const char* mac = static_cast<const char*>(user_data);
+        screen->selected_host_mac = mac;
+        // When a specific MAC is set, the target enum is ignored
+        screen->current_target = BleHidTarget::ALL; // Doesn't matter, specific_mac takes precedence
+
+        // Shorten MAC for display
+        std::string short_mac = std::string(mac);
+        if (short_mac.length() > 8) {
+            short_mac = short_mac.substr(short_mac.length() - 8);
+        }
+        char buf[64];
+        snprintf(buf, sizeof(buf), "Target: %s", short_mac.c_str());
+        screen->refreshHint(buf);
+    }
 }

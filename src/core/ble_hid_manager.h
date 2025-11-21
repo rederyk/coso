@@ -10,6 +10,19 @@
 #include "nimble/nimble/host/include/host/ble_gap.h"
 #endif
 
+/**
+ * @brief Target selection for HID notifications.
+ *
+ * ALL: send to every connected peer.
+ * FIRST_CONNECTED: send only to the first connection in the list.
+ * LAST_CONNECTED: send only to the most recently connected peer.
+ */
+enum class BleHidTarget : uint8_t {
+    ALL,
+    FIRST_CONNECTED,
+    LAST_CONNECTED
+};
+
 class BleHidServerCallbacks;
 class BleManager;  // Forward declaration
 
@@ -73,10 +86,10 @@ private:
     bool startDirectedAdvertisingTo(const NimBLEAddress& address, uint32_t timeout_seconds = 15);
 
     // HID methods - private, only accessible via BleManager
-    bool sendText(const std::string& text);
-    bool sendKey(uint8_t keycode, uint8_t modifier = 0);
-    bool sendMouseMove(int8_t dx, int8_t dy, int8_t wheel = 0, uint8_t buttons = 0);
-    void click(uint8_t buttons);
+    bool sendText(const std::string& text, BleHidTarget target = BleHidTarget::ALL, const std::string& specific_mac = "");
+    bool sendKey(uint8_t keycode, uint8_t modifier = 0, BleHidTarget target = BleHidTarget::ALL, const std::string& specific_mac = "");
+    bool sendMouseMove(int8_t dx, int8_t dy, int8_t wheel = 0, uint8_t buttons = 0, BleHidTarget target = BleHidTarget::ALL, const std::string& specific_mac = "");
+    void click(uint8_t buttons, BleHidTarget target = BleHidTarget::ALL, const std::string& specific_mac = "");
 
     struct KeyMapping {
         uint8_t keycode;
@@ -87,6 +100,8 @@ private:
     KeyMapping mapCharToKey(char c) const;
     void updateLedState();
     void ensureAdvertising();
+    std::vector<uint16_t> selectTargetHandles(BleHidTarget target, const std::string& specific_mac = "") const;
+    bool notifyHandles(NimBLECharacteristic* chr, const uint8_t* data, size_t len, const std::vector<uint16_t>& handles);
 
     static constexpr uint8_t KEYBOARD_ID = 0x01;
     static constexpr uint8_t MOUSE_ID = 0x02;

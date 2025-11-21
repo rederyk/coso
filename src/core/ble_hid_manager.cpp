@@ -1,9 +1,17 @@
 #include "ble_hid_manager.h"
 #include "drivers/rgb_led_driver.h"
 #include "utils/logger.h"
+#include <algorithm>
 #include <cstring>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
+#if defined(CONFIG_NIMBLE_CPP_IDF)
+#include "host/ble_gatt.h"
+#include "host/ble_hs_mbuf.h"
+#else
+#include "nimble/nimble/host/include/host/ble_gatt.h"
+#include "nimble/nimble/host/include/host/ble_hs_mbuf.h"
+#endif
 
 class BleHidServerCallbacks : public NimBLEServerCallbacks {
 public:
@@ -551,24 +559,94 @@ BleHidManager::KeyMapping BleHidManager::mapCharToKey(char c) const {
     return km;
 }
 
-bool BleHidManager::sendKey(uint8_t keycode, uint8_t modifier) {
-    if (!initialized_ || !input_keyboard_ || connected_peers_.empty()) {
+std::vector<uint16_t> BleHidManager::selectTargetHandles(BleHidTarget target, const std::string& specific_mac) const {
+    std::vector<uint16_t> handles;
+    if (connected_peers_.empty()) {
+        return handles;
+    }
+
+    // If a specific MAC is provided, use it regardless of the target enum
+    if (!specific_mac.empty()) {
+        for (const auto& peer : connected_peers_) {
+            if (peer.address == specific_mac) {
+                handles.push_back(peer.conn_handle);
+                return handles;
+            }
+        }
+        Logger::getInstance().warnf("[BLE HID] Specific MAC %s not found in connected peers", specific_mac.c_str());
+        return handles;
+    }
+
+    switch (target) {
+        case BleHidTarget::ALL:
+            for (const auto& peer : connected_peers_) {
+                handles.push_back(peer.conn_handle);
+            }
+            break;
+        case BleHidTarget::FIRST_CONNECTED:
+            handles.push_back(connected_peers_.front().conn_handle);
+            break;
+        case BleHidTarget::LAST_CONNECTED:
+            handles.push_back(connected_peers_.back().conn_handle);
+            break;
+    }
+
+    return handles;
+}
+
+bool BleHidManager::notifyHandles(NimBLECharacteristic* chr, const uint8_t* data, size_t len, const std::vector<uint16_t>& handles) {
+    if (!chr || handles.empty()) {
+        return false;
+    }
+
+    NimBLEServer* server = NimBLEDevice::getServer();
+    if (!server) {
+        return false;
+    }
+
+    bool sent = false;
+    for (uint16_t handle : handles) {
+        uint16_t mtu = server->getPeerMTU(handle);
+        if (mtu <= 3) {
+            continue;
+        }
+        size_t payload_len = std::min(len, static_cast<size_t>(mtu - 3));
+        os_mbuf* om = ble_hs_mbuf_from_flat(data, payload_len);
+        if (!om) {
+            continue;
+        }
+        int rc = ble_gattc_notify_custom(handle, chr->getHandle(), om);
+        if (rc == 0) {
+            sent = true;
+        }
+    }
+
+    return sent;
+}
+
+bool BleHidManager::sendKey(uint8_t keycode, uint8_t modifier, BleHidTarget target, const std::string& specific_mac) {
+    if (!initialized_ || !input_keyboard_) {
+        return false;
+    }
+
+    const auto handles = selectTargetHandles(target, specific_mac);
+    if (handles.empty()) {
+        Logger::getInstance().warn("[BLE HID] No target handles available for keypress");
         return false;
     }
 
     uint8_t report[8] = {modifier, 0, keycode, 0, 0, 0, 0, 0};
-    input_keyboard_->setValue(report, sizeof(report));
-    input_keyboard_->notify();
+    if (!notifyHandles(input_keyboard_, report, sizeof(report), handles)) {
+        return false;
+    }
 
     // key release
     memset(report, 0, sizeof(report));
-    input_keyboard_->setValue(report, sizeof(report));
-    input_keyboard_->notify();
-    return true;
+    return notifyHandles(input_keyboard_, report, sizeof(report), handles);
 }
 
-bool BleHidManager::sendText(const std::string& text) {
-    if (!initialized_ || !input_keyboard_ || connected_peers_.empty()) {
+bool BleHidManager::sendText(const std::string& text, BleHidTarget target, const std::string& specific_mac) {
+    if (!initialized_ || !input_keyboard_) {
         return false;
     }
 
@@ -578,7 +656,7 @@ bool BleHidManager::sendText(const std::string& text) {
             Logger::getInstance().warnf("[BLE HID] Unsupported char skipped: 0x%02X", static_cast<unsigned char>(c));
             continue;
         }
-        if (!sendKey(km.keycode, km.modifier)) {
+        if (!sendKey(km.keycode, km.modifier, target, specific_mac)) {
             return false;
         }
         vTaskDelay(5 / portTICK_PERIOD_MS);
@@ -586,8 +664,14 @@ bool BleHidManager::sendText(const std::string& text) {
     return true;
 }
 
-bool BleHidManager::sendMouseMove(int8_t dx, int8_t dy, int8_t wheel, uint8_t buttons) {
-    if (!initialized_ || !input_mouse_ || connected_peers_.empty()) {
+bool BleHidManager::sendMouseMove(int8_t dx, int8_t dy, int8_t wheel, uint8_t buttons, BleHidTarget target, const std::string& specific_mac) {
+    if (!initialized_ || !input_mouse_) {
+        return false;
+    }
+
+    const auto handles = selectTargetHandles(target, specific_mac);
+    if (handles.empty()) {
+        Logger::getInstance().warn("[BLE HID] No target handles available for mouse event");
         return false;
     }
 
@@ -596,15 +680,13 @@ bool BleHidManager::sendMouseMove(int8_t dx, int8_t dy, int8_t wheel, uint8_t bu
     report[1] = static_cast<uint8_t>(dx);
     report[2] = static_cast<uint8_t>(dy);
     report[3] = static_cast<uint8_t>(wheel);
-    input_mouse_->setValue(report, sizeof(report));
-    input_mouse_->notify();
-    return true;
+    return notifyHandles(input_mouse_, report, sizeof(report), handles);
 }
 
-void BleHidManager::click(uint8_t buttons) {
-    sendMouseMove(0, 0, 0, buttons);
+void BleHidManager::click(uint8_t buttons, BleHidTarget target, const std::string& specific_mac) {
+    sendMouseMove(0, 0, 0, buttons, target, specific_mac);
     vTaskDelay(10 / portTICK_PERIOD_MS);
-    sendMouseMove(0, 0, 0, 0);
+    sendMouseMove(0, 0, 0, 0, target, specific_mac);
 }
 
 void BleHidManager::updateLedState() {
