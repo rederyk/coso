@@ -257,16 +257,6 @@ void BleSettingsScreen::refreshBondedPeers() {
     if (!bonded_list) return;
 
     BleHidManager& ble = BleHidManager::getInstance();
-    if (!ble.isInitialized()) {
-        bonded_addresses_.clear();
-        lv_obj_clean(bonded_list);
-
-        lv_obj_t* initializing = lv_label_create(bonded_list);
-        lv_obj_set_style_text_font(initializing, &lv_font_montserrat_14, 0);
-        lv_obj_set_style_text_color(initializing, lv_color_hex(0xa0a0a0), 0);
-        lv_label_set_text(initializing, "Inizializzazione BLE...");
-        return;
-    }
     auto peers = ble.getBondedPeers();
 
     bonded_addresses_.clear();
@@ -474,14 +464,13 @@ void BleSettingsScreen::handleAdvertisingToggle(lv_event_t* e) {
     bool enabled = lv_obj_has_state(screen->advertising_switch, LV_STATE_CHECKED);
     screen->is_advertising = enabled;
 
-    BleHidManager& ble = BleHidManager::getInstance();
-    if (!ble.isInitialized()) {
+    if (!BleHidManager::getInstance().isInitialized()) {
         Logger::getInstance().warn("[BLE HID] Impossibile gestire advertising: non inizializzato");
         screen->updateBleStatus();
         return;
     }
 
-    if (enabled) {
+    if (enabled && screen->ble_enabled) { // Allow starting advertising only if BLE is globally enabled
         BleManager::getInstance().startAdvertising();
         Logger::getInstance().info("[BLE HID] Advertising avviato");
     } else {
@@ -509,7 +498,7 @@ void BleSettingsScreen::handlePeerConnect(lv_event_t* e) {
     if (index >= screen->bonded_addresses_.size()) return;
 
     NimBLEAddress target(screen->bonded_addresses_[index]);
-    BleManager::getInstance().startDirectedAdvertising(target, 15);
+    BleManager::getInstance().startDirectedAdvertising(target, 30); // Increase timeout to 30s
     Logger::getInstance().infof("[BLE HID] In attesa di connessione da %s", target.toString().c_str());
     screen->updateBleStatus();
 }

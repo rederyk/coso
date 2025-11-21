@@ -330,8 +330,8 @@ void BleHidManager::handleServerConnect(ble_gap_conn_desc* desc) {
     // Continue advertising for more connections if below max
     constexpr size_t max_connections = CONFIG_BT_NIMBLE_MAX_CONNECTIONS;
     if (connected_peers_.size() < max_connections) {
-        // Give adequate delay to stabilize the connection before restarting advertising
-        vTaskDelay(500 / portTICK_PERIOD_MS);
+        // Give adequate delay (longer) to stabilize the connection before restarting advertising
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
         ensureAdvertising();
     } else {
         // Max connections reached, stop advertising
@@ -378,8 +378,8 @@ void BleHidManager::handleServerDisconnect(ble_gap_conn_desc* desc) {
     // Advertising might have been auto-restarted by NimBLE; align our flags.
     is_advertising_ = is_adv_active();
 
-    // Give a brief delay before restarting advertising to avoid rapid reconnection loops
-    vTaskDelay(300 / portTICK_PERIOD_MS);
+    // Give a longer delay before restarting advertising to avoid rapid reconnection loops
+    vTaskDelay(1500 / portTICK_PERIOD_MS);
 
     ensureAdvertising();
     updateLedState();
