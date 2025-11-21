@@ -18,6 +18,7 @@ struct SettingsSnapshot {
     std::string bleDeviceName = "ESP32-S3";
     bool bleEnabled = true;
     bool bleAdvertising = true;
+    bool bleAutoAdvertising = true;  // Auto restart advertising after disconnect
     uint8_t bleMaxConnections = CONFIG_BT_NIMBLE_MAX_CONNECTIONS;
 
     // Display & UI
@@ -65,6 +66,7 @@ public:
         BleDeviceName,
         BleEnabled,
         BleAdvertising,
+        BleAutoAdvertising,
         BleMaxConnections,
 
         // Display & UI
@@ -165,6 +167,9 @@ public:
     bool getBleAdvertising() const { return current_.bleAdvertising; }
     void setBleAdvertising(bool advertising);
 
+    bool getBleAutoAdvertising() const { return current_.bleAutoAdvertising; }
+    void setBleAutoAdvertising(bool autoAdvertising);
+
     uint8_t getBleMaxConnections() const { return current_.bleMaxConnections; }
     void setBleMaxConnections(uint8_t maxConnections);
 
@@ -232,6 +237,7 @@ private:
     static constexpr const char* DEFAULT_BLE_DEVICE_NAME = "ESP32-S3";
     static constexpr bool DEFAULT_BLE_ENABLED = true;
     static constexpr bool DEFAULT_BLE_ADVERTISING = true;
+    static constexpr bool DEFAULT_BLE_AUTO_ADVERTISING = true;
     static constexpr uint8_t DEFAULT_BLE_MAX_CONNECTIONS = CONFIG_BT_NIMBLE_MAX_CONNECTIONS;
 
     // Display & UI defaults

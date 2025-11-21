@@ -76,6 +76,7 @@ void BleManager::bleTask(void* pvParameters) {
     } else {
         ble_hid.setMaxConnections(snapshot.bleMaxConnections);
         ble_hid.setAdvertisingAllowed(snapshot.bleAdvertising);
+        ble_hid.setAutoAdvertising(snapshot.bleAutoAdvertising);
         ble_hid.setEnabled(snapshot.bleEnabled);
         ble_hid.ensureAdvertising();
     }
@@ -124,6 +125,11 @@ void BleManager::processCommand(const BleCommand& cmd) {
         case BleCommandType::STOP_ADVERTISING:
             ble_hid.setAdvertisingAllowed(false);
             Logger::getInstance().info("[BleManager] Advertising stopped");
+            break;
+
+        case BleCommandType::SET_AUTO_ADVERTISING:
+            ble_hid.setAutoAdvertising(cmd.bool_param);
+            Logger::getInstance().infof("[BleManager] Auto advertising %s", cmd.bool_param ? "enabled" : "disabled");
             break;
 
         case BleCommandType::SET_DEVICE_NAME:
@@ -256,6 +262,13 @@ void BleManager::stopAdvertising() {
     postCommand(cmd);
 }
 
+void BleManager::setAutoAdvertising(bool enabled) {
+    BleCommand cmd;
+    cmd.type = BleCommandType::SET_AUTO_ADVERTISING;
+    cmd.bool_param = enabled;
+    postCommand(cmd);
+}
+
 void BleManager::setDeviceName(const std::string& name) {
     BleCommand cmd;
     cmd.type = BleCommandType::SET_DEVICE_NAME;
@@ -284,10 +297,11 @@ void BleManager::disconnect(uint16_t conn_handle) {
     postCommand(cmd);
 }
 
-void BleManager::forgetPeer(const NimBLEAddress& address) {
+void BleManager::forgetPeer(const NimBLEAddress& address, std::function<void(bool success)> callback) {
     BleCommand cmd;
     cmd.type = BleCommandType::FORGET_PEER;
     cmd.address_param = address;
+    cmd.callback = callback;
     postCommand(cmd);
 }
 

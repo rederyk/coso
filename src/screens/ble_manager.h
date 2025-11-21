@@ -20,6 +20,7 @@ enum class BleCommandType {
     DISABLE,
     START_ADVERTISING,
     STOP_ADVERTISING,
+    SET_AUTO_ADVERTISING,
     SET_DEVICE_NAME,
     SET_MAX_CONNECTIONS,
     DISCONNECT_ALL,
@@ -94,11 +95,12 @@ public:
     void enable(bool enabled);
     void startAdvertising();
     void stopAdvertising();
+    void setAutoAdvertising(bool enabled);
     void setDeviceName(const std::string& name);
     void setMaxConnections(uint8_t max_connections);
     void disconnectAll();
     void disconnect(uint16_t conn_handle);
-    void forgetPeer(const NimBLEAddress& address);
+    void forgetPeer(const NimBLEAddress& address, std::function<void(bool success)> callback = nullptr);
     void startDirectedAdvertising(const NimBLEAddress& address, uint32_t timeout_seconds = 15);
 
     // HID convenience methods

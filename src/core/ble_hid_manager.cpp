@@ -258,6 +258,19 @@ void BleHidManager::setAdvertisingAllowed(bool allowed) {
     }
 }
 
+void BleHidManager::setAutoAdvertising(bool enabled) {
+    auto_advertising_ = enabled;
+    Logger::getInstance().infof("[BLE HID] Auto advertising %s", enabled ? "enabled" : "disabled");
+
+    if (!initialized_) return;
+
+    // If auto advertising is disabled, we don't stop current advertising
+    // If enabled, ensure advertising if needed
+    if (enabled) {
+        ensureAdvertising();
+    }
+}
+
 void BleHidManager::setEnabled(bool enable) {
     enabled_ = enable;
     if (!initialized_) return;
@@ -274,6 +287,7 @@ void BleHidManager::ensureAdvertising() {
     if (!initialized_) return;
     if (!enabled_) return;
     if (!advertising_allowed_) return;
+    if (!auto_advertising_) return;  // Don't auto-restart if auto advertising is disabled
     if (connected_peers_.size() >= max_connections_allowed_) {
         if (is_advertising_) {
             stopAdvertising();
@@ -348,11 +362,12 @@ void BleHidManager::handleServerConnect(ble_gap_conn_desc* desc) {
     }
 
     // Continue advertising for more connections if below max
-    if (connected_peers_.size() < max_connections_allowed_) {
-        // Give adequate delay (longer) to stabilize the connection before restarting advertising
-        vTaskDelay(1000 / portTICK_PERIOD_MS);
+    // Only if auto advertising is enabled
+    if (auto_advertising_ && connected_peers_.size() < max_connections_allowed_) {
+        // Give adequate delay to stabilize the connection before restarting advertising
+        vTaskDelay(2000 / portTICK_PERIOD_MS);  // Increased from 1s to 2s
         ensureAdvertising();
-    } else {
+    } else if (connected_peers_.size() >= max_connections_allowed_) {
         // Max connections reached, stop advertising
         if (is_advertising_) {
             stopAdvertising();
@@ -397,10 +412,13 @@ void BleHidManager::handleServerDisconnect(ble_gap_conn_desc* desc) {
     // Advertising might have been auto-restarted by NimBLE; align our flags.
     is_advertising_ = is_adv_active();
 
-    // Give a longer delay before restarting advertising to avoid rapid reconnection loops
-    vTaskDelay(1500 / portTICK_PERIOD_MS);
+    // Only restart advertising if auto advertising is enabled
+    if (auto_advertising_) {
+        // Give a longer delay before restarting advertising to avoid rapid reconnection loops
+        vTaskDelay(3000 / portTICK_PERIOD_MS);  // Increased from 2.1s to 3s
+        ensureAdvertising();
+    }
 
-    ensureAdvertising();
     updateLedState();
 }
 
@@ -494,6 +512,10 @@ bool BleHidManager::forgetPeer(const NimBLEAddress& address) {
         Logger::getInstance().warnf("[BLE HID] Cannot forget currently connected peer %s", addr_str.c_str());
         return false;
     }
+
+    // Also remove from the recent disconnects list to prevent throttling
+    recent_disconnects_.erase(std::remove_if(recent_disconnects_.begin(), recent_disconnects_.end(),
+        [&addr_str](const ConnectedPeer& p) { return p.address == addr_str; }), recent_disconnects_.end());
 
     bool removed = NimBLEDevice::deleteBond(address);
     if (removed) {

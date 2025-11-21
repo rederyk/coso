@@ -80,6 +80,7 @@ private:
     void startAdvertising();
     void stopAdvertising();
     void setAdvertisingAllowed(bool allowed);
+    void setAutoAdvertising(bool enabled);
     void setEnabled(bool enable);
     void setDeviceName(const std::string& name);
     void setMaxConnections(uint8_t max_connections);
@@ -120,6 +121,7 @@ private:
     bool enabled_ = true;
     bool is_directed_advertising_ = false;
     bool advertising_allowed_ = true;
+    bool auto_advertising_ = true;  // Auto restart advertising after disconnect
     size_t max_connections_allowed_ = CONFIG_BT_NIMBLE_MAX_CONNECTIONS;
     std::string device_name_ = "ESP32-S3 HID";
     std::vector<ConnectedPeer> connected_peers_;

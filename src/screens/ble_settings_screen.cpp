@@ -209,6 +209,28 @@ void BleSettingsScreen::build(lv_obj_t* parent) {
         lv_obj_add_state(advertising_switch, LV_STATE_CHECKED);
     }
 
+    // Auto Advertising Row
+    lv_obj_t* auto_adv_row = lv_obj_create(advertising_card);
+    lv_obj_remove_style_all(auto_adv_row);
+    lv_obj_set_width(auto_adv_row, lv_pct(100));
+    lv_obj_set_height(auto_adv_row, LV_SIZE_CONTENT);
+    lv_obj_set_layout(auto_adv_row, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(auto_adv_row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(auto_adv_row, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+
+    lv_obj_t* auto_adv_label = lv_label_create(auto_adv_row);
+    lv_label_set_text(auto_adv_label, "Auto");
+    lv_obj_set_style_text_font(auto_adv_label, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(auto_adv_label, card_text_color, 0);
+
+    auto_advertising_switch = lv_switch_create(auto_adv_row);
+    lv_obj_add_event_cb(auto_advertising_switch, handleAutoAdvertisingToggle, LV_EVENT_VALUE_CHANGED, this);
+
+    // Auto Advertising stato iniziale
+    if (snapshot.bleAutoAdvertising) {
+        lv_obj_add_state(auto_advertising_switch, LV_STATE_CHECKED);
+    }
+
     // Bonded peers Card - spostata in fondo
     bonded_card = create_card(content_container, "Host", lv_color_hex(0x1a2332));
 
@@ -537,6 +559,17 @@ void BleSettingsScreen::handleAdvertisingToggle(lv_event_t* e) {
     screen->updateBleStatus();
 }
 
+void BleSettingsScreen::handleAutoAdvertisingToggle(lv_event_t* e) {
+    auto* screen = static_cast<BleSettingsScreen*>(lv_event_get_user_data(e));
+    if (!screen) return;
+
+    bool enabled = lv_obj_has_state(screen->auto_advertising_switch, LV_STATE_CHECKED);
+
+    SettingsManager::getInstance().setBleAutoAdvertising(enabled);
+    BleManager::getInstance().setAutoAdvertising(enabled);
+    Logger::getInstance().infof("[BLE Settings] Auto advertising %s", enabled ? "enabled" : "disabled");
+}
+
 void BleSettingsScreen::handleMaxConnectionsChanged(lv_event_t* e) {
     auto* screen = static_cast<BleSettingsScreen*>(lv_event_get_user_data(e));
     if (!screen || screen->updating_from_manager || !screen->max_conn_spinbox) return;
@@ -575,13 +608,25 @@ void BleSettingsScreen::handlePeerForget(lv_event_t* e) {
     auto* screen = static_cast<BleSettingsScreen*>(lv_event_get_user_data(e));
     if (!screen) return;
 
-    size_t index = (size_t)lv_obj_get_user_data(lv_event_get_target(e));
+    lv_obj_t* btn = lv_event_get_target(e);
+    size_t index = (size_t)lv_obj_get_user_data(btn);
     if (index >= screen->bonded_addresses_.size()) return;
 
+    // Disable the button to prevent double-clicks
+    lv_obj_add_state(btn, LV_STATE_DISABLED);
+
     NimBLEAddress target(screen->bonded_addresses_[index]);
-    BleManager::getInstance().forgetPeer(target);
-    Logger::getInstance().infof("[BLE HID] Host rimosso: %s", target.toString().c_str());
-    screen->updateBleStatus();
+    Logger::getInstance().infof("[BLE HID] Forgetting peer: %s", target.toString().c_str());
+
+    // Call forgetPeer with a callback to update the UI upon completion
+    BleManager::getInstance().forgetPeer(target, [screen](bool success) {
+        if (success) {
+            // Schedule a UI update on the main LVGL thread
+            lv_async_call(asyncUpdateUI, screen);
+        }
+        // Note: Re-enabling the button is tricky as it might be deleted.
+        // The full refresh handles this implicitly.
+    });
 }
 
 void BleSettingsScreen::handleBackButton(lv_event_t* e) {
@@ -601,4 +646,12 @@ void BleSettingsScreen::updateStatusTimer(lv_timer_t* timer) {
     if (!screen) return;
 
     screen->updateBleStatus();
+}
+
+void BleSettingsScreen::asyncUpdateUI(void* user_data) {
+    auto* screen = static_cast<BleSettingsScreen*>(user_data);
+    if (screen) {
+        Logger::getInstance().info("[BLE Settings] Asynchronously updating UI after forget operation.");
+        screen->updateBleStatus();
+    }
 }

@@ -319,6 +319,7 @@ void SettingsManager::loadDefaults() {
     current_.bleDeviceName = DEFAULT_BLE_DEVICE_NAME;
     current_.bleEnabled = DEFAULT_BLE_ENABLED;
     current_.bleAdvertising = DEFAULT_BLE_ADVERTISING;
+    current_.bleAutoAdvertising = DEFAULT_BLE_AUTO_ADVERTISING;
     current_.bleMaxConnections = std::max<uint8_t>(
         1, std::min<uint8_t>(DEFAULT_BLE_MAX_CONNECTIONS, static_cast<uint8_t>(CONFIG_BT_NIMBLE_MAX_CONNECTIONS)));
 
@@ -467,6 +468,15 @@ void SettingsManager::setBleAdvertising(bool advertising) {
     current_.bleAdvertising = advertising;
     persistSnapshot();
     notify(SettingKey::BleAdvertising);
+}
+
+void SettingsManager::setBleAutoAdvertising(bool autoAdvertising) {
+    if (!initialized_ || autoAdvertising == current_.bleAutoAdvertising) {
+        return;
+    }
+    current_.bleAutoAdvertising = autoAdvertising;
+    persistSnapshot();
+    notify(SettingKey::BleAutoAdvertising);
 }
 
 void SettingsManager::setBleMaxConnections(uint8_t maxConnections) {

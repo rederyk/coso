@@ -34,12 +34,14 @@ private:
     static void handleEnableToggle(lv_event_t* e);
     static void handleDeviceNameInput(lv_event_t* e);
     static void handleAdvertisingToggle(lv_event_t* e);
+    static void handleAutoAdvertisingToggle(lv_event_t* e);
     static void handleDisconnectCurrent(lv_event_t* e);
     static void handlePeerConnect(lv_event_t* e);
     static void handlePeerForget(lv_event_t* e);
     static void handleBackButton(lv_event_t* e);
     static void handleMaxConnectionsChanged(lv_event_t* e);
     static void updateStatusTimer(lv_timer_t* timer);
+    static void asyncUpdateUI(void* user_data);
 
     // UI components
     lv_obj_t* header_label = nullptr;
@@ -72,6 +74,7 @@ private:
     // Advertising Card
     lv_obj_t* advertising_card = nullptr;
     lv_obj_t* advertising_switch = nullptr;
+    lv_obj_t* auto_advertising_switch = nullptr;
     lv_obj_t* advertising_status_label = nullptr;
 
     // Info Card
