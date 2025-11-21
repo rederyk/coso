@@ -21,6 +21,7 @@ enum class BleCommandType {
     START_ADVERTISING,
     STOP_ADVERTISING,
     SET_DEVICE_NAME,
+    SET_MAX_CONNECTIONS,
     DISCONNECT_ALL,
     DISCONNECT_PEER,
     START_DIRECTED_ADV,
@@ -94,6 +95,7 @@ public:
     void startAdvertising();
     void stopAdvertising();
     void setDeviceName(const std::string& name);
+    void setMaxConnections(uint8_t max_connections);
     void disconnectAll();
     void disconnect(uint16_t conn_handle);
     void forgetPeer(const NimBLEAddress& address);

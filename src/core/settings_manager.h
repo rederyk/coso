@@ -5,6 +5,7 @@
 #include <functional>
 #include <string>
 #include <vector>
+#include <sdkconfig.h>
 
 struct SettingsSnapshot {
     // WiFi & Network
@@ -17,6 +18,7 @@ struct SettingsSnapshot {
     std::string bleDeviceName = "ESP32-S3";
     bool bleEnabled = true;
     bool bleAdvertising = true;
+    uint8_t bleMaxConnections = CONFIG_BT_NIMBLE_MAX_CONNECTIONS;
 
     // Display & UI
     uint8_t brightness = 80;
@@ -63,6 +65,7 @@ public:
         BleDeviceName,
         BleEnabled,
         BleAdvertising,
+        BleMaxConnections,
 
         // Display & UI
         Brightness,
@@ -162,6 +165,9 @@ public:
     bool getBleAdvertising() const { return current_.bleAdvertising; }
     void setBleAdvertising(bool advertising);
 
+    uint8_t getBleMaxConnections() const { return current_.bleMaxConnections; }
+    void setBleMaxConnections(uint8_t maxConnections);
+
     // Display
     uint8_t getScreenTimeout() const { return current_.screenTimeout; }
     void setScreenTimeout(uint8_t timeout);
@@ -226,6 +232,7 @@ private:
     static constexpr const char* DEFAULT_BLE_DEVICE_NAME = "ESP32-S3";
     static constexpr bool DEFAULT_BLE_ENABLED = true;
     static constexpr bool DEFAULT_BLE_ADVERTISING = true;
+    static constexpr uint8_t DEFAULT_BLE_MAX_CONNECTIONS = CONFIG_BT_NIMBLE_MAX_CONNECTIONS;
 
     // Display & UI defaults
     static constexpr uint8_t DEFAULT_BRIGHTNESS = 80;

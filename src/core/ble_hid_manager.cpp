@@ -194,8 +194,7 @@ bool BleHidManager::init(const std::string& device_name) {
 
 void BleHidManager::startAdvertising() {
     if (!initialized_) return;
-    constexpr size_t max_connections = CONFIG_BT_NIMBLE_MAX_CONNECTIONS;
-    if (connected_peers_.size() >= max_connections) {
+    if (connected_peers_.size() >= max_connections_allowed_) {
         Logger::getInstance().warn("[BLE HID] Skipping advertising: max connections reached");
         return;
     }
@@ -275,8 +274,12 @@ void BleHidManager::ensureAdvertising() {
     if (!initialized_) return;
     if (!enabled_) return;
     if (!advertising_allowed_) return;
-    constexpr size_t max_connections = CONFIG_BT_NIMBLE_MAX_CONNECTIONS;
-    if (connected_peers_.size() >= max_connections) return;
+    if (connected_peers_.size() >= max_connections_allowed_) {
+        if (is_advertising_) {
+            stopAdvertising();
+        }
+        return;
+    }
     // Sync with stack state to avoid redundant start/stop churn.
     is_advertising_ = is_adv_active();
     // Continue advertising even with connections for multi-host support
@@ -317,6 +320,15 @@ void BleHidManager::handleServerConnect(ble_gap_conn_desc* desc) {
             return;
         }
 
+        if (connected_peers_.size() >= max_connections_allowed_) {
+            Logger::getInstance().warnf("[BLE HID] Connection refused from %s: limit %u reached",
+                peer.address.c_str(), static_cast<unsigned>(max_connections_allowed_));
+            if (server_) {
+                server_->disconnect(peer.conn_handle);
+            }
+            return;
+        }
+
         connected_peers_.push_back(peer);
         Logger::getInstance().infof("[BLE HID] Client connected (%s), total: %d", peer.address.c_str(), connected_peers_.size());
 
@@ -336,8 +348,7 @@ void BleHidManager::handleServerConnect(ble_gap_conn_desc* desc) {
     }
 
     // Continue advertising for more connections if below max
-    constexpr size_t max_connections = CONFIG_BT_NIMBLE_MAX_CONNECTIONS;
-    if (connected_peers_.size() < max_connections) {
+    if (connected_peers_.size() < max_connections_allowed_) {
         // Give adequate delay (longer) to stabilize the connection before restarting advertising
         vTaskDelay(1000 / portTICK_PERIOD_MS);
         ensureAdvertising();
@@ -427,6 +438,23 @@ void BleHidManager::setDeviceName(const std::string& name) {
     Logger::getInstance().infof("[BLE HID] Device name set to '%s' (restart advertising to apply)", device_name_.c_str());
 }
 
+void BleHidManager::setMaxConnections(uint8_t max_connections) {
+    size_t clamped = std::max<size_t>(1, std::min<size_t>(max_connections, static_cast<size_t>(CONFIG_BT_NIMBLE_MAX_CONNECTIONS)));
+    if (clamped == max_connections_allowed_) {
+        return;
+    }
+
+    max_connections_allowed_ = clamped;
+    Logger::getInstance().infof("[BLE HID] Max connections set to %u", static_cast<unsigned>(max_connections_allowed_));
+
+    // Enforce advertising state according to the new limit.
+    if (connected_peers_.size() >= max_connections_allowed_) {
+        stopAdvertising();
+    } else {
+        ensureAdvertising();
+    }
+}
+
 std::vector<BleHidManager::BondedPeer> BleHidManager::getBondedPeers() const {
     std::vector<BondedPeer> peers;
     int count = NimBLEDevice::getNumBonds();
@@ -478,6 +506,11 @@ bool BleHidManager::forgetPeer(const NimBLEAddress& address) {
 
 bool BleHidManager::startDirectedAdvertisingTo(const NimBLEAddress& address, uint32_t timeout_seconds) {
     if (!initialized_ || !enabled_ || !advertising_allowed_) return false;
+    if (connected_peers_.size() >= max_connections_allowed_) {
+        Logger::getInstance().warnf("[BLE HID] Cannot start directed advertising: limit %u reached",
+            static_cast<unsigned>(max_connections_allowed_));
+        return false;
+    }
 
     // Check if this peer is already connected
     std::string addr_str = address.toString();
@@ -577,18 +610,26 @@ std::vector<uint16_t> BleHidManager::selectTargetHandles(BleHidTarget target, co
         return handles;
     }
 
+    auto collect_all = [&]() {
+        for (const auto& peer : connected_peers_) {
+            handles.push_back(peer.conn_handle);
+        }
+    };
+
     switch (target) {
         case BleHidTarget::ALL:
-            for (const auto& peer : connected_peers_) {
-                handles.push_back(peer.conn_handle);
-            }
+            collect_all();
             break;
         case BleHidTarget::FIRST_CONNECTED:
-            handles.push_back(connected_peers_.front().conn_handle);
+        case BleHidTarget::LAST_CONNECTED: {
+            static bool warned = false;
+            if (!warned) {
+                Logger::getInstance().warn("[BLE HID] FIRST_CONNECTED and LAST_CONNECTED targets are deprecated; using ALL connected peers instead");
+                warned = true;
+            }
+            collect_all();
             break;
-        case BleHidTarget::LAST_CONNECTED:
-            handles.push_back(connected_peers_.back().conn_handle);
-            break;
+        }
     }
 
     return handles;

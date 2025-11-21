@@ -4,6 +4,7 @@
 #include <NimBLEHIDDevice.h>
 #include <string>
 #include <vector>
+#include <sdkconfig.h>
 #if defined(CONFIG_NIMBLE_CPP_IDF)
 #include "host/ble_gap.h"
 #else
@@ -14,8 +15,8 @@
  * @brief Target selection for HID notifications.
  *
  * ALL: send to every connected peer.
- * FIRST_CONNECTED: send only to the first connection in the list.
- * LAST_CONNECTED: send only to the most recently connected peer.
+ * FIRST_CONNECTED: deprecated, now treated as ALL.
+ * LAST_CONNECTED: deprecated, now treated as ALL.
  */
 enum class BleHidTarget : uint8_t {
     ALL,
@@ -44,6 +45,7 @@ public:
     bool isConnected() const { return !connected_peers_.empty(); }
     size_t getConnectedCount() const { return connected_peers_.size(); }
     bool isAdvertisingDirected() const { return is_directed_advertising_; }
+    size_t getMaxConnectionsAllowed() const { return max_connections_allowed_; }
     std::string getAddress() const;
     std::string getDeviceName() const { return device_name_; }
     std::string getDirectedTarget() const { return is_directed_advertising_ ? directed_target_.toString() : std::string(); }
@@ -80,6 +82,7 @@ private:
     void setAdvertisingAllowed(bool allowed);
     void setEnabled(bool enable);
     void setDeviceName(const std::string& name);
+    void setMaxConnections(uint8_t max_connections);
     void disconnectAll();
     void disconnect(uint16_t conn_handle);
     bool forgetPeer(const NimBLEAddress& address);
@@ -117,6 +120,7 @@ private:
     bool enabled_ = true;
     bool is_directed_advertising_ = false;
     bool advertising_allowed_ = true;
+    size_t max_connections_allowed_ = CONFIG_BT_NIMBLE_MAX_CONNECTIONS;
     std::string device_name_ = "ESP32-S3 HID";
     std::vector<ConnectedPeer> connected_peers_;
     std::vector<ConnectedPeer> recent_disconnects_;  // Track recent disconnections

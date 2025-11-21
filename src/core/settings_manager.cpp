@@ -84,6 +84,10 @@ void SettingsManager::reset() {
     notify(SettingKey::ThemeDockIconRadius);
     notify(SettingKey::ThemeBorderRadius);
     notify(SettingKey::LayoutOrientation);
+    notify(SettingKey::BleDeviceName);
+    notify(SettingKey::BleEnabled);
+    notify(SettingKey::BleAdvertising);
+    notify(SettingKey::BleMaxConnections);
 }
 
 void SettingsManager::setWifiSsid(const std::string& ssid) {
@@ -293,6 +297,8 @@ void SettingsManager::loadFromStorage() {
     current_.brightness = std::min<uint8_t>(100, std::max<uint8_t>(1, current_.brightness));
     current_.borderRadius = std::min<uint8_t>(30, std::max<uint8_t>(0, current_.borderRadius));
     current_.dockIconRadius = std::min<uint8_t>(MAX_DOCK_ICON_RADIUS, current_.dockIconRadius);
+    current_.bleMaxConnections = std::max<uint8_t>(
+        1, std::min<uint8_t>(static_cast<uint8_t>(CONFIG_BT_NIMBLE_MAX_CONNECTIONS), current_.bleMaxConnections));
 
     // Fix corrupted black primary color (from previous conversion bugs)
     if (current_.primaryColor == 0x000000) {
@@ -313,6 +319,8 @@ void SettingsManager::loadDefaults() {
     current_.bleDeviceName = DEFAULT_BLE_DEVICE_NAME;
     current_.bleEnabled = DEFAULT_BLE_ENABLED;
     current_.bleAdvertising = DEFAULT_BLE_ADVERTISING;
+    current_.bleMaxConnections = std::max<uint8_t>(
+        1, std::min<uint8_t>(DEFAULT_BLE_MAX_CONNECTIONS, static_cast<uint8_t>(CONFIG_BT_NIMBLE_MAX_CONNECTIONS)));
 
     // Display & UI
     current_.brightness = DEFAULT_BRIGHTNESS;
@@ -459,6 +467,20 @@ void SettingsManager::setBleAdvertising(bool advertising) {
     current_.bleAdvertising = advertising;
     persistSnapshot();
     notify(SettingKey::BleAdvertising);
+}
+
+void SettingsManager::setBleMaxConnections(uint8_t maxConnections) {
+    if (!initialized_) {
+        return;
+    }
+    uint8_t clamped = std::max<uint8_t>(
+        1, std::min<uint8_t>(static_cast<uint8_t>(CONFIG_BT_NIMBLE_MAX_CONNECTIONS), maxConnections));
+    if (clamped == current_.bleMaxConnections) {
+        return;
+    }
+    current_.bleMaxConnections = clamped;
+    persistSnapshot();
+    notify(SettingKey::BleMaxConnections);
 }
 
 // Display setters

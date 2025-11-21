@@ -38,6 +38,7 @@ private:
     static void handlePeerConnect(lv_event_t* e);
     static void handlePeerForget(lv_event_t* e);
     static void handleBackButton(lv_event_t* e);
+    static void handleMaxConnectionsChanged(lv_event_t* e);
     static void updateStatusTimer(lv_timer_t* timer);
 
     // UI components
@@ -61,6 +62,7 @@ private:
     lv_obj_t* device_name_input = nullptr;
     lv_obj_t* service_uuid_label = nullptr;
     lv_obj_t* char_uuid_label = nullptr;
+    lv_obj_t* max_conn_spinbox = nullptr;
 
     // Bonded peers card
     lv_obj_t* bonded_card = nullptr;

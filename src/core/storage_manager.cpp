@@ -22,6 +22,7 @@ void fillJsonFromSnapshot(const SettingsSnapshot& snapshot, JsonDocument& doc) {
     ble["deviceName"] = snapshot.bleDeviceName;
     ble["enabled"] = snapshot.bleEnabled;
     ble["advertising"] = snapshot.bleAdvertising;
+    ble["maxConnections"] = snapshot.bleMaxConnections;
 
     // Display & UI
     JsonObject ui = doc["ui"].to<JsonObject>();
@@ -71,6 +72,7 @@ void fillSnapshotFromJson(SettingsSnapshot& snapshot, const JsonDocument& doc) {
     snapshot.bleDeviceName = doc["ble"]["deviceName"] | snapshot.bleDeviceName;
     snapshot.bleEnabled = doc["ble"]["enabled"] | snapshot.bleEnabled;
     snapshot.bleAdvertising = doc["ble"]["advertising"] | snapshot.bleAdvertising;
+    snapshot.bleMaxConnections = doc["ble"]["maxConnections"] | snapshot.bleMaxConnections;
 
     // Display & UI
     snapshot.theme = doc["ui"]["theme"] | snapshot.theme;

@@ -74,6 +74,7 @@ void BleManager::bleTask(void* pvParameters) {
     if (!ble_hid.init(device_name)) {
         Logger::getInstance().error("[BleManager] Failed to initialize BLE HID stack");
     } else {
+        ble_hid.setMaxConnections(snapshot.bleMaxConnections);
         ble_hid.setAdvertisingAllowed(snapshot.bleAdvertising);
         ble_hid.setEnabled(snapshot.bleEnabled);
         ble_hid.ensureAdvertising();
@@ -128,6 +129,13 @@ void BleManager::processCommand(const BleCommand& cmd) {
         case BleCommandType::SET_DEVICE_NAME:
             ble_hid.setDeviceName(cmd.str_param);
             Logger::getInstance().infof("[BleManager] Device name set to: %s", cmd.str_param);
+            break;
+
+        case BleCommandType::SET_MAX_CONNECTIONS:
+            ble_hid.setMaxConnections(cmd.uint8_param);
+            Logger::getInstance().infof("[BleManager] Max connections request: %u (effective %u)",
+                cmd.uint8_param,
+                static_cast<unsigned>(ble_hid.getMaxConnectionsAllowed()));
             break;
 
         case BleCommandType::DISCONNECT_ALL:
@@ -253,6 +261,13 @@ void BleManager::setDeviceName(const std::string& name) {
     cmd.type = BleCommandType::SET_DEVICE_NAME;
     strncpy(cmd.str_param, name.c_str(), sizeof(cmd.str_param) - 1);
     cmd.str_param[sizeof(cmd.str_param) - 1] = '\0';
+    postCommand(cmd);
+}
+
+void BleManager::setMaxConnections(uint8_t max_connections) {
+    BleCommand cmd;
+    cmd.type = BleCommandType::SET_MAX_CONNECTIONS;
+    cmd.uint8_param = max_connections;
     postCommand(cmd);
 }
 

@@ -6,6 +6,8 @@
 #include "ui/ui_symbols.h"
 #include "utils/logger.h"
 #include "utils/color_utils.h"
+#include <sdkconfig.h>
+#include <algorithm>
 
 namespace {
 lv_obj_t* create_card(lv_obj_t* parent, const char* title, lv_color_t bg_color) {
@@ -159,6 +161,29 @@ void BleSettingsScreen::build(lv_obj_t* parent) {
     lv_textarea_set_text(device_name_input, ble.getDeviceName().c_str());
     last_device_name_ = ble.getDeviceName();
 
+    // Max connections selector
+    lv_obj_t* max_row = lv_obj_create(config_card);
+    lv_obj_remove_style_all(max_row);
+    lv_obj_set_width(max_row, lv_pct(100));
+    lv_obj_set_height(max_row, LV_SIZE_CONTENT);
+    lv_obj_set_layout(max_row, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(max_row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(max_row, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+
+    lv_obj_t* max_label = lv_label_create(max_row);
+    lv_label_set_text(max_label, "Max host");
+    lv_obj_set_style_text_font(max_label, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(max_label, card_text_color, 0);
+
+    max_conn_spinbox = lv_spinbox_create(max_row);
+    lv_spinbox_set_range(max_conn_spinbox, 1, CONFIG_BT_NIMBLE_MAX_CONNECTIONS);
+    lv_spinbox_set_digit_format(max_conn_spinbox, 2, 0);
+    uint8_t initial_max = std::min<uint8_t>(snapshot.bleMaxConnections, static_cast<uint8_t>(CONFIG_BT_NIMBLE_MAX_CONNECTIONS));
+    lv_spinbox_set_value(max_conn_spinbox, initial_max);
+    lv_spinbox_set_step(max_conn_spinbox, 1);
+    lv_obj_set_width(max_conn_spinbox, 70);
+    lv_obj_add_event_cb(max_conn_spinbox, handleMaxConnectionsChanged, LV_EVENT_VALUE_CHANGED, this);
+
     // Advertising Card
     advertising_card = create_card(content_container, "Adv", lv_color_hex(0x1a2332));
 
@@ -246,7 +271,10 @@ void BleSettingsScreen::onHide() {
 
 void BleSettingsScreen::applySnapshot(const SettingsSnapshot& snapshot) {
     updating_from_manager = true;
-    // BLE settings could be added to SettingsSnapshot in the future
+    if (max_conn_spinbox) {
+        uint8_t clamped = std::min<uint8_t>(snapshot.bleMaxConnections, static_cast<uint8_t>(CONFIG_BT_NIMBLE_MAX_CONNECTIONS));
+        lv_spinbox_set_value(max_conn_spinbox, clamped);
+    }
     updating_from_manager = false;
 }
 
@@ -277,6 +305,8 @@ void BleSettingsScreen::refreshBondedPeers() {
 
     BleHidManager& ble = BleHidManager::getInstance();
     auto peers = ble.getBondedPeers();
+    const size_t connected_now = ble.getConnectedCount();
+    const size_t max_allowed = std::max<size_t>(1, ble.getMaxConnectionsAllowed());
 
     bonded_addresses_.clear();
     bonded_addresses_.reserve(peers.size());
@@ -325,6 +355,8 @@ void BleSettingsScreen::refreshBondedPeers() {
         ColorUtils::applyAutoButtonTextColor(connect_btn);
         if (peer.isConnected) {
             lv_obj_add_state(connect_btn, LV_STATE_DISABLED);
+        } else if (connected_now >= max_allowed) {
+            lv_obj_add_state(connect_btn, LV_STATE_DISABLED);
         }
 
         lv_obj_t* forget_btn = lv_btn_create(actions);
@@ -364,6 +396,7 @@ void BleSettingsScreen::updateBleStatus() {
     is_advertising = ble.isAdvertising();
     bool directed = ble.isAdvertisingDirected();
     size_t connected_count = ble.getConnectedCount();
+    size_t max_allowed = std::max<size_t>(1, ble.getMaxConnectionsAllowed());
     auto connected_addrs = ble.getConnectedPeerAddresses();
     std::string directed_target = ble.getDirectedTarget();
 
@@ -403,7 +436,7 @@ void BleSettingsScreen::updateBleStatus() {
         lv_label_set_text(status_label, "○ Disabilitato");
         lv_obj_set_style_text_color(status_label, lv_color_hex(0xa0a0a0), 0);
         if (clients_label) {
-            lv_label_set_text(clients_label, "Host: 0");
+            lv_label_set_text_fmt(clients_label, "Host: 0/%u", static_cast<unsigned>(max_allowed));
         }
         return;
     }
@@ -423,25 +456,25 @@ void BleSettingsScreen::updateBleStatus() {
         lv_label_set_text(status_label, text.c_str());
         lv_obj_set_style_text_color(status_label, lv_color_hex(0x00ff80), 0);
         if (clients_label) {
-            lv_label_set_text_fmt(clients_label, "Host: %d", connected_count);
+            lv_label_set_text_fmt(clients_label, "Host: %d/%u", connected_count, static_cast<unsigned>(max_allowed));
         }
     } else if (directed) {
         lv_label_set_text(status_label, "◌ Adv diretto");
         lv_obj_set_style_text_color(status_label, lv_color_hex(0x00ffff), 0);
         if (clients_label) {
-            lv_label_set_text(clients_label, "Host: 0");
+            lv_label_set_text_fmt(clients_label, "Host: 0/%u", static_cast<unsigned>(max_allowed));
         }
     } else if (is_advertising) {
         lv_label_set_text(status_label, "◌ In attesa...");
         lv_obj_set_style_text_color(status_label, lv_color_hex(0x00ffff), 0);
         if (clients_label) {
-            lv_label_set_text(clients_label, "Host: 0");
+            lv_label_set_text_fmt(clients_label, "Host: 0/%u", static_cast<unsigned>(max_allowed));
         }
     } else {
         lv_label_set_text(status_label, "○ Adv off");
         lv_obj_set_style_text_color(status_label, lv_color_hex(0xffaa00), 0);
         if (clients_label) {
-            lv_label_set_text(clients_label, "Host: 0");
+            lv_label_set_text_fmt(clients_label, "Host: 0/%u", static_cast<unsigned>(max_allowed));
         }
     }
 
@@ -501,6 +534,18 @@ void BleSettingsScreen::handleAdvertisingToggle(lv_event_t* e) {
         Logger::getInstance().info("[BLE HID] Advertising fermato");
     }
 
+    screen->updateBleStatus();
+}
+
+void BleSettingsScreen::handleMaxConnectionsChanged(lv_event_t* e) {
+    auto* screen = static_cast<BleSettingsScreen*>(lv_event_get_user_data(e));
+    if (!screen || screen->updating_from_manager || !screen->max_conn_spinbox) return;
+
+    uint16_t value = lv_spinbox_get_value(screen->max_conn_spinbox);
+    uint8_t clamped = static_cast<uint8_t>(value);
+
+    SettingsManager::getInstance().setBleMaxConnections(clamped);
+    BleManager::getInstance().setMaxConnections(clamped);
     screen->updateBleStatus();
 }
 
