@@ -4,6 +4,8 @@
 #include <array>
 #include <cstdint>
 #include <driver/rmt.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/semphr.h>
 #include <vector>
 
 /**
@@ -155,6 +157,7 @@ private:
     static constexpr rmt_channel_t kRmtChannel = RMT_CHANNEL_0;
     rmt_channel_t led_channel_ = kRmtChannel;
 
+    SemaphoreHandle_t state_mutex_ = nullptr;  // Protegge accessi concorrenti allo stato
     LedState current_state_ = LedState::OFF;
     LedState idle_state_ = LedState::OFF;           // Stato a cui tornare dopo timeout
     LedState previous_state_ = LedState::OFF;        // Stato precedente (per temporary)

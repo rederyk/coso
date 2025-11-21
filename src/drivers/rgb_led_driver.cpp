@@ -1,5 +1,6 @@
 #include "rgb_led_driver.h"
 #include "utils/logger.h"
+#include "core/task_config.h"
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 
@@ -22,6 +23,10 @@ RgbLedManager::~RgbLedManager() {
     }
     if (initialized_) {
         rmt_driver_uninstall(led_channel_);
+    }
+    if (state_mutex_) {
+        vSemaphoreDelete(state_mutex_);
+        state_mutex_ = nullptr;
     }
     initialized_ = false;
 }
@@ -55,17 +60,26 @@ bool RgbLedManager::begin(uint8_t pin) {
 
     led_channel_ = config.channel;
 
+    // Crea mutex per proteggere accessi concorrenti allo stato
+    state_mutex_ = xSemaphoreCreateMutex();
+    if (!state_mutex_) {
+        Logger::getInstance().error("[RGB LED] Failed to create state mutex");
+        rmt_driver_uninstall(led_channel_);
+        return false;
+    }
+
     initialized_ = true;
     off();
 
+    // Keep UI core (1) free: run LED task on core 0 with low priority.
     xTaskCreatePinnedToCore(
         led_task,
         "rgb_led_task",
-        2048,
+        TaskConfig::STACK_LED,
         this,
-        0,
+        TaskConfig::PRIO_LED,
         &led_task_handle,
-        1
+        TaskConfig::CORE_WORK
     );
 
     Logger::getInstance().infof("[RGB LED] Initialized on GPIO%d", pin_);
@@ -73,61 +87,77 @@ bool RgbLedManager::begin(uint8_t pin) {
 }
 
 void RgbLedManager::setBrightness(uint8_t brightness) {
-    brightness_ = constrain(brightness, 0, 100);
-    if (current_state_ == LedState::CUSTOM) {
-        setColor(custom_r_, custom_g_, custom_b_);
-    } else {
-        updateAnimation();
+    if (!state_mutex_) return;
+
+    if (xSemaphoreTake(state_mutex_, pdMS_TO_TICKS(100)) == pdTRUE) {
+        brightness_ = constrain(brightness, 0, 100);
+        if (current_state_ == LedState::CUSTOM) {
+            setColor(custom_r_, custom_g_, custom_b_);
+        } else {
+            updateAnimation();
+        }
+        xSemaphoreGive(state_mutex_);
     }
 }
 
 void RgbLedManager::setState(LedState state, bool temporary) {
-    // Log del cambio di stato
-    const char* state_name = "UNKNOWN";
-    switch (state) {
-        case LedState::OFF: state_name = "OFF"; break;
-        case LedState::WIFI_CONNECTING: state_name = "WIFI_CONNECTING"; break;
-        case LedState::WIFI_CONNECTED: state_name = "WIFI_CONNECTED"; break;
-        case LedState::WIFI_ERROR: state_name = "WIFI_ERROR"; break;
-        case LedState::BLE_ADVERTISING: state_name = "BLE_ADVERTISING"; break;
-        case LedState::BLE_CONNECTED: state_name = "BLE_CONNECTED"; break;
-        case LedState::BOOT: state_name = "BOOT"; break;
-        case LedState::ERROR: state_name = "ERROR"; break;
-        case LedState::CUSTOM: state_name = "CUSTOM"; break;
-        case LedState::RAINBOW: state_name = "RAINBOW"; break;
-        case LedState::STROBE: state_name = "STROBE"; break;
-        case LedState::PULSE: state_name = "PULSE"; break;
-        case LedState::RGB_CYCLE: state_name = "RGB_CYCLE"; break;
-        case LedState::PULSE_CUSTOM: state_name = "PULSE_CUSTOM"; break;
-        case LedState::STROBE_CUSTOM: state_name = "STROBE_CUSTOM"; break;
-        case LedState::PULSE_PALETTE: state_name = "PULSE_PALETTE"; break;
+    if (!state_mutex_) return;
+
+    if (xSemaphoreTake(state_mutex_, pdMS_TO_TICKS(100)) == pdTRUE) {
+        // Log del cambio di stato
+        const char* state_name = "UNKNOWN";
+        switch (state) {
+            case LedState::OFF: state_name = "OFF"; break;
+            case LedState::WIFI_CONNECTING: state_name = "WIFI_CONNECTING"; break;
+            case LedState::WIFI_CONNECTED: state_name = "WIFI_CONNECTED"; break;
+            case LedState::WIFI_ERROR: state_name = "WIFI_ERROR"; break;
+            case LedState::BLE_ADVERTISING: state_name = "BLE_ADVERTISING"; break;
+            case LedState::BLE_CONNECTED: state_name = "BLE_CONNECTED"; break;
+            case LedState::BOOT: state_name = "BOOT"; break;
+            case LedState::ERROR: state_name = "ERROR"; break;
+            case LedState::CUSTOM: state_name = "CUSTOM"; break;
+            case LedState::RAINBOW: state_name = "RAINBOW"; break;
+            case LedState::STROBE: state_name = "STROBE"; break;
+            case LedState::PULSE: state_name = "PULSE"; break;
+            case LedState::RGB_CYCLE: state_name = "RGB_CYCLE"; break;
+            case LedState::PULSE_CUSTOM: state_name = "PULSE_CUSTOM"; break;
+            case LedState::STROBE_CUSTOM: state_name = "STROBE_CUSTOM"; break;
+            case LedState::PULSE_PALETTE: state_name = "PULSE_PALETTE"; break;
+        }
+
+        Logger::getInstance().infof("[RGB LED] State change: %s -> %s %s",
+            state_name,
+            temporary ? "(temporary)" : "",
+            is_temporary_ ? "[will revert after timeout]" : "");
+
+        // Salva lo stato precedente se è temporaneo
+        if (temporary && !is_temporary_) {
+            previous_state_ = current_state_;
+        }
+
+        current_state_ = state;
+        is_temporary_ = temporary;
+        animation_phase_ = 0;
+        blink_on_ = false;
+        last_update_ = millis();
+        last_activity_ = millis();  // Reset del timer di inattività
+        updateAnimation();
+
+        xSemaphoreGive(state_mutex_);
     }
-
-    Logger::getInstance().infof("[RGB LED] State change: %s -> %s %s",
-        state_name,
-        temporary ? "(temporary)" : "",
-        is_temporary_ ? "[will revert after timeout]" : "");
-
-    // Salva lo stato precedente se è temporaneo
-    if (temporary && !is_temporary_) {
-        previous_state_ = current_state_;
-    }
-
-    current_state_ = state;
-    is_temporary_ = temporary;
-    animation_phase_ = 0;
-    blink_on_ = false;
-    last_update_ = millis();
-    last_activity_ = millis();  // Reset del timer di inattività
-    updateAnimation();
 }
 
 void RgbLedManager::setColor(uint8_t r, uint8_t g, uint8_t b) {
-    custom_r_ = r;
-    custom_g_ = g;
-    custom_b_ = b;
-    current_state_ = LedState::CUSTOM;
-    setPixel(r, g, b);
+    if (!state_mutex_) return;
+
+    if (xSemaphoreTake(state_mutex_, pdMS_TO_TICKS(100)) == pdTRUE) {
+        custom_r_ = r;
+        custom_g_ = g;
+        custom_b_ = b;
+        current_state_ = LedState::CUSTOM;
+        setPixel(r, g, b);
+        xSemaphoreGive(state_mutex_);
+    }
 }
 
 void RgbLedManager::setPulseColor(uint8_t r, uint8_t g, uint8_t b) {
@@ -213,12 +243,22 @@ void RgbLedManager::setPulsePalette(const std::vector<uint32_t>& colors, size_t 
 }
 
 void RgbLedManager::off() {
-    current_state_ = LedState::OFF;
-    setPixel(0, 0, 0);
+    if (!state_mutex_) return;
+
+    if (xSemaphoreTake(state_mutex_, pdMS_TO_TICKS(100)) == pdTRUE) {
+        current_state_ = LedState::OFF;
+        setPixel(0, 0, 0);
+        xSemaphoreGive(state_mutex_);
+    }
 }
 
 void RgbLedManager::update() {
-    if (!initialized_) return;
+    if (!initialized_ || !state_mutex_) return;
+
+    // Non bloccare se il mutex è occupato, riprova al prossimo update
+    if (xSemaphoreTake(state_mutex_, 0) != pdTRUE) {
+        return;
+    }
 
     uint32_t now = millis();
     uint32_t elapsed = now - last_update_;
@@ -230,6 +270,7 @@ void RgbLedManager::update() {
             Logger::getInstance().infof("[RGB LED] Idle timeout reached, reverting to previous state");
             LedState revert_to = previous_state_;
             is_temporary_ = false;
+            xSemaphoreGive(state_mutex_);  // Rilascia prima di chiamare setState
             setState(revert_to, false);
             return;
         }
@@ -289,6 +330,8 @@ void RgbLedManager::update() {
         default:
             break;
     }
+
+    xSemaphoreGive(state_mutex_);
 }
 
 void RgbLedManager::setPixel(uint8_t r, uint8_t g, uint8_t b) {

@@ -1,6 +1,7 @@
 #include "ble_manager.h"
 #include "core/ble_client_manager.h"
 #include "core/settings_manager.h"
+#include "core/task_config.h"
 #include "utils/logger.h"
 #include <cstring>
 
@@ -39,13 +40,13 @@ void BleManager::start() {
     xTaskCreatePinnedToCore(
         bleTask,          // Task function
         "BleTask",        // Name of the task
-        8192,             // Stack size in words
+        TaskConfig::STACK_BLE,             // Stack size in words
         this,             // Task input parameter
-        5,                // Priority of the task
+        TaskConfig::PRIO_BLE,              // Priority of the task
         &task_handle_,    // Task handle
-        0                 // Core where the task should run
+        TaskConfig::CORE_WORK              // Core where the task should run
     );
-    Logger::getInstance().info("[BleManager] BLE task started on Core 0.");
+    Logger::getInstance().infof("[BleManager] BLE task started on Core %d.", (int)TaskConfig::CORE_WORK);
 }
 
 bool BleManager::postCommand(const BleCommand& cmd, uint32_t timeout_ms) {

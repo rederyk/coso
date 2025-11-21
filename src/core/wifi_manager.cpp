@@ -2,6 +2,8 @@
 #include "settings_manager.h"
 #include "utils/logger.h"
 #include "drivers/rgb_led_driver.h"
+#include "core/task_config.h"
+#include "core/system_tasks.h"
 
 // Constructor
 WifiManager::WifiManager() {
@@ -24,13 +26,13 @@ void WifiManager::start() {
     xTaskCreatePinnedToCore(
         this->wifi_task,    // Task function
         "wifi_task",        // Name of the task
-        4096,               // Stack size in words
+        TaskConfig::STACK_WIFI, // Stack size in words
         NULL,               // Task input parameter
-        1,                  // Priority of the task
+        TaskConfig::PRIO_WIFI,  // Priority of the task
         NULL,               // Task handle
-        0                   // Core where the task should run
+        TaskConfig::CORE_WORK   // Core where the task should run
     );
-    log_i("WiFi task started on core 0");
+    log_i("WiFi task started on core %d", static_cast<int>(TaskConfig::CORE_WORK));
 }
 
 // The FreeRTOS task for handling WiFi
@@ -65,12 +67,22 @@ void WifiManager::wifi_task(void *pvParameters) {
             if (rgb_led.isInitialized()) {
                 rgb_led.setState(RgbLedManager::LedState::WIFI_CONNECTED);
             }
+            // Notifica la UI del cambio di stato
+            UiMessage msg{};
+            msg.type = UiMessageType::WifiStatus;
+            msg.value = 1; // Connected
+            SystemTasks::postUiMessage(msg, 0);
         } else {
             log_e("Failed to connect to WiFi");
             // Imposta LED su "error"
             if (rgb_led.isInitialized()) {
                 rgb_led.setState(RgbLedManager::LedState::WIFI_ERROR);
             }
+            // Notifica la UI dell'errore
+            UiMessage msg{};
+            msg.type = UiMessageType::WifiStatus;
+            msg.value = 0; // Error/Disconnected
+            SystemTasks::postUiMessage(msg, 0);
         }
     } else {
         log_w("WiFi SSID not configured.");
@@ -82,13 +94,26 @@ void WifiManager::wifi_task(void *pvParameters) {
     for (;;) {
         wl_status_t current_status = WiFi.status();
 
-        // Rileva cambio di stato - solo se connesso, mostra il LED verde
-        if (current_status != last_status && rgb_led.isInitialized()) {
+        // Rileva cambio di stato
+        if (current_status != last_status) {
             if (current_status == WL_CONNECTED) {
                 log_i("WiFi reconnected");
-                rgb_led.setState(RgbLedManager::LedState::WIFI_CONNECTED);
+                if (rgb_led.isInitialized()) {
+                    rgb_led.setState(RgbLedManager::LedState::WIFI_CONNECTED);
+                }
+                // Notifica la UI della riconnessione
+                UiMessage msg{};
+                msg.type = UiMessageType::WifiStatus;
+                msg.value = 1; // Connected
+                SystemTasks::postUiMessage(msg, 0);
+            } else {
+                log_w("WiFi disconnected");
+                // Notifica la UI della disconnessione
+                UiMessage msg{};
+                msg.type = UiMessageType::WifiStatus;
+                msg.value = 0; // Disconnected
+                SystemTasks::postUiMessage(msg, 0);
             }
-            // Non cambiare il LED se disconnesso, lascia il controllo al BLE
             last_status = current_status;
         }
 

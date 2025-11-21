@@ -17,7 +17,9 @@
 #include "core/keyboard_manager.h"
 #include "core/settings_manager.h"
 #include "core/wifi_manager.h"
+#include "core/system_tasks.h"
 #include "core/ble_hid_manager.h"
+#include "core/task_config.h"
 #include "screens/ble_manager.h"
 #include "drivers/touch_driver.h"
 #include "drivers/sd_card_driver.h"
@@ -54,6 +56,7 @@ static void logSystemBanner();
 static void logMemoryStats(const char* stage);
 static void logLvglBufferInfo();
 static void* allocatePsramBuffer(size_t size, const char* label);
+static void handleUiMessage(const UiMessage& message);
 
 static void logSystemBanner() {
     esp_chip_info_t chip_info;
@@ -144,10 +147,60 @@ static void lv_tick_handler(void*) {
 static void lvgl_task(void*) {
     while (true) {
         if (lvgl_mutex_lock(pdMS_TO_TICKS(100))) {
-            lv_task_handler();
+            // Process UI messages while holding the LVGL mutex
+            SystemTasks::drainUiQueue(handleUiMessage, pdMS_TO_TICKS(1));
+            lv_timer_handler();
             lvgl_mutex_unlock();
         }
-        vTaskDelay(pdMS_TO_TICKS(10));
+        // 5ms delay for smoother UI (up to ~200 FPS theoretical max)
+        vTaskDelay(pdMS_TO_TICKS(5));
+    }
+}
+
+static void handleUiMessage(const UiMessage& message) {
+    AppManager* app_manager = AppManager::getInstance();
+    switch (message.type) {
+        case UiMessageType::ApplyOrientation: {
+            bool landscape = message.value != 0;
+            DisplayManager& display = DisplayManager::getInstance();
+            display.applyOrientation(landscape);
+            if (app_manager) {
+                app_manager->getDock()->onOrientationChanged(landscape);
+                app_manager->requestReload();
+            }
+            Logger::getInstance().infof("[Display] Orientation applied via UI queue: %s",
+                                        landscape ? "Landscape" : "Portrait");
+            break;
+        }
+        case UiMessageType::Backlight:
+            Logger::getInstance().infof("[Backlight] Brightness changed to %u%%", static_cast<unsigned>(message.value));
+            BacklightManager::getInstance().setBrightness(static_cast<uint8_t>(message.value));
+            break;
+        case UiMessageType::LedBrightness:
+            Logger::getInstance().infof("[RGB LED] Brightness changed to %u%%", static_cast<unsigned>(message.value));
+            RgbLedManager::getInstance().setBrightness(static_cast<uint8_t>(message.value));
+            break;
+        case UiMessageType::ReloadApps:
+            if (app_manager) {
+                app_manager->requestReload();
+            }
+            break;
+        case UiMessageType::Callback:
+            if (message.callback) {
+                message.callback(message.user_data);
+            }
+            break;
+        case UiMessageType::WifiStatus:
+            Logger::getInstance().infof("[WiFi] Status update: %s",
+                                        message.value ? "Connected" : "Disconnected");
+            // La UI può usare questo evento per aggiornare widget di stato, icone, etc.
+            break;
+        case UiMessageType::BleStatus:
+            Logger::getInstance().infof("[BLE] Status update: %u", static_cast<unsigned>(message.value));
+            // La UI può usare questo evento per aggiornare widget di stato, icone, etc.
+            break;
+        default:
+            break;
     }
 }
 
@@ -282,6 +335,7 @@ void setup() {
 
     // Inizializza mutex PRIMA di usarlo
     lvgl_mutex_setup();
+    SystemTasks::init();
 
     const esp_timer_create_args_t tick_args = {
         .callback = &lv_tick_handler,
@@ -343,24 +397,44 @@ void setup() {
     app_manager->launchApp("dashboard");
     logMemoryStats("UI ready");
 
-    settings_mgr.addListener([app_manager](SettingsManager::SettingKey key, const SettingsSnapshot& snapshot) {
-        if (key == SettingsManager::SettingKey::LayoutOrientation) {
-            Logger::getInstance().infof("[Display] Orientation toggle requested: %s",
-                                        snapshot.landscapeLayout ? "Landscape" : "Portrait");
-            DisplayManager& display = DisplayManager::getInstance();
-            display.applyOrientation(snapshot.landscapeLayout);
-            app_manager->getDock()->onOrientationChanged(snapshot.landscapeLayout);
-            app_manager->requestReload();
-        } else if (key == SettingsManager::SettingKey::Brightness) {
-            Logger::getInstance().infof("[Backlight] Brightness changed to %u%%", snapshot.brightness);
-            BacklightManager::getInstance().setBrightness(snapshot.brightness);
-        } else if (key == SettingsManager::SettingKey::LedBrightness) {
-            Logger::getInstance().infof("[RGB LED] Brightness changed to %u%%", snapshot.ledBrightness);
-            RgbLedManager::getInstance().setBrightness(snapshot.ledBrightness);
+    settings_mgr.addListener([](SettingsManager::SettingKey key, const SettingsSnapshot& snapshot) {
+        UiMessage msg{};
+        Logger& log = Logger::getInstance();
+
+        switch (key) {
+            case SettingsManager::SettingKey::LayoutOrientation:
+                log.infof("[Display] Orientation toggle requested: %s",
+                          snapshot.landscapeLayout ? "Landscape" : "Portrait");
+                msg.type = UiMessageType::ApplyOrientation;
+                msg.value = snapshot.landscapeLayout ? 1u : 0u;
+                break;
+            case SettingsManager::SettingKey::Brightness:
+                msg.type = UiMessageType::Backlight;
+                msg.value = snapshot.brightness;
+                break;
+            case SettingsManager::SettingKey::LedBrightness:
+                msg.type = UiMessageType::LedBrightness;
+                msg.value = snapshot.ledBrightness;
+                break;
+            default:
+                break;
+        }
+
+        if (msg.type != UiMessageType::None) {
+            if (!SystemTasks::postUiMessage(msg, pdMS_TO_TICKS(50))) {
+                log.warn("[System] Failed to enqueue UI message (queue full)");
+            }
         }
     });
 
-    xTaskCreatePinnedToCore(lvgl_task, "lvgl", 6144, nullptr, 3, nullptr, 1);
+    xTaskCreatePinnedToCore(
+        lvgl_task,
+        "lvgl",
+        TaskConfig::STACK_LVGL,
+        nullptr,
+        TaskConfig::PRIO_LVGL,
+        nullptr,
+        TaskConfig::CORE_UI);
     logMemoryStats("LVGL task started");
 
     // Create auto-backup timer (every 30 minutes)
