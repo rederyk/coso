@@ -32,6 +32,7 @@
 #include "screens/system_log_screen.h"
 #include "screens/theme_settings_screen.h"
 #include "screens/sd_explorer_screen.h"
+#include "screens/ble_remote_screen.h"
 #include "ui/ui_symbols.h"
 #include "utils/logger.h"
 #include "utils/lvgl_mutex.h"
@@ -315,11 +316,13 @@ void setup() {
     static ThemeSettingsScreen theme_settings;
     static SystemLogScreen system_log;
     static SdExplorerScreen sd_explorer;
+    static BleRemoteScreen ble_remote;
 
     // Registra le app nel dock
     app_manager->registerApp("dashboard", UI_SYMBOL_HOME, "Home", &dashboard);
     app_manager->registerApp("settings", UI_SYMBOL_SETTINGS, "Settings", &settings);
     app_manager->registerApp("theme", UI_SYMBOL_THEME, "Theme", &theme_settings);
+    app_manager->registerApp("ble_remote", UI_SYMBOL_BLUETOOTH, "BLE Remote", &ble_remote);
     app_manager->registerApp("system_log", UI_SYMBOL_SYSLOG, "SysLog", &system_log);
     app_manager->registerApp("info", UI_SYMBOL_INFO, "Info", &info);
     app_manager->registerApp("sd_explorer", UI_SYMBOL_STORAGE, "SD Card", &sd_explorer);
