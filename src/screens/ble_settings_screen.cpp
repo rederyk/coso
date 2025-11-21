@@ -257,6 +257,16 @@ void BleSettingsScreen::refreshBondedPeers() {
     if (!bonded_list) return;
 
     BleHidManager& ble = BleHidManager::getInstance();
+    if (!ble.isInitialized()) {
+        bonded_addresses_.clear();
+        lv_obj_clean(bonded_list);
+
+        lv_obj_t* initializing = lv_label_create(bonded_list);
+        lv_obj_set_style_text_font(initializing, &lv_font_montserrat_14, 0);
+        lv_obj_set_style_text_color(initializing, lv_color_hex(0xa0a0a0), 0);
+        lv_label_set_text(initializing, "Inizializzazione BLE...");
+        return;
+    }
     auto peers = ble.getBondedPeers();
 
     bonded_addresses_.clear();

@@ -175,6 +175,7 @@ bool BleHidManager::init(const std::string& device_name) {
 
     is_advertising_ = true;
     is_directed_advertising_ = false;
+    advertising_allowed_ = true;
     initialized_ = true;
     updateLedState();
 
@@ -185,6 +186,11 @@ bool BleHidManager::init(const std::string& device_name) {
 
 void BleHidManager::startAdvertising() {
     if (!initialized_) return;
+    constexpr size_t max_connections = CONFIG_BT_NIMBLE_MAX_CONNECTIONS;
+    if (connected_peers_.size() >= max_connections) {
+        Logger::getInstance().warn("[BLE HID] Skipping advertising: max connections reached");
+        return;
+    }
 
     NimBLEAdvertising* advertising = NimBLEDevice::getAdvertising();
     if (!advertising) return;
@@ -227,6 +233,24 @@ void BleHidManager::stopAdvertising() {
     Logger::getInstance().info("[BLE HID] Advertising stopped");
 }
 
+void BleHidManager::setAdvertisingAllowed(bool allowed) {
+    advertising_allowed_ = allowed;
+    if (!initialized_) return;
+
+    if (!allowed) {
+        NimBLEAdvertising* advertising = NimBLEDevice::getAdvertising();
+        if (advertising) {
+            advertising->stop();
+        }
+        is_advertising_ = false;
+        is_directed_advertising_ = false;
+        directed_target_ = NimBLEAddress();
+        updateLedState();
+    } else {
+        ensureAdvertising();
+    }
+}
+
 void BleHidManager::setEnabled(bool enable) {
     enabled_ = enable;
     if (!initialized_) return;
@@ -242,6 +266,9 @@ void BleHidManager::setEnabled(bool enable) {
 void BleHidManager::ensureAdvertising() {
     if (!initialized_) return;
     if (!enabled_) return;
+    if (!advertising_allowed_) return;
+    constexpr size_t max_connections = CONFIG_BT_NIMBLE_MAX_CONNECTIONS;
+    if (connected_peers_.size() >= max_connections) return;
     // Sync with stack state to avoid redundant start/stop churn.
     is_advertising_ = is_adv_active();
     // Continue advertising even with connections for multi-host support
@@ -442,7 +469,7 @@ bool BleHidManager::forgetPeer(const NimBLEAddress& address) {
 }
 
 bool BleHidManager::startDirectedAdvertisingTo(const NimBLEAddress& address, uint32_t timeout_seconds) {
-    if (!initialized_ || !enabled_) return false;
+    if (!initialized_ || !enabled_ || !advertising_allowed_) return false;
 
     // Check if this peer is already connected
     std::string addr_str = address.toString();

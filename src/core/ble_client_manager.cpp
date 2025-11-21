@@ -7,6 +7,14 @@ BleClientManager& BleClientManager::getInstance() {
     return instance;
 }
 
+BleClientManager::~BleClientManager() {
+    // Clean up scan callbacks
+    if (scan_callbacks_) {
+        delete scan_callbacks_;
+        scan_callbacks_ = nullptr;
+    }
+}
+
 bool BleClientManager::init() {
     if (initialized_) {
         return true;
@@ -15,7 +23,11 @@ bool BleClientManager::init() {
     Logger::getInstance().info("[BleClient] Initializing BLE Client Manager");
 
     // NimBLE should already be initialized by BleHidManager
-    // We just need to set up scanning
+    // Create scan callbacks once (reused across all scans)
+    if (!scan_callbacks_) {
+        scan_callbacks_ = new BleClientScanCallbacks(*this);
+    }
+
     initialized_ = true;
 
     Logger::getInstance().info("[BleClient] Client Manager initialized");
@@ -42,8 +54,13 @@ bool BleClientManager::startScan(uint32_t duration_ms) {
         return false;
     }
 
-    // Set scan callbacks
-    pScan->setAdvertisedDeviceCallbacks(new BleClientScanCallbacks(*this));
+    // Set scan callbacks (reuse the same callback object)
+    if (scan_callbacks_) {
+        pScan->setAdvertisedDeviceCallbacks(scan_callbacks_);
+    } else {
+        Logger::getInstance().error("[BleClient] Scan callbacks not initialized");
+        return false;
+    }
 
     // Configure scan parameters
     pScan->setActiveScan(true);     // Active scan uses more power, but gets all data

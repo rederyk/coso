@@ -64,6 +64,7 @@ private:
     bool init(const std::string& device_name = "ESP32-S3 HID");
     void startAdvertising();
     void stopAdvertising();
+    void setAdvertisingAllowed(bool allowed);
     void setEnabled(bool enable);
     void setDeviceName(const std::string& name);
     void disconnectAll();
@@ -100,6 +101,7 @@ private:
     bool is_advertising_ = false;
     bool enabled_ = true;
     bool is_directed_advertising_ = false;
+    bool advertising_allowed_ = true;
     std::string device_name_ = "ESP32-S3 HID";
     std::vector<ConnectedPeer> connected_peers_;
     std::vector<ConnectedPeer> recent_disconnects_;  // Track recent disconnections

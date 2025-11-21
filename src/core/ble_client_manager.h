@@ -6,6 +6,7 @@
 #include <functional>
 
 class BleManager;  // Forward declaration
+class BleClientScanCallbacks;  // Forward declaration
 
 /**
  * @struct ScanResult
@@ -31,7 +32,7 @@ struct ScanResult {
 class BleClientManager {
 public:
     static BleClientManager& getInstance();
-    ~BleClientManager() = default;
+    ~BleClientManager();
 
     // Read-only status methods (thread-safe)
     bool isScanning() const { return is_scanning_; }
@@ -74,6 +75,9 @@ private:
 
     NimBLEClient* client_ = nullptr;
     NimBLEAddress connected_address_;
+
+    // Scan callbacks - reused across scans to avoid memory leaks
+    BleClientScanCallbacks* scan_callbacks_ = nullptr;
 
     // Scan settings
     static constexpr uint8_t MAX_SCAN_RESULTS = 20;

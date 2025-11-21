@@ -68,6 +68,17 @@ void BleManager::bleTask(void* pvParameters) {
     BleHidManager& ble_hid = BleHidManager::getInstance();
     BleClientManager& ble_client = BleClientManager::getInstance();
 
+    const SettingsSnapshot snapshot = SettingsManager::getInstance().getSnapshot();
+    const std::string device_name = snapshot.bleDeviceName.empty() ? "ESP32-S3 HID" : snapshot.bleDeviceName;
+
+    if (!ble_hid.init(device_name)) {
+        Logger::getInstance().error("[BleManager] Failed to initialize BLE HID stack");
+    } else {
+        ble_hid.setAdvertisingAllowed(snapshot.bleAdvertising);
+        ble_hid.setEnabled(snapshot.bleEnabled);
+        ble_hid.ensureAdvertising();
+    }
+
     // Initialize BLE Client Manager
     ble_client.init();
 
@@ -104,12 +115,13 @@ void BleManager::processCommand(const BleCommand& cmd) {
             break;
 
         case BleCommandType::START_ADVERTISING:
+            ble_hid.setAdvertisingAllowed(true);
             ble_hid.startAdvertising();
             Logger::getInstance().info("[BleManager] Advertising started");
             break;
 
         case BleCommandType::STOP_ADVERTISING:
-            ble_hid.stopAdvertising();
+            ble_hid.setAdvertisingAllowed(false);
             Logger::getInstance().info("[BleManager] Advertising stopped");
             break;
 
