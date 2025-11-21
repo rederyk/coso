@@ -9,6 +9,8 @@ namespace {
 lv_obj_t* create_card(lv_obj_t* parent, const char* title, lv_color_t bg_color) {
     lv_obj_t* card = lv_obj_create(parent);
     lv_obj_set_width(card, lv_pct(100));
+    lv_obj_set_height(card, LV_SIZE_CONTENT);
+    lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_style_bg_color(card, bg_color, 0);
     lv_obj_set_style_border_width(card, 0, 0);
     lv_obj_set_style_radius(card, 12, 0);
@@ -93,6 +95,7 @@ void WifiSettingsScreen::build(lv_obj_t* parent) {
     enable_card = lv_obj_create(content_container);
     lv_obj_set_width(enable_card, lv_pct(100));
     lv_obj_set_height(enable_card, LV_SIZE_CONTENT);
+    lv_obj_clear_flag(enable_card, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_style_bg_color(enable_card, lv_color_hex(0x1a2332), 0);
     lv_obj_set_style_border_width(enable_card, 0, 0);
     lv_obj_set_style_radius(enable_card, 12, 0);

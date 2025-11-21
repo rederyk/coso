@@ -29,6 +29,8 @@ lv_obj_t* create_card(lv_obj_t* parent, const char* title) {
     lv_obj_t* card = lv_obj_create(parent);
     lv_obj_remove_style_all(card);
     lv_obj_set_width(card, lv_pct(100));
+    lv_obj_set_height(card, LV_SIZE_CONTENT);
+    lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_style_bg_color(card, lv_color_hex(0x10182c), 0);
     lv_obj_set_style_bg_opa(card, LV_OPA_COVER, 0);
     lv_obj_set_style_radius(card, 14, 0);
@@ -119,6 +121,7 @@ void ThemeSettingsScreen::build(lv_obj_t* parent) {
     // Orientation
     orientation_card_container = create_card(content, "Orientamento UI");
     lv_obj_set_height(orientation_card_container, LV_SIZE_CONTENT);
+    lv_obj_clear_flag(orientation_card_container, LV_OBJ_FLAG_SCROLLABLE);
     orientation_switch = lv_switch_create(orientation_card_container);
     lv_obj_add_event_cb(orientation_switch, handleOrientation, LV_EVENT_VALUE_CHANGED, this);
     orientation_hint_label = lv_label_create(orientation_card_container);
@@ -128,6 +131,7 @@ void ThemeSettingsScreen::build(lv_obj_t* parent) {
     // Border radius
     border_card_container = create_card(content, "Raggio Bordi");
     lv_obj_set_height(border_card_container, LV_SIZE_CONTENT);
+    lv_obj_clear_flag(border_card_container, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_style_pad_all(border_card_container, 8, 0);
     lv_obj_set_style_pad_row(border_card_container, 4, 0);
     border_slider = lv_slider_create(border_card_container);
@@ -139,6 +143,7 @@ void ThemeSettingsScreen::build(lv_obj_t* parent) {
     // Dock icon radius
     dock_icon_card_container = create_card(content, "Raggio Icone Dock");
     lv_obj_set_height(dock_icon_card_container, LV_SIZE_CONTENT);
+    lv_obj_clear_flag(dock_icon_card_container, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_style_pad_all(dock_icon_card_container, 8, 0);
     lv_obj_set_style_pad_row(dock_icon_card_container, 4, 0);
     dock_icon_radius_slider = lv_slider_create(dock_icon_card_container);
@@ -281,6 +286,7 @@ void ThemeSettingsScreen::build(lv_obj_t* parent) {
     preview_card = lv_obj_create(content);
     lv_obj_remove_style_all(preview_card);
     lv_obj_set_width(preview_card, lv_pct(100));
+    lv_obj_set_height(preview_card, LV_SIZE_CONTENT);
     lv_obj_set_style_bg_color(preview_card, lv_color_hex(0x10182c), 0);
     lv_obj_set_style_bg_opa(preview_card, LV_OPA_COVER, 0);
     lv_obj_set_style_radius(preview_card, 18, 0);

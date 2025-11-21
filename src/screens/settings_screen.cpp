@@ -9,6 +9,8 @@ namespace {
 lv_obj_t* create_card(lv_obj_t* parent, const char* title, const char* subtitle = nullptr) {
     lv_obj_t* card = lv_obj_create(parent);
     lv_obj_set_width(card, lv_pct(100));
+    lv_obj_set_height(card, LV_SIZE_CONTENT);
+    lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_style_bg_color(card, lv_color_hex(0x0f3460), 0);
     lv_obj_set_style_border_width(card, 0, 0);
     lv_obj_set_style_radius(card, 12, 0);
@@ -80,6 +82,8 @@ void SettingsScreen::build(lv_obj_t* parent) {
     // Connectivity Settings - Compact version without title
     connectivity_card = lv_obj_create(content_container);
     lv_obj_set_width(connectivity_card, lv_pct(100));
+    lv_obj_set_height(connectivity_card, LV_SIZE_CONTENT);
+    lv_obj_clear_flag(connectivity_card, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_style_bg_color(connectivity_card, lv_color_hex(0x0f3460), 0);
     lv_obj_set_style_border_width(connectivity_card, 0, 0);
     lv_obj_set_style_radius(connectivity_card, 12, 0);

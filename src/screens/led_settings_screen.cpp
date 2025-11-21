@@ -12,6 +12,7 @@ lv_obj_t* create_card(lv_obj_t* parent, const char* title) {
     lv_obj_remove_style_all(card);
     lv_obj_set_width(card, lv_pct(100));
     lv_obj_set_height(card, LV_SIZE_CONTENT); // Fix: ensure card wraps content
+    lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_style_bg_color(card, lv_color_hex(0x10182c), 0);
     lv_obj_set_style_bg_opa(card, LV_OPA_COVER, 0);
     lv_obj_set_style_radius(card, 14, 0);
@@ -235,6 +236,7 @@ void LedSettingsScreen::build(lv_obj_t* parent) {
     lv_obj_remove_style_all(color_picker_card);
     lv_obj_set_width(color_picker_card, lv_pct(100));
     lv_obj_set_height(color_picker_card, LV_SIZE_CONTENT);  // Auto height based on picker size
+    lv_obj_clear_flag(color_picker_card, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_layout(color_picker_card, LV_LAYOUT_FLEX);
     lv_obj_set_flex_flow(color_picker_card, LV_FLEX_FLOW_COLUMN);  // Stack vertically
     lv_obj_set_flex_align(color_picker_card, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);  // Center horizontally
