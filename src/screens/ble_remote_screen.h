@@ -22,7 +22,45 @@ private:
         Tab,
         Copy,
         Paste,
-        SelectAll
+        SelectAll,
+        Ctrl,
+        Alt,
+        Super,
+        SuperSpace,
+        // Navigation & Editing Keys
+        Delete,
+        Home,
+        End,
+        PageUp,
+        PageDown,
+        Insert,
+        // Function Keys (most used)
+        F1,
+        F2,
+        F3,
+        F4,
+        F5,
+        F6,
+        F7,
+        F8,
+        F9,
+        F10,
+        F11,
+        F12,
+        // Arrow Keys
+        ArrowUp,
+        ArrowDown,
+        ArrowLeft,
+        ArrowRight,
+        // Special combinations for development
+        CtrlShiftC,  // Copy in terminal
+        CtrlShiftV,  // Paste in terminal
+        CtrlZ,       // Undo
+        CtrlY,       // Redo
+        CtrlF,       // Find
+        CtrlS,       // Save
+        AltTab,      // Switch windows
+        CtrlAltT     // Open terminal (Linux)
     };
 
     void applyTheme(const SettingsSnapshot& snapshot);

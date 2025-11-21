@@ -17,13 +17,54 @@ constexpr uint8_t MOUSE_BTN_LEFT = 1 << 0;
 constexpr uint8_t MOUSE_BTN_RIGHT = 1 << 1;
 constexpr uint8_t MOUSE_BTN_MIDDLE = 1 << 2;
 
+// HID Modifier Keys
 constexpr uint8_t MOD_CTRL = 0x01;
-constexpr uint8_t KEY_ESC = 0x29;
-constexpr uint8_t KEY_TAB = 0x2b;
-constexpr uint8_t KEY_ENTER = 0x28;
+constexpr uint8_t MOD_SHIFT = 0x02;
+constexpr uint8_t MOD_ALT = 0x04;
+constexpr uint8_t MOD_SUPER = 0x08;  // GUI/Windows/Command key
+
+// HID Letter Keys
 constexpr uint8_t KEY_A = 0x04;
-constexpr uint8_t KEY_C = KEY_A + 2; // 'c'
-constexpr uint8_t KEY_V = KEY_A + 21; // 'v'
+constexpr uint8_t KEY_C = 0x06;
+constexpr uint8_t KEY_F = 0x09;
+constexpr uint8_t KEY_S = 0x16;
+constexpr uint8_t KEY_T = 0x17;
+constexpr uint8_t KEY_V = 0x19;
+constexpr uint8_t KEY_Y = 0x1C;
+constexpr uint8_t KEY_Z = 0x1D;
+
+// HID Special Keys
+constexpr uint8_t KEY_ENTER = 0x28;
+constexpr uint8_t KEY_ESC = 0x29;
+constexpr uint8_t KEY_BACKSPACE = 0x2A;
+constexpr uint8_t KEY_TAB = 0x2B;
+constexpr uint8_t KEY_SPACE = 0x2C;
+
+// HID Navigation & Editing Keys
+constexpr uint8_t KEY_INSERT = 0x49;
+constexpr uint8_t KEY_HOME = 0x4A;
+constexpr uint8_t KEY_PAGEUP = 0x4B;
+constexpr uint8_t KEY_DELETE = 0x4C;
+constexpr uint8_t KEY_END = 0x4D;
+constexpr uint8_t KEY_PAGEDOWN = 0x4E;
+constexpr uint8_t KEY_RIGHT = 0x4F;
+constexpr uint8_t KEY_LEFT = 0x50;
+constexpr uint8_t KEY_DOWN = 0x51;
+constexpr uint8_t KEY_UP = 0x52;
+
+// HID Function Keys
+constexpr uint8_t KEY_F1 = 0x3A;
+constexpr uint8_t KEY_F2 = 0x3B;
+constexpr uint8_t KEY_F3 = 0x3C;
+constexpr uint8_t KEY_F4 = 0x3D;
+constexpr uint8_t KEY_F5 = 0x3E;
+constexpr uint8_t KEY_F6 = 0x3F;
+constexpr uint8_t KEY_F7 = 0x40;
+constexpr uint8_t KEY_F8 = 0x41;
+constexpr uint8_t KEY_F9 = 0x42;
+constexpr uint8_t KEY_F10 = 0x43;
+constexpr uint8_t KEY_F11 = 0x44;
+constexpr uint8_t KEY_F12 = 0x45;
 
 lv_obj_t* create_card(lv_obj_t* parent, const char* title) {
     lv_obj_t* card = lv_obj_create(parent);
@@ -66,13 +107,13 @@ lv_obj_t* create_pill(lv_obj_t* parent, const char* text) {
 
 lv_obj_t* create_chip_button(lv_obj_t* parent, const char* text, lv_event_cb_t cb, void* user_data) {
     lv_obj_t* btn = lv_btn_create(parent);
-    lv_obj_set_size(btn, LV_SIZE_CONTENT, 40);
-    lv_obj_set_style_radius(btn, 10, 0);
-    lv_obj_set_style_pad_all(btn, 8, 0);
+    lv_obj_set_size(btn, LV_SIZE_CONTENT, 32);  // Reduced from 40 to 32
+    lv_obj_set_style_radius(btn, 8, 0);         // Reduced from 10 to 8
+    lv_obj_set_style_pad_all(btn, 6, 0);        // Reduced from 8 to 6
     lv_obj_set_style_border_width(btn, 0, 0);
     lv_obj_set_layout(btn, LV_LAYOUT_FLEX);
     lv_obj_set_flex_flow(btn, LV_FLEX_FLOW_ROW);
-    lv_obj_set_style_pad_column(btn, 6, 0);
+    lv_obj_set_style_pad_column(btn, 4, 0);     // Reduced from 6 to 4
 
     lv_obj_t* lbl = lv_label_create(btn);
     lv_label_set_text(lbl, text);
@@ -265,11 +306,12 @@ void BleRemoteScreen::build(lv_obj_t* parent) {
     lv_obj_t* shortcuts_row = lv_obj_create(shortcuts_card);
     lv_obj_remove_style_all(shortcuts_row);
     lv_obj_set_width(shortcuts_row, lv_pct(100));
+    lv_obj_set_height(shortcuts_row, LV_SIZE_CONTENT); // Allow content to expand
     lv_obj_set_layout(shortcuts_row, LV_LAYOUT_FLEX);
     lv_obj_set_flex_flow(shortcuts_row, LV_FLEX_FLOW_ROW_WRAP);
-    lv_obj_set_flex_align(shortcuts_row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_row(shortcuts_row, 6, 0);
-    lv_obj_set_style_pad_column(shortcuts_row, 6, 0);
+    lv_obj_set_flex_align(shortcuts_row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_row(shortcuts_row, 4, 0);
+    lv_obj_set_style_pad_column(shortcuts_row, 4, 0);
 
     auto add_shortcut = [&](const char* label, Shortcut s) {
         lv_obj_t* btn = create_chip_button(shortcuts_row, label, shortcutButtonCb, this);
@@ -277,12 +319,57 @@ void BleRemoteScreen::build(lv_obj_t* parent) {
         control_buttons.push_back(btn);
     };
 
+    // Basic keys
     add_shortcut("Esc", Shortcut::Esc);
-    add_shortcut("Invio", Shortcut::Enter);
     add_shortcut("Tab", Shortcut::Tab);
+    add_shortcut("Enter", Shortcut::Enter);
+    add_shortcut("Del", Shortcut::Delete);
+    add_shortcut("Ins", Shortcut::Insert);
+
+    // Modifier keys
+    add_shortcut("Ctrl", Shortcut::Ctrl);
+    add_shortcut("Alt", Shortcut::Alt);
+    add_shortcut("Super", Shortcut::Super);
+
+    // Navigation
+    add_shortcut(LV_SYMBOL_UP, Shortcut::ArrowUp);
+    add_shortcut(LV_SYMBOL_DOWN, Shortcut::ArrowDown);
+    add_shortcut(LV_SYMBOL_LEFT, Shortcut::ArrowLeft);
+    add_shortcut(LV_SYMBOL_RIGHT, Shortcut::ArrowRight);
+    add_shortcut("Home", Shortcut::Home);
+    add_shortcut("End", Shortcut::End);
+    add_shortcut("PgUp", Shortcut::PageUp);
+    add_shortcut("PgDn", Shortcut::PageDown);
+
+    // Function keys (F1-F6 most commonly used)
+    add_shortcut("F1", Shortcut::F1);
+    add_shortcut("F2", Shortcut::F2);
+    add_shortcut("F3", Shortcut::F3);
+    add_shortcut("F4", Shortcut::F4);
+    add_shortcut("F5", Shortcut::F5);
+    add_shortcut("F6", Shortcut::F6);
+    add_shortcut("F7", Shortcut::F7);
+    add_shortcut("F8", Shortcut::F8);
+    add_shortcut("F9", Shortcut::F9);
+    add_shortcut("F10", Shortcut::F10);
+    add_shortcut("F11", Shortcut::F11);
+    add_shortcut("F12", Shortcut::F12);
+
+    // Common combinations
     add_shortcut("Ctrl+C", Shortcut::Copy);
     add_shortcut("Ctrl+V", Shortcut::Paste);
     add_shortcut("Ctrl+A", Shortcut::SelectAll);
+    add_shortcut("Ctrl+Z", Shortcut::CtrlZ);
+    add_shortcut("Ctrl+Y", Shortcut::CtrlY);
+    add_shortcut("Ctrl+F", Shortcut::CtrlF);
+    add_shortcut("Ctrl+S", Shortcut::CtrlS);
+
+    // Terminal & System shortcuts
+    add_shortcut("C+S+C", Shortcut::CtrlShiftC);
+    add_shortcut("C+S+V", Shortcut::CtrlShiftV);
+    add_shortcut("Alt+Tab", Shortcut::AltTab);
+    add_shortcut(LV_SYMBOL_KEYBOARD " Super+Space", Shortcut::SuperSpace);
+    add_shortcut(LV_SYMBOL_SETTINGS " C+A+T", Shortcut::CtrlAltT);
 
     // Track buttons for enabling/disabling
     control_buttons.push_back(left_btn);
@@ -568,19 +655,64 @@ void BleRemoteScreen::dispatchShortcut(Shortcut s) {
     uint8_t modifier = 0;
 
     switch (s) {
+        // Basic keys
         case Shortcut::Esc: name = "Esc"; keycode = KEY_ESC; break;
         case Shortcut::Enter: name = "Enter"; keycode = KEY_ENTER; break;
         case Shortcut::Tab: name = "Tab"; keycode = KEY_TAB; break;
+        case Shortcut::Delete: name = "Delete"; keycode = KEY_DELETE; break;
+        case Shortcut::Insert: name = "Insert"; keycode = KEY_INSERT; break;
+
+        // Modifier keys
+        case Shortcut::Ctrl: name = "Ctrl"; modifier = MOD_CTRL; break;
+        case Shortcut::Alt: name = "Alt"; modifier = MOD_ALT; break;
+        case Shortcut::Super: name = "Super"; modifier = MOD_SUPER; break;
+
+        // Navigation keys
+        case Shortcut::Home: name = "Home"; keycode = KEY_HOME; break;
+        case Shortcut::End: name = "End"; keycode = KEY_END; break;
+        case Shortcut::PageUp: name = "Page Up"; keycode = KEY_PAGEUP; break;
+        case Shortcut::PageDown: name = "Page Down"; keycode = KEY_PAGEDOWN; break;
+        case Shortcut::ArrowUp: name = "Arrow Up"; keycode = KEY_UP; break;
+        case Shortcut::ArrowDown: name = "Arrow Down"; keycode = KEY_DOWN; break;
+        case Shortcut::ArrowLeft: name = "Arrow Left"; keycode = KEY_LEFT; break;
+        case Shortcut::ArrowRight: name = "Arrow Right"; keycode = KEY_RIGHT; break;
+
+        // Function keys
+        case Shortcut::F1: name = "F1"; keycode = KEY_F1; break;
+        case Shortcut::F2: name = "F2"; keycode = KEY_F2; break;
+        case Shortcut::F3: name = "F3"; keycode = KEY_F3; break;
+        case Shortcut::F4: name = "F4"; keycode = KEY_F4; break;
+        case Shortcut::F5: name = "F5"; keycode = KEY_F5; break;
+        case Shortcut::F6: name = "F6"; keycode = KEY_F6; break;
+        case Shortcut::F7: name = "F7"; keycode = KEY_F7; break;
+        case Shortcut::F8: name = "F8"; keycode = KEY_F8; break;
+        case Shortcut::F9: name = "F9"; keycode = KEY_F9; break;
+        case Shortcut::F10: name = "F10"; keycode = KEY_F10; break;
+        case Shortcut::F11: name = "F11"; keycode = KEY_F11; break;
+        case Shortcut::F12: name = "F12"; keycode = KEY_F12; break;
+
+        // Common combinations
         case Shortcut::Copy: name = "Ctrl+C"; keycode = KEY_C; modifier = MOD_CTRL; break;
         case Shortcut::Paste: name = "Ctrl+V"; keycode = KEY_V; modifier = MOD_CTRL; break;
         case Shortcut::SelectAll: name = "Ctrl+A"; keycode = KEY_A; modifier = MOD_CTRL; break;
+        case Shortcut::CtrlZ: name = "Ctrl+Z"; keycode = KEY_Z; modifier = MOD_CTRL; break;
+        case Shortcut::CtrlY: name = "Ctrl+Y"; keycode = KEY_Y; modifier = MOD_CTRL; break;
+        case Shortcut::CtrlF: name = "Ctrl+F"; keycode = KEY_F; modifier = MOD_CTRL; break;
+        case Shortcut::CtrlS: name = "Ctrl+S"; keycode = KEY_S; modifier = MOD_CTRL; break;
+
+        // Special combinations
+        case Shortcut::SuperSpace: name = "Super+Space"; keycode = KEY_SPACE; modifier = MOD_SUPER; break;
+        case Shortcut::CtrlShiftC: name = "Ctrl+Shift+C"; keycode = KEY_C; modifier = MOD_CTRL | MOD_SHIFT; break;
+        case Shortcut::CtrlShiftV: name = "Ctrl+Shift+V"; keycode = KEY_V; modifier = MOD_CTRL | MOD_SHIFT; break;
+        case Shortcut::AltTab: name = "Alt+Tab"; keycode = KEY_TAB; modifier = MOD_ALT; break;
+        case Shortcut::CtrlAltT: name = "Ctrl+Alt+T"; keycode = KEY_T; modifier = MOD_CTRL | MOD_ALT; break;
     }
 
     char buf[64];
     snprintf(buf, sizeof(buf), "Scorciatoia: %s", name);
     refreshHint(buf);
 
-    if (!keycode || !canSendCommands()) {
+    if (!canSendCommands()) {
         return;
     }
 
