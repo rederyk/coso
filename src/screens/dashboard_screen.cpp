@@ -1,11 +1,10 @@
 #include "screens/dashboard_screen.h"
 #include "core/wifi_manager.h"
-#include "core/ble_manager.h"
+#include "core/ble_hid_manager.h"
 #include "drivers/sd_card_driver.h"
 #include "ui/ui_symbols.h"
 #include <lvgl.h>
 #include <WiFi.h>
-#include <BLEDevice.h>
 
 DashboardScreen::~DashboardScreen() {
     if (status_timer) {
@@ -117,7 +116,8 @@ void DashboardScreen::updateStatusIcons() {
     lv_obj_set_style_opa(wifi_status_label, wifi_connected ? LV_OPA_COVER : LV_OPA_50, 0);
 
     // BLE status - check if BLE is initialized
-    bool ble_active = BLEDevice::getInitialized();
+    BleHidManager& ble = BleHidManager::getInstance();
+    bool ble_active = ble.isEnabled() && ble.isInitialized();
     lv_obj_set_style_text_color(ble_status_label, ble_active ? accent : inactive_color, 0);
     lv_obj_set_style_opa(ble_status_label, ble_active ? LV_OPA_COVER : LV_OPA_50, 0);
 

@@ -3,6 +3,7 @@
 #include "core/screen.h"
 #include "core/settings_manager.h"
 #include <lvgl.h>
+#include <string>
 
 /**
  * @brief BLE configuration screen with advanced controls
@@ -71,4 +72,5 @@ private:
     bool is_advertising = false;
     lv_timer_t* status_timer = nullptr;
     uint32_t settings_listener_id = 0;
+    std::string last_device_name_;
 };

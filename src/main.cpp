@@ -17,7 +17,7 @@
 #include "core/keyboard_manager.h"
 #include "core/settings_manager.h"
 #include "core/wifi_manager.h"
-#include "core/ble_manager.h"
+#include "core/ble_hid_manager.h"
 #include "drivers/touch_driver.h"
 #include "drivers/sd_card_driver.h"
 #include "drivers/rgb_led_driver.h"
@@ -45,7 +45,6 @@ static bool draw_buf_in_psram = false;
 static constexpr const char* APP_VERSION = "0.5.0";
 
 static WifiManager wifi_manager;
-static BleManager ble_manager;
 
 static void logSystemBanner();
 static void logMemoryStats(const char* stage);
@@ -204,9 +203,11 @@ void setup() {
 
     // Initialize and start WiFi and BLE managers
     wifi_manager.init();
-    ble_manager.init();
     wifi_manager.start();
-    ble_manager.start();
+
+    BleHidManager& ble_hid = BleHidManager::getInstance();
+    ble_hid.init("ESP32-S3 Touch HID");
+    ble_hid.startAdvertising();
 
     if (psramFound()) {
         logger.info("✓ PSRAM detected and enabled!");
