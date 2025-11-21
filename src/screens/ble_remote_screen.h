@@ -46,10 +46,14 @@ private:
     static void keyboardToggleCb(lv_event_t* e);
     static void sendTextCb(lv_event_t* e);
     static void targetButtonCb(lv_event_t* e);
+    static void fullscreen_kb_cb(lv_event_t* e);
+    static void fullscreen_mouse_cb(lv_event_t* e);
 
     // UI nodes
     lv_obj_t* header_container = nullptr;
     lv_obj_t* header_label = nullptr;
+    lv_obj_t* fullscreen_kb_btn = nullptr;
+    lv_obj_t* fullscreen_mouse_btn = nullptr;
     lv_obj_t* status_chip = nullptr;
     lv_obj_t* status_label = nullptr;
     lv_obj_t* status_body_label = nullptr;

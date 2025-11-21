@@ -1,8 +1,11 @@
 #include "screens/ble_remote_screen.h"
 
+#include "core/app_manager.h"
 #include "core/ble_hid_manager.h"
 #include "core/keyboard_manager.h"
+#include "screens/ble_keyboard_screen.h"
 #include "screens/ble_manager.h"
+#include "screens/ble_mouse_screen.h"
 #include "ui/ui_symbols.h"
 #include "utils/logger.h"
 #include <cstdint>
@@ -115,12 +118,31 @@ void BleRemoteScreen::build(lv_obj_t* parent) {
     lv_obj_set_height(header_container, LV_SIZE_CONTENT);
     lv_obj_set_layout(header_container, LV_LAYOUT_FLEX);
     lv_obj_set_flex_flow(header_container, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(header_container, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_flex_align(header_container, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_pad_all(header_container, 4, 0);
+    lv_obj_set_style_pad_column(header_container, 8, 0);
 
     header_label = lv_label_create(header_container);
     lv_label_set_text(header_label, LV_SYMBOL_BLUETOOTH " BLE Remote");
     lv_obj_set_style_text_font(header_label, &lv_font_montserrat_20, 0);
+
+    lv_obj_t* spacer = lv_obj_create(header_container);
+    lv_obj_remove_style_all(spacer);
+    lv_obj_set_flex_grow(spacer, 1);
+
+    fullscreen_kb_btn = lv_btn_create(header_container);
+    lv_obj_set_size(fullscreen_kb_btn, 40, 40);
+    lv_obj_add_event_cb(fullscreen_kb_btn, fullscreen_kb_cb, LV_EVENT_CLICKED, this);
+    lv_obj_t* kb_label = lv_label_create(fullscreen_kb_btn);
+    lv_label_set_text(kb_label, LV_SYMBOL_KEYBOARD);
+    lv_obj_center(kb_label);
+
+    fullscreen_mouse_btn = lv_btn_create(header_container);
+    lv_obj_set_size(fullscreen_mouse_btn, 40, 40);
+    lv_obj_add_event_cb(fullscreen_mouse_btn, fullscreen_mouse_cb, LV_EVENT_CLICKED, this);
+    lv_obj_t* mouse_label = lv_label_create(fullscreen_mouse_btn);
+    lv_label_set_text(mouse_label, LV_SYMBOL_DRIVE); // Using drive as a mouse placeholder
+    lv_obj_center(mouse_label);
 
     status_chip = create_pill(header_container, "Stato");
     status_label = lv_obj_get_child(status_chip, 0);
@@ -687,4 +709,12 @@ void BleRemoteScreen::targetButtonCb(lv_event_t* e) {
         snprintf(buf, sizeof(buf), "Target: %s", short_mac.c_str());
         screen->refreshHint(buf);
     }
+}
+
+void BleRemoteScreen::fullscreen_kb_cb(lv_event_t* e) {
+    AppManager::getInstance()->launchApp("ble_keyboard");
+}
+
+void BleRemoteScreen::fullscreen_mouse_cb(lv_event_t* e) {
+    AppManager::getInstance()->launchApp("ble_mouse");
 }

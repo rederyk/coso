@@ -33,6 +33,8 @@
 #include "screens/theme_settings_screen.h"
 #include "screens/sd_explorer_screen.h"
 #include "screens/ble_remote_screen.h"
+#include "screens/ble_keyboard_screen.h"
+#include "screens/ble_mouse_screen.h"
 #include "ui/ui_symbols.h"
 #include "utils/logger.h"
 #include "utils/lvgl_mutex.h"
@@ -317,6 +319,8 @@ void setup() {
     static SystemLogScreen system_log;
     static SdExplorerScreen sd_explorer;
     static BleRemoteScreen ble_remote;
+    static BleKeyboardScreen ble_keyboard_screen;
+    static BleMouseScreen ble_mouse_screen;
 
     // Registra le app nel dock
     app_manager->registerApp("dashboard", UI_SYMBOL_HOME, "Home", &dashboard);
@@ -332,6 +336,8 @@ void setup() {
     app_manager->registerHiddenApp("BleSettings", &ble_settings);
     app_manager->registerHiddenApp("LedSettings", &led_settings);
     app_manager->registerHiddenApp("Developer", &developer);
+    app_manager->registerHiddenApp("ble_keyboard", &ble_keyboard_screen);
+    app_manager->registerHiddenApp("ble_mouse", &ble_mouse_screen);
 
     // Lancia dashboard come app iniziale
     app_manager->launchApp("dashboard");
