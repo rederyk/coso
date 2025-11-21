@@ -3,6 +3,7 @@
 #include <esp_chip_info.h>
 #include "ui/ui_symbols.h"
 #include "utils/logger.h"
+#include "utils/color_utils.h"
 #include "core/settings_manager.h"
 
 void InfoScreen::build(lv_obj_t* parent) {
@@ -104,22 +105,28 @@ void InfoScreen::build(lv_obj_t* parent) {
     lv_obj_set_width(reset_btn, lv_pct(100));
     lv_obj_set_height(reset_btn, 45);
     lv_obj_add_event_cb(reset_btn, handleResetButton, LV_EVENT_CLICKED, this);
-    lv_obj_set_style_bg_color(reset_btn, lv_color_hex(0xff6600), 0);
+    lv_color_t reset_btn_color = lv_color_hex(0xff6600);
+    lv_obj_set_style_bg_color(reset_btn, reset_btn_color, 0);
     lv_obj_t* reset_btn_label = lv_label_create(reset_btn);
     lv_label_set_text(reset_btn_label, LV_SYMBOL_REFRESH " Reset Impostazioni");
     lv_obj_center(reset_btn_label);
     lv_obj_set_style_text_font(reset_btn_label, &lv_font_montserrat_14, 0);
+    // Inverte automaticamente il colore del testo
+    lv_obj_set_style_text_color(reset_btn_label, ColorUtils::invertColor(reset_btn_color), 0);
 
     // Reboot button
     lv_obj_t* reboot_btn = lv_btn_create(controls_container);
     lv_obj_set_width(reboot_btn, lv_pct(100));
     lv_obj_set_height(reboot_btn, 45);
     lv_obj_add_event_cb(reboot_btn, handleRebootButton, LV_EVENT_CLICKED, this);
-    lv_obj_set_style_bg_color(reboot_btn, lv_color_hex(0xff0000), 0);
+    lv_color_t reboot_btn_color = lv_color_hex(0xff0000);
+    lv_obj_set_style_bg_color(reboot_btn, reboot_btn_color, 0);
     lv_obj_t* reboot_btn_label = lv_label_create(reboot_btn);
     lv_label_set_text(reboot_btn_label, LV_SYMBOL_POWER " Riavvia Sistema");
     lv_obj_center(reboot_btn_label);
     lv_obj_set_style_text_font(reboot_btn_label, &lv_font_montserrat_14, 0);
+    // Inverte automaticamente il colore del testo
+    lv_obj_set_style_text_color(reboot_btn_label, ColorUtils::invertColor(reboot_btn_color), 0);
 
     // Hint
     lv_obj_t* hint = lv_label_create(root);

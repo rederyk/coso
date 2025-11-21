@@ -2,16 +2,17 @@
 #include <Arduino.h>
 #include "ui/ui_symbols.h"
 #include "utils/logger.h"
+#include "utils/color_utils.h"
 #include "core/app_manager.h"
 #include "drivers/rgb_led_driver.h"
 
 namespace {
-lv_obj_t* create_card(lv_obj_t* parent, const char* title, const char* subtitle = nullptr) {
+lv_obj_t* create_card(lv_obj_t* parent, const char* title, const char* subtitle = nullptr, lv_color_t bg_color = lv_color_hex(0x0f3460)) {
     lv_obj_t* card = lv_obj_create(parent);
     lv_obj_set_width(card, lv_pct(100));
     lv_obj_set_height(card, LV_SIZE_CONTENT);
     lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_style_bg_color(card, lv_color_hex(0x0f3460), 0);
+    lv_obj_set_style_bg_color(card, bg_color, 0);
     lv_obj_set_style_border_width(card, 0, 0);
     lv_obj_set_style_radius(card, 12, 0);
     lv_obj_set_style_pad_all(card, 12, 0);
@@ -19,16 +20,20 @@ lv_obj_t* create_card(lv_obj_t* parent, const char* title, const char* subtitle 
     lv_obj_set_flex_flow(card, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_style_pad_row(card, 8, 0);
 
+    // Inverte automaticamente il colore del testo in base allo sfondo
+    lv_color_t text_color = ColorUtils::invertColor(bg_color);
+    lv_color_t subtitle_color = ColorUtils::getMutedTextColor(bg_color);
+
     lv_obj_t* title_lbl = lv_label_create(card);
     lv_label_set_text(title_lbl, title);
     lv_obj_set_style_text_font(title_lbl, &lv_font_montserrat_20, 0);
-    lv_obj_set_style_text_color(title_lbl, lv_color_hex(0xf0f0f0), 0);
+    lv_obj_set_style_text_color(title_lbl, text_color, 0);
 
     if (subtitle) {
         lv_obj_t* subtitle_lbl = lv_label_create(card);
         lv_label_set_text(subtitle_lbl, subtitle);
         lv_obj_set_style_text_font(subtitle_lbl, &lv_font_montserrat_14, 0);
-        lv_obj_set_style_text_color(subtitle_lbl, lv_color_hex(0xa0a0a0), 0);
+        lv_obj_set_style_text_color(subtitle_lbl, subtitle_color, 0);
     }
 
     return card;
@@ -254,6 +259,30 @@ void SettingsScreen::styleCard(lv_obj_t* card, bool allow_half_width, const Sett
     lv_obj_set_style_bg_color(card, card_bg, 0);
     lv_obj_set_style_radius(card, snapshot.borderRadius, 0);
     lv_obj_set_style_border_width(card, 0, 0);
+
+    // Inverte automaticamente il colore del testo in base al colore della card
+    lv_color_t text_color = ColorUtils::invertColor(card_bg);
+    lv_color_t subtitle_color = ColorUtils::getMutedTextColor(card_bg);
+
+    // Aggiorna tutti i label figli della card
+    uint32_t child_count = lv_obj_get_child_cnt(card);
+    for (uint32_t i = 0; i < child_count; i++) {
+        lv_obj_t* child = lv_obj_get_child(card, i);
+        if (child && lv_obj_check_type(child, &lv_label_class)) {
+            // Usa il font per determinare se è un titolo o un sottotitolo
+            const lv_font_t* font = lv_obj_get_style_text_font(child, 0);
+            if (font == &lv_font_montserrat_20) {
+                // Titolo principale
+                lv_obj_set_style_text_color(child, text_color, 0);
+            } else if (font == &lv_font_montserrat_14) {
+                // Sottotitolo
+                lv_obj_set_style_text_color(child, subtitle_color, 0);
+            } else {
+                // Default: colore standard
+                lv_obj_set_style_text_color(child, text_color, 0);
+            }
+        }
+    }
 
     if (snapshot.landscapeLayout && allow_half_width) {
         lv_obj_set_width(card, lv_pct(48));

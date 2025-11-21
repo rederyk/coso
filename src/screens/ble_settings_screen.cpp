@@ -5,6 +5,7 @@
 #include "core/keyboard_manager.h"
 #include "ui/ui_symbols.h"
 #include "utils/logger.h"
+#include "utils/color_utils.h"
 
 namespace {
 lv_obj_t* create_card(lv_obj_t* parent, const char* title, lv_color_t bg_color) {
@@ -24,7 +25,9 @@ lv_obj_t* create_card(lv_obj_t* parent, const char* title, lv_color_t bg_color) 
         lv_obj_t* title_lbl = lv_label_create(card);
         lv_label_set_text(title_lbl, title);
         lv_obj_set_style_text_font(title_lbl, &lv_font_montserrat_14, 0);
-        lv_obj_set_style_text_color(title_lbl, lv_color_hex(0xf0f0f0), 0);
+        // Inverte automaticamente il colore del testo in base allo sfondo della card
+        lv_color_t text_color = ColorUtils::invertColor(bg_color);
+        lv_obj_set_style_text_color(title_lbl, text_color, 0);
     }
 
     return card;
@@ -106,6 +109,9 @@ void BleSettingsScreen::build(lv_obj_t* parent) {
     enable_label = lv_label_create(enable_row);
     lv_label_set_text(enable_label, "Abilita");
     lv_obj_set_style_text_font(enable_label, &lv_font_montserrat_14, 0);
+    // Inverte automaticamente il colore del testo in base allo sfondo della card
+    lv_color_t card_text_color = ColorUtils::invertColor(lv_color_hex(0x1a2332));
+    lv_obj_set_style_text_color(enable_label, card_text_color, 0);
 
     enable_switch = lv_switch_create(enable_row);
     lv_obj_add_event_cb(enable_switch, handleEnableToggle, LV_EVENT_VALUE_CHANGED, this);
@@ -122,10 +128,11 @@ void BleSettingsScreen::build(lv_obj_t* parent) {
     status_label = lv_label_create(status_card);
     lv_obj_set_style_text_font(status_label, &lv_font_montserrat_14, 0);
     lv_label_set_text(status_label, "Pronto");
+    lv_obj_set_style_text_color(status_label, card_text_color, 0);
 
     clients_label = lv_label_create(status_card);
     lv_obj_set_style_text_font(clients_label, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(clients_label, lv_color_hex(0xa0a0a0), 0);
+    lv_obj_set_style_text_color(clients_label, ColorUtils::getMutedTextColor(lv_color_hex(0x1a2332)), 0);
     lv_label_set_text(clients_label, "Host: 0");
 
     // Configuration Card
@@ -134,6 +141,7 @@ void BleSettingsScreen::build(lv_obj_t* parent) {
     lv_obj_t* name_label = lv_label_create(config_card);
     lv_label_set_text(name_label, "Nome:");
     lv_obj_set_style_text_font(name_label, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(name_label, card_text_color, 0);
 
     device_name_input = lv_textarea_create(config_card);
     lv_textarea_set_one_line(device_name_input, true);
@@ -165,6 +173,7 @@ void BleSettingsScreen::build(lv_obj_t* parent) {
     lv_obj_t* adv_label = lv_label_create(adv_row);
     lv_label_set_text(adv_label, "Visibile");
     lv_obj_set_style_text_font(adv_label, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(adv_label, card_text_color, 0);
 
     advertising_switch = lv_switch_create(adv_row);
     lv_obj_add_event_cb(advertising_switch, handleAdvertisingToggle, LV_EVENT_VALUE_CHANGED, this);
@@ -203,6 +212,7 @@ void BleSettingsScreen::build(lv_obj_t* parent) {
     lv_label_set_text(disconnect_label, "Disconn");
     lv_obj_set_style_text_font(disconnect_label, &lv_font_montserrat_14, 0);
     lv_obj_center(disconnect_label);
+    // Il colore del testo del bottone sarà applicato in applyThemeStyles
 
     // Apply theme
     applySnapshot(snapshot);
@@ -252,6 +262,13 @@ void BleSettingsScreen::applyThemeStyles(const SettingsSnapshot& snapshot) {
     }
     if (back_btn) {
         lv_obj_set_style_bg_color(back_btn, accent, 0);
+        // Applica colore automatico al testo del bottone back
+        ColorUtils::applyAutoButtonTextColor(back_btn);
+    }
+    if (disconnect_btn) {
+        lv_obj_set_style_bg_color(disconnect_btn, accent, 0);
+        // Applica colore automatico al testo del bottone
+        ColorUtils::applyAutoButtonTextColor(disconnect_btn);
     }
 }
 
@@ -304,6 +321,8 @@ void BleSettingsScreen::refreshBondedPeers() {
         lv_label_set_text(connect_label, "Conn");
         lv_obj_set_style_text_font(connect_label, &lv_font_montserrat_14, 0);
         lv_obj_center(connect_label);
+        // Applica colore automatico del testo
+        ColorUtils::applyAutoButtonTextColor(connect_btn);
         if (peer.isConnected) {
             lv_obj_add_state(connect_btn, LV_STATE_DISABLED);
         }
@@ -316,6 +335,8 @@ void BleSettingsScreen::refreshBondedPeers() {
         lv_label_set_text(forget_label, "Diment");
         lv_obj_set_style_text_font(forget_label, &lv_font_montserrat_14, 0);
         lv_obj_center(forget_label);
+        // Applica colore automatico del testo
+        ColorUtils::applyAutoButtonTextColor(forget_btn);
         if (peer.isConnected) {
             lv_obj_add_state(forget_btn, LV_STATE_DISABLED);
         }

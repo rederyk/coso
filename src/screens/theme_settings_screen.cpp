@@ -3,6 +3,7 @@
 #include <Arduino.h>
 #include "ui/ui_symbols.h"
 #include "utils/logger.h"
+#include "utils/color_utils.h"
 
 namespace {
 lv_color_t toLvColor(uint32_t hex) {
@@ -25,13 +26,13 @@ uint32_t toHex(lv_color_t color) {
 
 constexpr uint8_t DOCK_ICON_RADIUS_MAX = 24;
 
-lv_obj_t* create_card(lv_obj_t* parent, const char* title) {
+lv_obj_t* create_card(lv_obj_t* parent, const char* title, lv_color_t bg_color = lv_color_hex(0x10182c)) {
     lv_obj_t* card = lv_obj_create(parent);
     lv_obj_remove_style_all(card);
     lv_obj_set_width(card, lv_pct(100));
     lv_obj_set_height(card, LV_SIZE_CONTENT);
     lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_style_bg_color(card, lv_color_hex(0x10182c), 0);
+    lv_obj_set_style_bg_color(card, bg_color, 0);
     lv_obj_set_style_bg_opa(card, LV_OPA_COVER, 0);
     lv_obj_set_style_radius(card, 14, 0);
     lv_obj_set_style_border_width(card, 0, 0);
@@ -48,7 +49,9 @@ lv_obj_t* create_card(lv_obj_t* parent, const char* title) {
     lv_obj_t* header = lv_label_create(card);
     lv_label_set_text(header, title);
     lv_obj_set_style_text_font(header, &lv_font_montserrat_16, 0);
-    lv_obj_set_style_text_color(header, lv_color_hex(0xf0f0f0), 0);
+    // Inverte automaticamente il colore del testo in base allo sfondo della card
+    lv_color_t text_color = ColorUtils::invertColor(bg_color);
+    lv_obj_set_style_text_color(header, text_color, 0);
 
     return card;
 }
@@ -243,10 +246,7 @@ void ThemeSettingsScreen::build(lv_obj_t* parent) {
 
         lv_obj_t* lbl = lv_label_create(btn);
         lv_label_set_text(lbl, desc.label);
-        lv_obj_set_style_text_color(lbl, lv_color_hex(0xffffff), 0);
         lv_obj_center(lbl);
-
-        lv_obj_set_style_text_color(lbl, lv_color_hex(0xffffff), 0);
 
         TargetButton target_button;
         target_button.button = btn;
@@ -434,7 +434,19 @@ void ThemeSettingsScreen::applyLiveTheme(const SettingsSnapshot& snapshot) {
         lv_obj_set_style_bg_color(card_obj, card, 0);
         lv_obj_set_style_bg_opa(card_obj, LV_OPA_COVER, 0);
         lv_obj_set_style_radius(card_obj, snapshot.borderRadius, 0);
-        lv_obj_set_style_text_color(card_obj, accent_muted, 0);
+
+        // Inverte automaticamente il colore del testo in base al colore della card
+        lv_color_t text_color = ColorUtils::invertColor(card);
+        lv_obj_set_style_text_color(card_obj, text_color, 0);
+
+        // Aggiorna anche i label figli della card per usare il colore automatico
+        uint32_t child_count = lv_obj_get_child_cnt(card_obj);
+        for (uint32_t i = 0; i < child_count; i++) {
+            lv_obj_t* child = lv_obj_get_child(card_obj, i);
+            if (child && lv_obj_check_type(child, &lv_label_class)) {
+                lv_obj_set_style_text_color(child, text_color, 0);
+            }
+        }
     };
 
     style_card(orientation_card_container);
@@ -517,10 +529,30 @@ void ThemeSettingsScreen::updatePreview(const SettingsSnapshot& snapshot) {
     if (preview_card_demo) {
         lv_obj_set_style_bg_color(preview_card_demo, card, 0);
         lv_obj_set_style_radius(preview_card_demo, snapshot.borderRadius, 0);
+
+        // Aggiorna colore del testo "Card" invertendo il colore della card
+        uint32_t child_count = lv_obj_get_child_cnt(preview_card_demo);
+        lv_color_t card_text_color = ColorUtils::invertColor(card);
+        for (uint32_t i = 0; i < child_count; i++) {
+            lv_obj_t* child = lv_obj_get_child(preview_card_demo, i);
+            if (child && lv_obj_check_type(child, &lv_label_class)) {
+                lv_obj_set_style_text_color(child, card_text_color, 0);
+            }
+        }
     }
     if (preview_dock_demo) {
         lv_obj_set_style_bg_color(preview_dock_demo, dock, 0);
         lv_obj_set_style_radius(preview_dock_demo, snapshot.borderRadius, 0);
+
+        // Aggiorna colore del testo "Dock" invertendo il colore del dock
+        uint32_t child_count = lv_obj_get_child_cnt(preview_dock_demo);
+        lv_color_t dock_text_color = ColorUtils::invertColor(dock);
+        for (uint32_t i = 0; i < child_count; i++) {
+            lv_obj_t* child = lv_obj_get_child(preview_dock_demo, i);
+            if (child && lv_obj_check_type(child, &lv_label_class)) {
+                lv_obj_set_style_text_color(child, dock_text_color, 0);
+            }
+        }
     }
 }
 
@@ -547,13 +579,16 @@ void ThemeSettingsScreen::populateQuickPalettes() {
 
         lv_obj_t* btn = lv_btn_create(quick_palette_container);
         lv_obj_set_size(btn, 90, 36);
-        lv_obj_set_style_bg_color(btn, toLvColor(palette->primary), 0);
+        lv_color_t btn_color = toLvColor(palette->primary);
+        lv_obj_set_style_bg_color(btn, btn_color, 0);
         lv_obj_set_style_radius(btn, 10, 0);
         lv_obj_add_event_cb(btn, handlePaletteButton, LV_EVENT_CLICKED, palette);
 
         lv_obj_t* lbl = lv_label_create(btn);
         lv_label_set_text(lbl, palette->name.c_str());
-        lv_obj_set_style_text_color(lbl, lv_color_hex(0xffffff), 0);
+        // Inverte automaticamente il colore del testo in base al colore del bottone
+        lv_color_t text_color = ColorUtils::invertColor(btn_color);
+        lv_obj_set_style_text_color(lbl, text_color, 0);
         lv_obj_center(lbl);
     }
 }
@@ -601,6 +636,18 @@ void ThemeSettingsScreen::updateTargetButtonColors(const SettingsSnapshot& snaps
         lv_color_t color = toLvColor(hex);
         lv_obj_set_style_bg_color(target_button.button, color, LV_PART_MAIN);
         lv_obj_set_style_bg_color(target_button.button, color, LV_PART_MAIN | LV_STATE_CHECKED);
+
+        // Inverte automaticamente il colore del testo in base al colore del bottone
+        lv_color_t text_color = ColorUtils::invertColor(color);
+
+        // Trova il label figlio e aggiorna il suo colore
+        uint32_t child_count = lv_obj_get_child_cnt(target_button.button);
+        for (uint32_t i = 0; i < child_count; i++) {
+            lv_obj_t* child = lv_obj_get_child(target_button.button, i);
+            if (child && lv_obj_check_type(child, &lv_label_class)) {
+                lv_obj_set_style_text_color(child, text_color, 0);
+            }
+        }
     }
 }
 
