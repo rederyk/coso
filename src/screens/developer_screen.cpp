@@ -1,11 +1,13 @@
 #include "screens/developer_screen.h"
 
 #include "core/app_manager.h"
+#include "core/ble_hid_manager.h"
 #include "core/settings_manager.h"
 #include "utils/logger.h"
 #include <Arduino.h>
 #include <SD_MMC.h>
 #include <esp_chip_info.h>
+#include <NimBLEDevice.h>
 
 DeveloperScreen::~DeveloperScreen() {
     if (stats_timer) {
@@ -472,6 +474,14 @@ void DeveloperScreen::confirmReset(lv_event_t* e) {
     if (btn_id == 1) { // "Reset" button
         Logger::getInstance().warn("[System] Resetting to defaults...");
         SettingsManager::getInstance().reset();
+        // Disconnetti qualsiasi host BLE collegato e cancella i bond
+        BleHidManager& ble = BleHidManager::getInstance();
+        ble.disconnectAll();
+        NimBLEDevice::deleteAllBonds();
+        if (ble.isInitialized() && ble.isEnabled() && !ble.isConnected()) {
+            ble.startAdvertising();
+        }
+        Logger::getInstance().info("[BLE] Bonding cancellati e connessioni chiuse dopo reset");
         Logger::getInstance().info("[System] Reset complete");
 
         if (screen) {

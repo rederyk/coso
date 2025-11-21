@@ -4,6 +4,7 @@
 #include "core/settings_manager.h"
 #include <lvgl.h>
 #include <string>
+#include <vector>
 
 /**
  * @brief BLE configuration screen with advanced controls
@@ -27,11 +28,15 @@ private:
     void applySnapshot(const SettingsSnapshot& snapshot);
     void applyThemeStyles(const SettingsSnapshot& snapshot);
     void updateBleStatus();
+    void refreshBondedPeers();
 
     // Event handlers
     static void handleEnableToggle(lv_event_t* e);
     static void handleDeviceNameInput(lv_event_t* e);
     static void handleAdvertisingToggle(lv_event_t* e);
+    static void handleDisconnectCurrent(lv_event_t* e);
+    static void handlePeerConnect(lv_event_t* e);
+    static void handlePeerForget(lv_event_t* e);
     static void handleBackButton(lv_event_t* e);
     static void updateStatusTimer(lv_timer_t* timer);
 
@@ -57,6 +62,11 @@ private:
     lv_obj_t* service_uuid_label = nullptr;
     lv_obj_t* char_uuid_label = nullptr;
 
+    // Bonded peers card
+    lv_obj_t* bonded_card = nullptr;
+    lv_obj_t* bonded_list = nullptr;
+    lv_obj_t* disconnect_btn = nullptr;
+
     // Advertising Card
     lv_obj_t* advertising_card = nullptr;
     lv_obj_t* advertising_switch = nullptr;
@@ -73,4 +83,5 @@ private:
     lv_timer_t* status_timer = nullptr;
     uint32_t settings_listener_id = 0;
     std::string last_device_name_;
+    std::vector<std::string> bonded_addresses_;
 };

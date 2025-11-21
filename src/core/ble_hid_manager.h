@@ -3,6 +3,12 @@
 #include <NimBLEDevice.h>
 #include <NimBLEHIDDevice.h>
 #include <string>
+#include <vector>
+#if defined(CONFIG_NIMBLE_CPP_IDF)
+#include "host/ble_gap.h"
+#else
+#include "nimble/nimble/host/include/host/ble_gap.h"
+#endif
 
 class BleHidServerCallbacks;
 
@@ -29,9 +35,24 @@ public:
     void click(uint8_t buttons);
     void disconnectAll();
 
+    struct BondedPeer {
+        NimBLEAddress address;
+        bool isConnected = false;
+
+        BondedPeer() = default;
+        BondedPeer(const NimBLEAddress& addr, bool connected) : address(addr), isConnected(connected) {}
+    };
+
+    std::vector<BondedPeer> getBondedPeers() const;
+    bool forgetPeer(const NimBLEAddress& address);
+    bool startDirectedAdvertisingTo(const NimBLEAddress& address, uint32_t timeout_seconds = 15);
+    bool isAdvertisingDirected() const { return is_directed_advertising_; }
+    std::string getCurrentPeerAddress() const { return current_peer_address_; }
+    std::string getDirectedTarget() const { return is_directed_advertising_ ? directed_target_.toString() : std::string(); }
+
     // Internal callbacks (exposed for server callbacks)
-    void handleServerConnect();
-    void handleServerDisconnect();
+    void handleServerConnect(ble_gap_conn_desc* desc = nullptr);
+    void handleServerDisconnect(ble_gap_conn_desc* desc = nullptr);
 
     std::string getAddress() const;
     std::string getDeviceName() const { return device_name_; }
@@ -59,12 +80,16 @@ private:
     bool is_advertising_ = false;
     bool is_connected_ = false;
     bool enabled_ = true;
+    bool is_directed_advertising_ = false;
     std::string device_name_ = "ESP32-S3 HID";
+    std::string current_peer_address_;
+    uint16_t conn_handle_ = 0xFFFF; // NimBLE invalid conn handle placeholder
 
     NimBLEServer* server_ = nullptr;
     NimBLEHIDDevice* hid_device_ = nullptr;
     NimBLECharacteristic* input_keyboard_ = nullptr;
     NimBLECharacteristic* input_mouse_ = nullptr;
+    NimBLEAddress directed_target_;
 
     friend class BleHidServerCallbacks;
 };

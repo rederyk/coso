@@ -11,12 +11,20 @@ public:
 
     void onConnect(NimBLEServer* pServer) override {
         (void)pServer;
-        manager_.handleServerConnect();
+    }
+
+    void onConnect(NimBLEServer* pServer, ble_gap_conn_desc* desc) override {
+        (void)pServer;
+        manager_.handleServerConnect(desc);
     }
 
     void onDisconnect(NimBLEServer* pServer) override {
         (void)pServer;
-        manager_.handleServerDisconnect();
+    }
+
+    void onDisconnect(NimBLEServer* pServer, ble_gap_conn_desc* desc) override {
+        (void)pServer;
+        manager_.handleServerDisconnect(desc);
     }
 
 private:
@@ -158,6 +166,7 @@ bool BleHidManager::init(const std::string& device_name) {
     advertising->start();
 
     is_advertising_ = true;
+    is_directed_advertising_ = false;
     initialized_ = true;
     updateLedState();
 
@@ -171,6 +180,8 @@ void BleHidManager::startAdvertising() {
     NimBLEAdvertising* advertising = NimBLEDevice::getAdvertising();
     advertising->start();
     is_advertising_ = true;
+    is_directed_advertising_ = false;
+    directed_target_ = NimBLEAddress();
     updateLedState();
     Logger::getInstance().info("[BLE HID] Advertising started");
 }
@@ -180,6 +191,8 @@ void BleHidManager::stopAdvertising() {
     NimBLEAdvertising* advertising = NimBLEDevice::getAdvertising();
     advertising->stop();
     is_advertising_ = false;
+    is_directed_advertising_ = false;
+    directed_target_ = NimBLEAddress();
     updateLedState();
     Logger::getInstance().info("[BLE HID] Advertising stopped");
 }
@@ -200,26 +213,51 @@ void BleHidManager::ensureAdvertising() {
     if (!initialized_) return;
     if (!enabled_) return;
     if (is_connected_) return;
+    if (is_directed_advertising_) return;
     if (is_advertising_) return;
     startAdvertising();
 }
 
-void BleHidManager::handleServerConnect() {
-    Logger::getInstance().info("[BLE HID] Client connected");
+void BleHidManager::handleServerConnect(ble_gap_conn_desc* desc) {
+    if (desc) {
+        conn_handle_ = desc->conn_handle;
+        current_peer_address_ = NimBLEAddress(desc->peer_ota_addr).toString();
+        Logger::getInstance().infof("[BLE HID] Client connected (%s)", current_peer_address_.c_str());
+    } else {
+        Logger::getInstance().info("[BLE HID] Client connected");
+        conn_handle_ = 0;
+        current_peer_address_.clear();
+    }
     is_connected_ = true;
     stopAdvertising();
     updateLedState();
 }
 
-void BleHidManager::handleServerDisconnect() {
-    Logger::getInstance().info("[BLE HID] Client disconnected");
+void BleHidManager::handleServerDisconnect(ble_gap_conn_desc* desc) {
+    if (desc) {
+        Logger::getInstance().infof("[BLE HID] Client disconnected (%s)", NimBLEAddress(desc->peer_ota_addr).toString().c_str());
+    } else if (!current_peer_address_.empty()) {
+        Logger::getInstance().infof("[BLE HID] Client disconnected (%s)", current_peer_address_.c_str());
+    } else {
+        Logger::getInstance().info("[BLE HID] Client disconnected");
+    }
+    conn_handle_ = 0xFFFF;
+    current_peer_address_.clear();
     is_connected_ = false;
+    is_directed_advertising_ = false;
     ensureAdvertising();
     updateLedState();
 }
 
 void BleHidManager::disconnectAll() {
+    if (server_ && is_connected_ && conn_handle_ != 0xFFFF) {
+        server_->disconnect(conn_handle_);
+    }
     is_connected_ = false;
+    conn_handle_ = 0xFFFF;
+    current_peer_address_.clear();
+    is_directed_advertising_ = false;
+    ensureAdvertising();
     updateLedState();
 }
 
@@ -232,6 +270,75 @@ void BleHidManager::setDeviceName(const std::string& name) {
     device_name_ = name;
     NimBLEDevice::setDeviceName(device_name_.c_str());
     Logger::getInstance().infof("[BLE HID] Device name set to '%s' (restart advertising to apply)", device_name_.c_str());
+}
+
+std::vector<BleHidManager::BondedPeer> BleHidManager::getBondedPeers() const {
+    std::vector<BondedPeer> peers;
+    int count = NimBLEDevice::getNumBonds();
+    peers.reserve(static_cast<size_t>(count));
+    for (int i = 0; i < count; ++i) {
+        NimBLEAddress addr = NimBLEDevice::getBondedAddress(i);
+        if (addr == NimBLEAddress()) {
+            continue;
+        }
+        BondedPeer peer{addr, addr.toString() == current_peer_address_ && is_connected_};
+        peers.push_back(peer);
+    }
+    return peers;
+}
+
+bool BleHidManager::forgetPeer(const NimBLEAddress& address) {
+    if (!initialized_) return false;
+    if (is_connected_ && address.toString() == current_peer_address_) {
+        Logger::getInstance().warn("[BLE HID] Cannot forget currently connected peer");
+        return false;
+    }
+
+    bool removed = NimBLEDevice::deleteBond(address);
+    if (removed) {
+        Logger::getInstance().infof("[BLE HID] Bond removed for %s", address.toString().c_str());
+    } else {
+        Logger::getInstance().warnf("[BLE HID] Unable to remove bond for %s", address.toString().c_str());
+    }
+    return removed;
+}
+
+bool BleHidManager::startDirectedAdvertisingTo(const NimBLEAddress& address, uint32_t timeout_seconds) {
+    if (!initialized_ || !enabled_) return false;
+    if (is_connected_) {
+        Logger::getInstance().warn("[BLE HID] Already connected - disconnect before directed advertising");
+        return false;
+    }
+
+    NimBLEAdvertising* advertising = NimBLEDevice::getAdvertising();
+    advertising->stop();
+
+    directed_target_ = address;
+    auto adv_done = [this](NimBLEAdvertising*) {
+        is_advertising_ = false;
+        is_directed_advertising_ = false;
+        directed_target_ = NimBLEAddress();
+        updateLedState();
+        // If nobody connected within timeout, fall back to generic advertising
+        ensureAdvertising();
+    };
+
+    bool started = advertising->start(timeout_seconds, adv_done, &directed_target_);
+    if (!started) {
+        is_advertising_ = false;
+        is_directed_advertising_ = false;
+        directed_target_ = NimBLEAddress();
+        updateLedState();
+        Logger::getInstance().warnf("[BLE HID] Directed advertising failed for %s", address.toString().c_str());
+        ensureAdvertising();
+        return false;
+    }
+
+    is_advertising_ = true;
+    is_directed_advertising_ = true;
+    updateLedState();
+    Logger::getInstance().infof("[BLE HID] Directed advertising for %u s to %s", timeout_seconds, address.toString().c_str());
+    return true;
 }
 
 BleHidManager::KeyMapping BleHidManager::mapCharToKey(char c) const {
