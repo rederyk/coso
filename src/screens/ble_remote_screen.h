@@ -9,11 +9,12 @@
 
 class BleRemoteScreen : public Screen {
 public:
-    ~BleRemoteScreen() override;
-
+    BleRemoteScreen();
+    ~BleRemoteScreen();
     void build(lv_obj_t* parent) override;
     void onShow() override;
     void onHide() override;
+    void destroyRoot() override;  // Override to free user data
 
 private:
     enum class Shortcut : uint8_t {

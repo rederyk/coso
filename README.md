@@ -1,10 +1,22 @@
-# ESP32-S3 Touch Display OS
+# ESP32-S3 Touch Display OS - Provisional
 
-Firmware avanzato per Freenove ESP32-S3 con display touch 2.8" (320×240).
+Firmware avanzato per dispositivo ESP32-S3 con display touch capacitivo e gestione periferiche integrate, progettato come base per un assistente vocale open-source simile ad Alexa.
+
+## Descrizione del Progetto
+
+Questo firmware trasforma un ESP32-S3 con display touch 2.8" (320×240) in un'interfaccia intelligente per controllo dispositivi e interazione utente. Include gestione avanzata delle risorse, thread-safety, e architettura modulare per espandibilità.
+
+### Caratteristiche Principali
+- **Interfaccia Touch**: LVGL basato con tema personalizzabile e dock navigabile
+- **Connettività**: WiFi, BLE 5.0 con ruoli server/client, HID wireless
+- **Periferiche**: Display RGB LED, SD card, sensori touch capacitivi
+- **Sistema Operativo**: Architettura RTOS con gestione thread avanzata e core affinity
+- **Memoria Avanzata**: Supporto PSRAM con allocazione ottimizzata per LVGL
+- **Sicurezza**: Salvataggio atomico configurazioni con backup auto
 
 ## Licenza
 
-Apache-2.0. Vedi `LICENSE` e `NOTICE` per dettagli e attribution di terze parti.
+Apache-2.0. Vedi `LICENSE` e `NOTICE` per dettagli e attribuzioni di terze parti.
 
 ## 🚀 Quick Start
 
@@ -15,39 +27,52 @@ platformio device monitor
 
 ## ⚙️ Configurazione Buffer LVGL
 
-Il progetto supporta **3 modalità di buffer** per ottimizzare le performance in base alle esigenze.
+Il progetto supporta **3 modalità di buffer** per ottimizzare le performance LVGL.
 
-**Modifica il file `platformio.ini` linea 43:**
+**Modifica `platformio.ini` linea 43:**
 
 ```ini
 build_flags =
-  # ... altri flags ...
-  -D LVGL_BUFFER_MODE=1  # ← Cambia questo numero (0, 1, o 2)
+  -D LVGL_BUFFER_MODE=1  # 0=PSRAM, 1=DRAM Single, 2=DRAM Double
 ```
 
-### Modalità Disponibili
+| Modo | Buffer Type | RAM Used | Performance | Raccomandato |
+|------|-------------|----------|-------------|-------------|
+| 0    | PSRAM Single | 0 KB DRAM | Media | <50KB RAM libera |
+| 1    | DRAM Single  | 15 KB DRAM | Alta | Bilanciato |
+| 2    | DRAM Double  | 30 KB DRAM | Ottima | Max performance |
 
-| Modo | Nome | RAM Usata | Performance | Quando Usarlo |
-|------|------|-----------|-------------|---------------|
-| **0** | PSRAM Single | 0 KB DRAM | ⚠️ Media | Device con poca RAM interna |
-| **1** | DRAM Single | 15 KB DRAM | ✅ Alta | **Default raccomandato** |
-| **2** | DRAM Double | 30 KB DRAM | ✅ Ottima | Animazioni complesse, video |
+## 📚 Documentazione Disponibile
+- **[QUICK_REFERENCE.md](docs/QUICK_REFERENCE.md)** - Guida buffer LVGL
+- **[task_architecture.md](docs/task_architecture.md)** - Architettura thread-safe
+- **[lvgl_buffer_analysis.md](docs/lvgl_buffer_analysis.md)** - Analisi tecnica
+- **[MEMORY_USAGE_AND_OPTIMIZATION.md](docs/MEMORY_USAGE_AND_OPTIMIZATION.md)** - Ottimizzazioni
 
-**Default attuale:** Modalità **2** (DRAM Double) - massime performance
+## 📈 Roadmap (Senza Date/Tempi)
 
-### Quando Cambiare Modalità
+### Fase 1: Interfaccia e Controlli Base ✅
+- Implementare dock navigabile e schermate applicazione
+- Aggiungere controlli per luminosità, tema, orientamento
+- Integrazione sensori touch e feedback RGB LED
 
-- **Usa modo 0 (PSRAM):** Solo se hai meno di 50 KB RAM interna libera
-- **Usa modo 1 (DRAM Single):** Configurazione bilanciata (raccomandato per la maggior parte dei casi)
-- **Usa modo 2 (DRAM Double):** Quando vuoi le massime performance e hai RAM disponibile
+### Fase 2: Connettività Avanzata ✅
+- Estendere BLE per ruoli client/server con servizi custom
+- Implementare Command Center per esecuzione remota comandi
+- Aggiungere web server con interfaccia file manager
 
----
+### Fase 3: Multimedia e GPIO
+- Integrare player audio/video per SD card
+- Espandere supporto GPIO per controlli diretti dispositivi
+- Ottimizzare codec video per display limitato
 
-## 📚 Documentazione
+### Fase 4: AI e Sicurezza
+- Integrazione server MCP per comunicazione esterna
+- Aggiungere supporto elaborazione AI locale/remota
+- Migliorare crittografia e autenticazione wireless
 
-### Quick Reference
-- **[QUICK_REFERENCE.md](docs/QUICK_REFERENCE.md)** - Riferimento rapido cambio modalità buffer
-
-### Architettura
-- **[task_architecture.md](docs/task_architecture.md)** - Core affinity, priorità task, pattern thread-safe
-- **[lvgl_buffer_analysis.md](docs/lvgl_buffer_analysis.md)** - Analisi tecnica buffer LVGL e DMA
+### Fase Finale: Assistente Vocale Open-Source
+- **Obiettivo Finale**: Trasformare il dispositivo in un sostituto open-source di Alexa
+  - **IA Avanzata**: Integrazione con API AI attraverso MCP server per processamento intelligente
+  - **Moduli Direct GPIO**: Controllo dispositivi domestici con interfaccia diretta agli I/O ESP32
+  - **Architettura Modulare**: Framework estensibile per aggiunta abilità NLP, riconoscimento vocale, controllo home automation
+  - **Distribuzione**: Progetto completamente open-source con community foothold per evoluzioni collaborative

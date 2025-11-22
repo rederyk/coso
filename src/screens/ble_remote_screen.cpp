@@ -124,6 +124,10 @@ lv_obj_t* create_chip_button(lv_obj_t* parent, const char* text, lv_event_cb_t c
 }
 } // namespace
 
+BleRemoteScreen::BleRemoteScreen() : selected_host_mac("") {
+    // Initialize member variables
+}
+
 BleRemoteScreen::~BleRemoteScreen() {
     if (status_timer) {
         lv_timer_del(status_timer);
@@ -398,11 +402,21 @@ void BleRemoteScreen::build(lv_obj_t* parent) {
 }
 
 void BleRemoteScreen::onShow() {
+    // Restart status timer if stopped
+    if (!status_timer && root) {
+        status_timer = lv_timer_create(statusTimerCb, 1200, this);
+    }
     updateStatus();
 }
 
 void BleRemoteScreen::onHide() {
     KeyboardManager::getInstance().hide();
+
+    // Stop status timer when hidden to prevent background activity
+    if (status_timer) {
+        lv_timer_del(status_timer);
+        status_timer = nullptr;
+    }
 }
 
 void BleRemoteScreen::applyTheme(const SettingsSnapshot& snapshot) {
@@ -543,9 +557,13 @@ void BleRemoteScreen::updateStatus() {
 void BleRemoteScreen::updateTargetButtons() {
     if (!target_row) return;
 
-    // Clear existing target buttons
+    // Clear existing target buttons and free allocated MAC strings
     for (auto* btn : target_buttons) {
         if (btn) {
+            void* user_data = lv_obj_get_user_data(btn);
+            if (user_data) {
+                delete[] static_cast<char*>(user_data);  // Free MAC address copy
+            }
             lv_obj_del(btn);
         }
     }
@@ -559,6 +577,7 @@ void BleRemoteScreen::updateTargetButtons() {
         lv_obj_t* no_host_lbl = lv_label_create(target_row);
         lv_label_set_text(no_host_lbl, "Nessun host connesso");
         lv_obj_set_style_text_font(no_host_lbl, &lv_font_montserrat_14, 0);
+        lv_obj_set_user_data(no_host_lbl, nullptr);  // No user data for labels
         target_buttons.push_back(no_host_lbl);
         return;
     }
@@ -582,10 +601,17 @@ void BleRemoteScreen::updateTargetButtons() {
         lv_obj_t* host_btn = create_chip_button(target_row, short_mac.c_str(), targetButtonCb, this);
 
         // Store MAC address in button
-        char* mac_copy = new char[mac.length() + 1];
-        strcpy(mac_copy, mac.c_str());
-        lv_obj_set_user_data(host_btn, mac_copy);
+        char* mac_copy = nullptr;
+        try {
+            mac_copy = new char[mac.length() + 1];
+            strcpy(mac_copy, mac.c_str());
+        } catch (const std::bad_alloc&) {
+            Logger::getInstance().error("[BLE Remote] Failed to allocate MAC string");
+            lv_obj_del(host_btn);
+            continue;
+        }
 
+        lv_obj_set_user_data(host_btn, mac_copy);
         target_buttons.push_back(host_btn);
 
         // Check if this is the selected host
@@ -594,9 +620,16 @@ void BleRemoteScreen::updateTargetButtons() {
         }
     }
 
-    // Apply theme to new buttons
+    // Apply theme to new buttons and cleanup any failed allocations
     SettingsManager& settings = SettingsManager::getInstance();
     applyTheme(settings.getSnapshot());
+
+    // Double-check that we properly added all buttons to the vector
+    // This prevents orphaned buttons if anything went wrong
+    if (target_buttons.size() != (connected_hosts.empty() ? 1 :
+                                 (connected_hosts.size() > 1 ? connected_hosts.size() + 1 : connected_hosts.size()))) {
+        Logger::getInstance().warn("[BLE Remote] Button count mismatch in updateTargetButtons - potential memory leak");
+    }
 }
 
 void BleRemoteScreen::setControlsEnabled(bool enabled) {
@@ -849,4 +882,22 @@ void BleRemoteScreen::fullscreen_kb_cb(lv_event_t* e) {
 
 void BleRemoteScreen::fullscreen_mouse_cb(lv_event_t* e) {
     AppManager::getInstance()->launchApp("ble_mouse");
+}
+
+void BleRemoteScreen::destroyRoot() {
+    // Free allocated user data before deleting objects
+    for (lv_obj_t* btn : target_buttons) {
+        if (btn) {
+            void* user_data = lv_obj_get_user_data(btn);
+            if (user_data) {
+                delete[] static_cast<char*>(user_data);  // Free the MAC address copy
+            }
+        }
+    }
+    target_buttons.clear();
+    selected_host_mac.clear();
+
+    // Clear existing target buttons in case some weren't in the vector
+    // Then call base destroy
+    Screen::destroyRoot();
 }

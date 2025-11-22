@@ -64,25 +64,33 @@ void AppManager::launchApp(const char* id) {
         return;
     }
 
-    // Nascondi schermo corrente
+    // If switching to the same app, just refresh it
+    if (current_app_id == id && current_screen) {
+        current_screen->onShow();
+        return;
+    }
+
+    // Hide current screen if exists
     if (current_screen) {
         current_screen->onHide();
         lv_obj_t* old_root = current_screen->getRoot();
         if (old_root) {
             lv_obj_add_flag(old_root, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_move_background(old_root);
         }
     }
 
-    // Mostra nuovo schermo
+    // Check if screen was already created
     Screen* new_screen = it->second.screen;
     lv_obj_t* new_root = new_screen->getRoot();
 
     if (!new_root) {
-        // Prima volta: costruisci la schermata
+        // First time: build the screen
         new_screen->build(root_parent);
         new_root = new_screen->getRoot();
     }
 
+    // Show the new screen
     if (new_root) {
         lv_obj_clear_flag(new_root, LV_OBJ_FLAG_HIDDEN);
         lv_obj_move_foreground(new_root);

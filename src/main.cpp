@@ -328,6 +328,11 @@ void setup() {
     enableBacklight();
     BacklightManager::getInstance().setBrightness(initial_brightness);
 
+    // Initialize RGB LED early for error indication
+    RgbLedManager& rgb_led = RgbLedManager::getInstance();
+    rgb_led.begin(42);
+    rgb_led.setBrightness(initial_led_brightness);
+
     lv_init();
     logMemoryStats("After lv_init");
 
@@ -341,7 +346,9 @@ void setup() {
         draw_buf_ptr = static_cast<lv_color_t*>(allocatePsramBuffer(draw_buf_bytes, "LVGL buffer"));
         if (!draw_buf_ptr) {
             logger.error("[LVGL] FATAL: Failed to allocate PSRAM buffer");
-            while(1) { vTaskDelay(portMAX_DELAY); }
+            rgb_led.setState(RgbLedManager::LedState::ERROR);
+            vTaskDelay(pdMS_TO_TICKS(5000));
+            esp_restart();
         }
         lv_disp_draw_buf_init(&draw_buf, draw_buf_ptr, nullptr, DRAW_BUF_PIXELS);
 
@@ -352,11 +359,18 @@ void setup() {
             heap_caps_malloc(draw_buf_bytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)
         );
         if (!draw_buf_ptr) {
-            logger.error("[LVGL] FATAL: Failed to allocate DRAM buffer");
-            logger.warnf("[LVGL] Requested %u bytes, largest block: %u bytes",
+            logger.error("[LVGL] DRAM buffer allocation failed - attempting fallback to PSRAM");
+            logger.warnf("[LVGL] Requested %u bytes DRAM, largest block: %u bytes",
                         static_cast<unsigned>(draw_buf_bytes),
                         static_cast<unsigned>(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL)));
-            while(1) { vTaskDelay(portMAX_DELAY); }
+            // Fallback a PSRAM single buffer
+            draw_buf_ptr = static_cast<lv_color_t*>(allocatePsramBuffer(draw_buf_bytes, "LVGL buffer fallback"));
+            if (!draw_buf_ptr) {
+                logger.error("[LVGL] FATAL: Both DRAM and PSRAM buffer allocation failed");
+                rgb_led.setState(RgbLedManager::LedState::ERROR);
+                vTaskDelay(pdMS_TO_TICKS(5000));
+                esp_restart();
+            }
         }
         lv_disp_draw_buf_init(&draw_buf, draw_buf_ptr, nullptr, DRAW_BUF_PIXELS);
 
@@ -370,14 +384,31 @@ void setup() {
             heap_caps_malloc(draw_buf_bytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)
         );
         if (!draw_buf_ptr || !draw_buf_ptr2) {
-            logger.error("[LVGL] FATAL: Failed to allocate double buffers");
-            logger.warnf("[LVGL] Requested 2x %u bytes, largest block: %u bytes",
+            logger.error("[LVGL] DRAM double buffer allocation failed - attempting fallback");
+            logger.warnf("[LVGL] Requested 2x %u bytes DRAM, largest block: %u bytes",
                         static_cast<unsigned>(draw_buf_bytes),
                         static_cast<unsigned>(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL)));
-            // Libera il buffer eventualmente allocato
+            // Libera eventuali buffer allocati
             if (draw_buf_ptr) heap_caps_free(draw_buf_ptr);
             if (draw_buf_ptr2) heap_caps_free(draw_buf_ptr2);
-            while(1) { vTaskDelay(portMAX_DELAY); }
+            draw_buf_ptr = nullptr;
+            draw_buf_ptr2 = nullptr;
+
+            // Fallback a DRAM single buffer
+            draw_buf_ptr = static_cast<lv_color_t*>(
+                heap_caps_malloc(draw_buf_bytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)
+            );
+            if (!draw_buf_ptr) {
+                logger.error("[LVGL] DRAM single buffer fallback failed - trying PSRAM");
+                // Fallback finale a PSRAM single buffer
+                draw_buf_ptr = static_cast<lv_color_t*>(allocatePsramBuffer(draw_buf_bytes, "LVGL buffer fallback"));
+                if (!draw_buf_ptr) {
+                    logger.error("[LVGL] FATAL: Both DRAM and PSRAM buffer allocation failed");
+                    rgb_led.setState(RgbLedManager::LedState::ERROR);
+                    vTaskDelay(pdMS_TO_TICKS(5000));
+                    esp_restart();
+                }
+            }
         }
         lv_disp_draw_buf_init(&draw_buf, draw_buf_ptr, draw_buf_ptr2, DRAW_BUF_PIXELS);
     #endif
@@ -528,15 +559,14 @@ void setup() {
 
     logger.info("[Settings] Auto-backup timer started (every 30 minutes)");
 
-    // Inizializza RGB LED dopo che tutto il resto è pronto
-    RgbLedManager& rgb_led = RgbLedManager::getInstance();
-    if (rgb_led.begin(42)) {  // GPIO42 per il LED RGB integrato su Freenove ESP32-S3
-        rgb_led.setBrightness(initial_led_brightness);
-        rgb_led.setState(RgbLedManager::LedState::BOOT);
-        logger.info("[RGB LED] Initialized with boot animation");
-    } else {
-        logger.warn("[RGB LED] Initialization failed");
-    }
+    // Create memory logging timer (every 60 seconds)
+    static lv_timer_t* memory_timer = lv_timer_create([](lv_timer_t* t) {
+        logMemoryStats("Periodic");
+    }, 60 * 1000, nullptr);  // 60 seconds in milliseconds
+
+    logger.info("[System] Memory logging started (every 60 seconds)");
+
+
 }
 
 void loop() {
