@@ -17,6 +17,7 @@
 #include "core/keyboard_manager.h"
 #include "core/settings_manager.h"
 #include "core/wifi_manager.h"
+#include "core/web_server_manager.h"
 #include "core/system_tasks.h"
 #include "core/ble_hid_manager.h"
 #include "core/task_config.h"

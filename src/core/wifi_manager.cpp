@@ -4,6 +4,7 @@
 #include "drivers/rgb_led_driver.h"
 #include "core/task_config.h"
 #include "core/system_tasks.h"
+#include "core/web_server_manager.h"
 
 // Constructor
 WifiManager::WifiManager() {
@@ -67,6 +68,11 @@ void WifiManager::wifi_task(void *pvParameters) {
             if (rgb_led.isInitialized()) {
                 rgb_led.setState(RgbLedManager::LedState::WIFI_CONNECTED);
             }
+            // Avvia il server web quando la rete è pronta
+            WebServerManager& web = WebServerManager::getInstance();
+            if (!web.isRunning()) {
+                web.start();
+            }
             // Notifica la UI del cambio di stato
             UiMessage msg{};
             msg.type = UiMessageType::WifiStatus;
@@ -100,6 +106,10 @@ void WifiManager::wifi_task(void *pvParameters) {
                 log_i("WiFi reconnected");
                 if (rgb_led.isInitialized()) {
                     rgb_led.setState(RgbLedManager::LedState::WIFI_CONNECTED);
+                }
+                WebServerManager& web = WebServerManager::getInstance();
+                if (!web.isRunning()) {
+                    web.start();
                 }
                 // Notifica la UI della riconnessione
                 UiMessage msg{};

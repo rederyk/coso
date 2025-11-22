@@ -104,19 +104,26 @@ This roadmap outlines the development plan for the ESP32-S3 Touch Display firmwa
 
 ---
 
-## Phase 3: Enhanced Web File Manager
+## Phase 3: Web Dashboard & API Gateway
 
-**Goal**: Complete the SD card file manager with full CRUD operations and a modern web UI.
+**Goal**: Costruire un server HTTP sicuro e una dashboard web JS leggera prima di attivare il file manager, minimizzando l’impatto su RAM/CPU dell’ESP.
 
-*This phase remains as originally defined. The existing API is a good foundation but lacks core features like directory creation and renaming.*
+*Riferimento architettura:* `docs/web_dashboard_architecture.md`
 
-### Task 3.1: Implement Missing API Endpoints
--   **`POST /api/mkdir`**: Create a new directory.
--   **`POST /api/rename`**: Rename a file or directory.
+### Task 3.1: WebServerManager foundation + hardening
+-   Server asincrono sul core di lavoro con handler statici per asset fingerprinted (`data/www/*`, già gzip/brotli).
+-   API base `/api/v1/health`, `/api/v1/auth/login|logout`, `/api/v1/logs/tail` (SSE), `/api/v1/commands` (ponte CommandCenter).
+-   Sicurezza: API key + session cookie HttpOnly, anti-CSRF via header, CORS off di default, normalizzazione path per bloccare traversal, header CSP/nosniff.
+-   Streaming chunked per risposte JSON e log, timeout/keep-alive per non saturare FD.
 
-### Task 3.2: Build Modern Web UI
--   Create `data/www/filemanager.html` with a responsive, icon-based interface.
--   Features: Breadcrumb navigation, file/folder icons, upload with drag-and-drop, confirmation dialogs.
+### Task 3.2: Dashboard SPA shell (JS minimale)
+-   Build offline (Vite/Rollup con Preact/Lit o vanilla + htm) con bundle <200KB gzip, caricamento on-demand dei moduli.
+-   Schermate: stato WiFi/BLE, heap/PSRAM, log live via SSE, esecuzione comandi (CommandCenter) con form dinamica.
+-   Client API centralizzato con retry/backoff, gestione token e fallback offline; UI responsive ma leggera (CSS generato da PostCSS, niente framework pesanti).
+
+### Task 3.3: File Manager API & UI (dopo la shell)
+-   Endpoints CRUD SD: `GET /api/v1/fs/list`, `POST /api/v1/fs/upload` (chunked), `POST /api/v1/fs/mkdir`, `POST /api/v1/fs/rename`, `DELETE /api/v1/fs` e download stream.
+-   UI file manager come modulo lazy (icone, breadcrumb, drag&drop upload, conferme), usando le API sopra; nessun rendering dal lato ESP.
 
 ---
 

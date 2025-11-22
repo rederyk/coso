@@ -17,6 +17,10 @@ constexpr UBaseType_t PRIO_LVGL = 3;
 constexpr uint32_t STACK_WIFI = 4096;
 constexpr UBaseType_t PRIO_WIFI = 1;
 
+// HTTP server task
+constexpr uint32_t STACK_HTTP = 6144;
+constexpr UBaseType_t PRIO_HTTP = 2;
+
 // BLE manager task
 constexpr uint32_t STACK_BLE = 8192;
 constexpr UBaseType_t PRIO_BLE = 5;
