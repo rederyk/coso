@@ -5,9 +5,11 @@
 #include "screens/ble_manager.h"
 #include "core/settings_manager.h"
 #include "utils/logger.h"
+#include <esp_heap_caps.h>
 #include <Arduino.h>
 #include <SD_MMC.h>
 #include <esp_chip_info.h>
+#include <lvgl.h>
 #include <NimBLEDevice.h>
 
 DeveloperScreen::~DeveloperScreen() {
@@ -34,6 +36,7 @@ void DeveloperScreen::build(lv_obj_t* parent) {
     lv_obj_set_style_pad_row(root, 12, 0);
     lv_obj_set_style_border_width(root, 0, 0);
     lv_obj_set_style_outline_width(root, 0, 0);
+    
 
     // Header
     lv_obj_t* header = lv_obj_create(root);
@@ -76,6 +79,8 @@ void DeveloperScreen::build(lv_obj_t* parent) {
     lv_obj_set_style_border_width(content_container, 0, 0);
     lv_obj_add_flag(content_container, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_scroll_dir(content_container, LV_DIR_VER);
+    lv_obj_set_height(content_container, LV_SIZE_CONTENT); // Fix: ensure card wraps content
+
 
     // System Statistics Card
     stats_card = lv_obj_create(content_container);
@@ -85,6 +90,9 @@ void DeveloperScreen::build(lv_obj_t* parent) {
     lv_obj_set_flex_flow(stats_card, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_style_pad_all(stats_card, 14, 0);
     lv_obj_set_style_pad_row(stats_card, 6, 0);
+        lv_obj_set_height(stats_card, LV_SIZE_CONTENT); // Fix: ensure card wraps content
+
+    
 
     stats_title_label = lv_label_create(stats_card);
     lv_label_set_text(stats_title_label, "System Statistics");
@@ -95,6 +103,70 @@ void DeveloperScreen::build(lv_obj_t* parent) {
     lv_obj_set_style_text_font(stats_label, &lv_font_montserrat_14, 0);
     lv_obj_set_width(stats_label, LV_PCT(100));
 
+    // DRAM / PSRAM Info Card
+    memory_card = lv_obj_create(content_container);
+    lv_obj_remove_style_all(memory_card);
+    lv_obj_set_width(memory_card, LV_PCT(100));
+    lv_obj_set_layout(memory_card, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(memory_card, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_all(memory_card, 14, 0);
+    lv_obj_set_style_pad_row(memory_card, 6, 0);
+    lv_obj_set_height(memory_card, LV_SIZE_CONTENT); // Fix: ensure card wraps content
+
+
+    memory_title_label = lv_label_create(memory_card);
+    lv_label_set_text(memory_title_label, "DRAM & PSRAM");
+    lv_obj_set_style_text_font(memory_title_label, &lv_font_montserrat_16, 0);
+
+    memory_label = lv_label_create(memory_card);
+    lv_label_set_long_mode(memory_label, LV_LABEL_LONG_WRAP);
+    lv_obj_set_style_text_font(memory_label, &lv_font_montserrat_14, 0);
+    lv_obj_set_width(memory_label, LV_PCT(100));
+
+    // Memory actions card
+    memory_actions_card = lv_obj_create(content_container);
+    lv_obj_remove_style_all(memory_actions_card);
+    lv_obj_set_width(memory_actions_card, LV_PCT(100));
+    lv_obj_set_layout(memory_actions_card, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(memory_actions_card, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_all(memory_actions_card, 14, 0);
+    lv_obj_set_style_pad_row(memory_actions_card, 8, 0);
+    lv_obj_set_height(memory_actions_card, LV_SIZE_CONTENT); // Fix: ensure card wraps content
+
+
+    memory_actions_title_label = lv_label_create(memory_actions_card);
+    lv_label_set_text(memory_actions_title_label, "Gestione Memoria");
+    lv_obj_set_style_text_font(memory_actions_title_label, &lv_font_montserrat_16, 0);
+
+    memory_help_label = lv_label_create(memory_actions_card);
+    lv_label_set_long_mode(memory_help_label, LV_LABEL_LONG_WRAP);
+    lv_obj_set_style_text_font(memory_help_label, &lv_font_montserrat_14, 0);
+    lv_obj_set_width(memory_help_label, LV_PCT(100));
+
+    // Free PSRAM button
+    free_psram_btn = lv_btn_create(memory_actions_card);
+    lv_obj_set_width(free_psram_btn, LV_PCT(100));
+    lv_obj_set_height(free_psram_btn, 44);
+    lv_obj_add_event_cb(free_psram_btn, handleFreePsramButton, LV_EVENT_CLICKED, this);
+    lv_obj_t* free_psram_label = lv_label_create(free_psram_btn);
+    lv_label_set_text(free_psram_label, "Libera PSRAM (cache LVGL)");
+    lv_obj_center(free_psram_label);
+
+    // Free DRAM button
+    free_dram_btn = lv_btn_create(memory_actions_card);
+    lv_obj_set_width(free_dram_btn, LV_PCT(100));
+    lv_obj_set_height(free_dram_btn, 44);
+    lv_obj_add_event_cb(free_dram_btn, handleFreeDramButton, LV_EVENT_CLICKED, this);
+    lv_obj_t* free_dram_label = lv_label_create(free_dram_btn);
+    lv_label_set_text(free_dram_label, "Libera DRAM (heap interno)");
+    lv_obj_center(free_dram_label);
+
+    memory_result_label = lv_label_create(memory_actions_card);
+    lv_label_set_long_mode(memory_result_label, LV_LABEL_LONG_WRAP);
+    lv_obj_set_style_text_font(memory_result_label, &lv_font_montserrat_14, 0);
+    lv_obj_set_width(memory_result_label, LV_PCT(100));
+    lv_label_set_text(memory_result_label, "Cache non svuotate ancora.");
+
     // Backup Status Card
     backup_card = lv_obj_create(content_container);
     lv_obj_remove_style_all(backup_card);
@@ -103,6 +175,8 @@ void DeveloperScreen::build(lv_obj_t* parent) {
     lv_obj_set_flex_flow(backup_card, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_style_pad_all(backup_card, 14, 0);
     lv_obj_set_style_pad_row(backup_card, 6, 0);
+    lv_obj_set_height(backup_card, LV_SIZE_CONTENT); // Fix: ensure card wraps content
+
 
     backup_title_label = lv_label_create(backup_card);
     lv_label_set_text(backup_title_label, "Backup Status");
@@ -121,6 +195,8 @@ void DeveloperScreen::build(lv_obj_t* parent) {
     lv_obj_set_flex_flow(actions_card, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_style_pad_all(actions_card, 14, 0);
     lv_obj_set_style_pad_row(actions_card, 10, 0);
+    lv_obj_set_height(actions_card, LV_SIZE_CONTENT); // Fix: ensure card wraps content
+
 
     actions_title_label = lv_label_create(actions_card);
     lv_label_set_text(actions_title_label, "Actions");
@@ -157,6 +233,8 @@ void DeveloperScreen::build(lv_obj_t* parent) {
     lv_obj_set_flex_flow(controls_card, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_style_pad_all(controls_card, 14, 0);
     lv_obj_set_style_pad_row(controls_card, 10, 0);
+    lv_obj_set_height(controls_card, LV_SIZE_CONTENT); // Fix: ensure card wraps content
+
 
     controls_title_label = lv_label_create(controls_card);
     lv_label_set_text(controls_title_label, "System Controls");
@@ -223,11 +301,16 @@ void DeveloperScreen::updateStats() {
     uint32_t minutes = (uptime_sec % 3600) / 60;
     uint32_t seconds = uptime_sec % 60;
 
-    // Get memory info
-    uint32_t free_heap = ESP.getFreeHeap();
-    uint32_t total_heap = ESP.getHeapSize();
-    uint32_t free_psram = ESP.getFreePsram();
-    uint32_t total_psram = ESP.getPsramSize();
+    // Get DRAM / PSRAM info
+    size_t dram_free = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+    size_t dram_total = heap_caps_get_total_size(MALLOC_CAP_INTERNAL);
+    size_t dram_min = heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL);
+    size_t dram_largest = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL);
+
+    size_t psram_total = heap_caps_get_total_size(MALLOC_CAP_SPIRAM);
+    size_t psram_free = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
+    size_t psram_min = heap_caps_get_minimum_free_size(MALLOC_CAP_SPIRAM);
+    size_t psram_largest = heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM);
 
     char stats_text[512];
     snprintf(stats_text, sizeof(stats_text),
@@ -235,19 +318,63 @@ void DeveloperScreen::updateStats() {
              "Boot Count: %u\n"
              "Hostname: %s\n"
              "Uptime: %02u:%02u:%02u\n\n"
-             "Heap: %u KB / %u KB\n"
-             "PSRAM: %u KB / %u KB\n"
+             "DRAM: %u KB free / %u KB total\n"
+             "  Min Free: %u KB | Max Block: %u KB\n"
+             "PSRAM: %u KB free / %u KB total\n"
+             "  Min Free: %u KB | Max Block: %u KB\n"
              "CPU Cores: %d @ %d MHz",
              snapshot.version.c_str(),
              snapshot.bootCount,
              snapshot.hostname.c_str(),
              hours, minutes, seconds,
-             free_heap / 1024, total_heap / 1024,
-             free_psram / 1024, total_psram / 1024,
+             static_cast<unsigned>(dram_free / 1024), static_cast<unsigned>(dram_total / 1024),
+             static_cast<unsigned>(dram_min / 1024), static_cast<unsigned>(dram_largest / 1024),
+             static_cast<unsigned>(psram_free / 1024), static_cast<unsigned>(psram_total / 1024),
+             static_cast<unsigned>(psram_min / 1024), static_cast<unsigned>(psram_largest / 1024),
              chip_info.cores,
              ESP.getCpuFreqMHz());
 
     lv_label_set_text(stats_label, stats_text);
+    updateMemoryInfo();
+}
+
+void DeveloperScreen::updateMemoryInfo() {
+    if (!memory_label) {
+        return;
+    }
+
+    size_t dram_total = heap_caps_get_total_size(MALLOC_CAP_INTERNAL);
+    size_t dram_free = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+    size_t dram_min = heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL);
+    size_t dram_largest = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL);
+
+    size_t psram_total = heap_caps_get_total_size(MALLOC_CAP_SPIRAM);
+    size_t psram_free = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
+    size_t psram_min = heap_caps_get_minimum_free_size(MALLOC_CAP_SPIRAM);
+    size_t psram_largest = heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM);
+
+    char memory_text[512];
+    if (psram_total == 0) {
+        snprintf(memory_text, sizeof(memory_text),
+                 "DRAM: %u/%u KB liberi (min %u KB, blocco max %u KB)\n"
+                 "PSRAM: non rilevata",
+                 static_cast<unsigned>(dram_free / 1024), static_cast<unsigned>(dram_total / 1024),
+                 static_cast<unsigned>(dram_min / 1024), static_cast<unsigned>(dram_largest / 1024));
+    } else {
+        snprintf(memory_text, sizeof(memory_text),
+                 "DRAM (interna): %u/%u KB liberi\n"
+                 "  Min: %u KB | Blocco max: %u KB\n"
+                 "PSRAM (esterna): %u/%u KB liberi\n"
+                 "  Min: %u KB | Blocco max: %u KB\n"
+                 "Note: DRAM ospita il buffer LVGL (15-30 KB) e gli stack; "
+                 "PSRAM gestisce heap LVGL, color picker e logger.",
+                 static_cast<unsigned>(dram_free / 1024), static_cast<unsigned>(dram_total / 1024),
+                 static_cast<unsigned>(dram_min / 1024), static_cast<unsigned>(dram_largest / 1024),
+                 static_cast<unsigned>(psram_free / 1024), static_cast<unsigned>(psram_total / 1024),
+                 static_cast<unsigned>(psram_min / 1024), static_cast<unsigned>(psram_largest / 1024));
+    }
+
+    lv_label_set_text(memory_label, memory_text);
 }
 
 void DeveloperScreen::updateBackupStatus() {
@@ -312,12 +439,20 @@ void DeveloperScreen::applyThemeStyles(const SettingsSnapshot& snapshot) {
     };
 
     style_card(stats_card);
+    style_card(memory_card);
+    style_card(memory_actions_card);
     style_card(backup_card);
     style_card(actions_card);
     style_card(controls_card);
 
     if (stats_title_label) {
         lv_obj_set_style_text_color(stats_title_label, accent, 0);
+    }
+    if (memory_title_label) {
+        lv_obj_set_style_text_color(memory_title_label, accent, 0);
+    }
+    if (memory_actions_title_label) {
+        lv_obj_set_style_text_color(memory_actions_title_label, accent, 0);
     }
     if (backup_title_label) {
         lv_obj_set_style_text_color(backup_title_label, accent, 0);
@@ -330,6 +465,15 @@ void DeveloperScreen::applyThemeStyles(const SettingsSnapshot& snapshot) {
     }
     if (stats_label) {
         lv_obj_set_style_text_color(stats_label, subtle_text, 0);
+    }
+    if (memory_label) {
+        lv_obj_set_style_text_color(memory_label, subtle_text, 0);
+    }
+    if (memory_help_label) {
+        lv_obj_set_style_text_color(memory_help_label, subtle_text, 0);
+    }
+    if (memory_result_label) {
+        lv_obj_set_style_text_color(memory_result_label, subtle_text, 0);
     }
     if (backup_status_label) {
         lv_obj_set_style_text_color(backup_status_label, subtle_text, 0);
@@ -350,6 +494,8 @@ void DeveloperScreen::applyThemeStyles(const SettingsSnapshot& snapshot) {
 
     style_button(backup_btn, primary_button);
     style_button(restore_btn, subtle_button);
+    style_button(free_psram_btn, primary_button);
+    style_button(free_dram_btn, subtle_button);
     style_button(reset_btn, danger_button);
     style_button(reboot_btn, danger_button);
 }
@@ -387,6 +533,18 @@ void DeveloperScreen::handleRestoreButton(lv_event_t* e) {
         restore_btns, true);
     lv_obj_center(mbox);
     lv_obj_add_event_cb(mbox, confirmRestore, LV_EVENT_VALUE_CHANGED, screen);
+}
+
+void DeveloperScreen::handleFreePsramButton(lv_event_t* e) {
+    auto* screen = static_cast<DeveloperScreen*>(lv_event_get_user_data(e));
+    if (!screen) return;
+    screen->runMemoryCleanup(true);
+}
+
+void DeveloperScreen::handleFreeDramButton(lv_event_t* e) {
+    auto* screen = static_cast<DeveloperScreen*>(lv_event_get_user_data(e));
+    if (!screen) return;
+    screen->runMemoryCleanup(false);
 }
 
 void DeveloperScreen::updateStatsTimer(lv_timer_t* timer) {
@@ -439,7 +597,49 @@ void DeveloperScreen::confirmRestore(lv_event_t* e) {
     lv_msgbox_close(mbox);
 }
 
+void DeveloperScreen::runMemoryCleanup(bool target_psram) {
+    size_t psram_total = heap_caps_get_total_size(MALLOC_CAP_SPIRAM);
+    if (target_psram && psram_total == 0) {
+        if (memory_result_label) {
+            lv_label_set_text(memory_result_label, "PSRAM non rilevata");
+        }
+        Logger::getInstance().warn("[Developer] PSRAM cleanup richiesto ma non disponibile");
+        return;
+    }
 
+    size_t psram_before = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
+    size_t dram_before = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+
+    // Svuota cache LVGL e buffer temporanei allocati su PSRAM/DRAM.
+    lv_mem_buf_free_all();
+    lv_img_cache_invalidate_src(nullptr);
+    Logger::getInstance().clearBuffer();
+
+    size_t psram_after = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
+    size_t dram_after = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+
+    int32_t psram_delta = static_cast<int32_t>(psram_after) - static_cast<int32_t>(psram_before);
+    int32_t dram_delta = static_cast<int32_t>(dram_after) - static_cast<int32_t>(dram_before);
+
+    char result[160];
+    if (target_psram) {
+        snprintf(result, sizeof(result),
+                 "PSRAM liberata: %+d KB (cache LVGL svuotate)",
+                 static_cast<int>(psram_delta / 1024));
+        Logger::getInstance().infof("[Developer] PSRAM cleanup delta: %d bytes", psram_delta);
+    } else {
+        snprintf(result, sizeof(result),
+                 "DRAM liberata: %+d KB (heap interno)",
+                 static_cast<int>(dram_delta / 1024));
+        Logger::getInstance().infof("[Developer] DRAM cleanup delta: %d bytes", dram_delta);
+    }
+
+    if (memory_result_label) {
+        lv_label_set_text(memory_result_label, result);
+    }
+
+    updateStats();
+}
 
 void DeveloperScreen::handleResetButton(lv_event_t* e) {
     auto* screen = static_cast<DeveloperScreen*>(lv_event_get_user_data(e));
