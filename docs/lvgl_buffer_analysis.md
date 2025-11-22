@@ -332,16 +332,20 @@ void logMemoryHealthCheck() {
 
 ## 8. Riferimenti
 
-### Documentazione
+### Documentazione Tecnica
 - [ESP-IDF External RAM Guide (ESP32-S3)](https://docs.espressif.com/projects/esp-idf/en/stable/esp32s3/api-guides/external-ram.html)
 - [ESP-IDF Memory Types](https://docs.espressif.com/projects/esp-idf/en/stable/esp32s3/api-guides/memory-types.html)
 - [GitHub Issue #11269: DMA in PSRAM](https://github.com/espressif/esp-idf/issues/11269)
 
+### Documentazione Progetto
+- **[Runtime Buffer Switching Analysis](runtime_buffer_switching_analysis.md)** - Analisi sulla possibilità di rendere il buffer selezionabile nelle Settings
+- [task_architecture.md](task_architecture.md) - Architettura task e linee guida performance
+
 ### File Progetto
 - [src/main.cpp](../src/main.cpp) - Allocazione buffer LVGL
 - [src/core/display_manager.cpp](../src/core/display_manager.cpp) - Gestione display
+- [src/core/settings_manager.h](../src/core/settings_manager.h) - Sistema di configurazione
 - [lib/TFT_eSPI/Processors/TFT_eSPI_ESP32_S3.c](../lib/TFT_eSPI/Processors/TFT_eSPI_ESP32_S3.c) - Driver DMA
-- [docs/task_architecture.md](task_architecture.md) - Architettura task
 
 ---
 

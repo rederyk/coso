@@ -41,13 +41,31 @@
 #include "utils/logger.h"
 #include "utils/lvgl_mutex.h"
 
+// ========== CONFIGURAZIONE BUFFER LVGL ==========
+// Modifica LVGL_BUFFER_MODE in platformio.ini per testare diverse modalità:
+//   0 = PSRAM Single Buffer (baseline, bassa performance DMA)
+//   1 = DRAM Single Buffer (RACCOMANDATO: ottimo bilanciamento performance/memoria)
+//   2 = DRAM Double Buffer (massime performance, usa 30 KB RAM)
+// Default se non specificato: DRAM Single (modo 1)
+#ifndef LVGL_BUFFER_MODE
+  #define LVGL_BUFFER_MODE 1
+#endif
+
+#if LVGL_BUFFER_MODE < 0 || LVGL_BUFFER_MODE > 2
+  #error "LVGL_BUFFER_MODE deve essere 0, 1 o 2"
+#endif
+
 static TFT_eSPI tft;
 static lv_disp_draw_buf_t draw_buf;
 // Aumentato a 1/10 dell'altezza dello schermo per migliorare le performance
 static constexpr int32_t DRAW_BUF_PIXELS = LV_HOR_RES_MAX * (LV_VER_RES_MAX / 10);
-// Rimosso il buffer statico, verrà allocato dinamicamente se necessario
+
+// Buffer LVGL allocati dinamicamente in base a LVGL_BUFFER_MODE
 static lv_color_t* draw_buf_ptr = nullptr;
-static bool draw_buf_in_psram = false;
+#if LVGL_BUFFER_MODE == 2
+  static lv_color_t* draw_buf_ptr2 = nullptr;  // Secondo buffer per double buffering
+#endif
+
 static constexpr const char* APP_VERSION = "0.5.0";
 
 static WifiManager wifi_manager;
@@ -100,11 +118,38 @@ static void logMemoryStats(const char* stage) {
 
 static void logLvglBufferInfo() {
     const size_t bytes = DRAW_BUF_PIXELS * sizeof(lv_color_t);
-    Logger::getInstance().infof("[LVGL] Draw buffer: %ld px (%u bytes) @ %p [%s]",
-                                static_cast<long>(DRAW_BUF_PIXELS),
-                                static_cast<unsigned>(bytes),
-                                draw_buf_ptr,
-                                draw_buf_in_psram ? "PSRAM" : "internal RAM");
+    auto& logger = Logger::getInstance();
+
+    // Determina la modalità di buffering
+    const char* mode_name = nullptr;
+    const char* location = nullptr;
+
+    #if LVGL_BUFFER_MODE == 0
+        mode_name = "PSRAM Single";
+        location = "PSRAM";
+    #elif LVGL_BUFFER_MODE == 1
+        mode_name = "DRAM Single";
+        location = "Internal RAM";
+    #elif LVGL_BUFFER_MODE == 2
+        mode_name = "DRAM Double";
+        location = "Internal RAM";
+    #endif
+
+    logger.infof("[LVGL] Buffer mode: %s", mode_name);
+    logger.infof("[LVGL] Buffer 1: %ld px (%u bytes) @ %p [%s]",
+                 static_cast<long>(DRAW_BUF_PIXELS),
+                 static_cast<unsigned>(bytes),
+                 draw_buf_ptr,
+                 location);
+
+    #if LVGL_BUFFER_MODE == 2
+        logger.infof("[LVGL] Buffer 2: %ld px (%u bytes) @ %p [%s]",
+                     static_cast<long>(DRAW_BUF_PIXELS),
+                     static_cast<unsigned>(bytes),
+                     draw_buf_ptr2,
+                     location);
+        logger.infof("[LVGL] Total RAM used: %u bytes", static_cast<unsigned>(bytes * 2));
+    #endif
 }
 
 static void* allocatePsramBuffer(size_t size, const char* label) {
@@ -287,25 +332,56 @@ void setup() {
     logMemoryStats("After lv_init");
 
     const size_t draw_buf_bytes = DRAW_BUF_PIXELS * sizeof(lv_color_t);
-    draw_buf_ptr = static_cast<lv_color_t*>(allocatePsramBuffer(draw_buf_bytes, "LVGL draw buffer"));
-    if (draw_buf_ptr) {
-        draw_buf_in_psram = true;
-    } else {
-        // Fallback: prova ad allocare in RAM interna (DRAM)
-        draw_buf_in_psram = false;
-        logger.warn("[PSRAM] Allocation failed. Attempting to allocate LVGL draw buffer in internal RAM...");
-        draw_buf_ptr = static_cast<lv_color_t*>(heap_caps_malloc(draw_buf_bytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
-        if (draw_buf_ptr) {
-             logger.warnf("[DRAM] Using internal fallback buffer (%u bytes)", static_cast<unsigned>(draw_buf_bytes));
-        } else {
-            logger.error("[Memory] FATAL: Failed to allocate LVGL draw buffer in both PSRAM and internal RAM.");
-            // A questo punto il sistema non può partire, blocchiamo l'esecuzione.
+
+    // ========== ALLOCAZIONE BUFFER IN BASE A LVGL_BUFFER_MODE ==========
+
+    #if LVGL_BUFFER_MODE == 0
+        // Modalità 0: PSRAM Single Buffer (baseline)
+        logger.info("[LVGL] Allocating PSRAM single buffer...");
+        draw_buf_ptr = static_cast<lv_color_t*>(allocatePsramBuffer(draw_buf_bytes, "LVGL buffer"));
+        if (!draw_buf_ptr) {
+            logger.error("[LVGL] FATAL: Failed to allocate PSRAM buffer");
             while(1) { vTaskDelay(portMAX_DELAY); }
         }
-    }
+        lv_disp_draw_buf_init(&draw_buf, draw_buf_ptr, nullptr, DRAW_BUF_PIXELS);
 
-    // Single buffering con buffer in PSRAM (o DRAM come fallback)
-    lv_disp_draw_buf_init(&draw_buf, draw_buf_ptr, nullptr, DRAW_BUF_PIXELS);
+    #elif LVGL_BUFFER_MODE == 1
+        // Modalità 1: DRAM Single Buffer (RACCOMANDATO)
+        logger.info("[LVGL] Allocating DRAM single buffer...");
+        draw_buf_ptr = static_cast<lv_color_t*>(
+            heap_caps_malloc(draw_buf_bytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)
+        );
+        if (!draw_buf_ptr) {
+            logger.error("[LVGL] FATAL: Failed to allocate DRAM buffer");
+            logger.warnf("[LVGL] Requested %u bytes, largest block: %u bytes",
+                        static_cast<unsigned>(draw_buf_bytes),
+                        static_cast<unsigned>(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL)));
+            while(1) { vTaskDelay(portMAX_DELAY); }
+        }
+        lv_disp_draw_buf_init(&draw_buf, draw_buf_ptr, nullptr, DRAW_BUF_PIXELS);
+
+    #elif LVGL_BUFFER_MODE == 2
+        // Modalità 2: DRAM Double Buffer (massime performance)
+        logger.info("[LVGL] Allocating DRAM double buffer...");
+        draw_buf_ptr = static_cast<lv_color_t*>(
+            heap_caps_malloc(draw_buf_bytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)
+        );
+        draw_buf_ptr2 = static_cast<lv_color_t*>(
+            heap_caps_malloc(draw_buf_bytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)
+        );
+        if (!draw_buf_ptr || !draw_buf_ptr2) {
+            logger.error("[LVGL] FATAL: Failed to allocate double buffers");
+            logger.warnf("[LVGL] Requested 2x %u bytes, largest block: %u bytes",
+                        static_cast<unsigned>(draw_buf_bytes),
+                        static_cast<unsigned>(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL)));
+            // Libera il buffer eventualmente allocato
+            if (draw_buf_ptr) heap_caps_free(draw_buf_ptr);
+            if (draw_buf_ptr2) heap_caps_free(draw_buf_ptr2);
+            while(1) { vTaskDelay(portMAX_DELAY); }
+        }
+        lv_disp_draw_buf_init(&draw_buf, draw_buf_ptr, draw_buf_ptr2, DRAW_BUF_PIXELS);
+    #endif
+
     logLvglBufferInfo();
     logMemoryStats("After draw buffer");
 

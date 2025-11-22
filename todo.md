@@ -43,15 +43,20 @@
 
 ## TODO Futuri
 
-### 🎯 Prossima Ottimizzazione Consigliata
+### 🎯 Buffer LVGL - Completato (2025-11-22)
 
-**Buffer LVGL in RAM Interna** - ✅ Ready for implementation
-- **Riferimento:** `docs/lvgl_buffer_analysis.md`
-- **Azione:** Spostare il buffer LVGL (15 KB) da PSRAM a RAM interna
-- **Beneficio:** Performance DMA ~2x migliori (40-60 MB/s → 80 MB/s)
-- **Costo:** 15 KB di RAM interna (disponibili ~280 KB)
-- **Complessità:** ⭐ Triviale (modifica 1 riga in `src/main.cpp:290`)
-- **Test:** Benchmark DMA fornito nel documento
+**Status:** ✅ **ATTIVO** - Modalità 2 (DRAM Double) configurata
+
+**Implementazione:**
+- ✅ Sistema compile-time per 3 modalità (0=PSRAM, 1=DRAM Single, 2=DRAM Double)
+- ✅ Configurazione in `platformio.ini` linea 43: `-D LVGL_BUFFER_MODE=2`
+- ✅ Modalità attiva: **DRAM Double** (30 KB RAM, massime performance)
+- ✅ Testato su hardware: DRAM libera ~139 KB, UI fluida ✅
+
+**Per cambiare modalità:**
+Modifica `platformio.ini` linea 43 e ricompila (vedi [README.md](../README.md))
+
+**Riferimenti:** [lvgl_buffer_analysis.md](docs/lvgl_buffer_analysis.md)
 
 ### Feature Future
 
