@@ -8,3 +8,4 @@
 .gemini/
 docs/Freenove_ESP32_S3_Display-Doc
 docs/old
+data/settings.json

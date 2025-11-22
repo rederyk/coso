@@ -7,6 +7,21 @@ This roadmap outlines the development plan for the ESP32-S3 Touch Display firmwa
 **Completed Milestones:**
 - ✅ **Phase 1: Global Keyboard Manager**: A reusable, firmware-wide LVGL keyboard.
 - ✅ **Phase 6: Configuration Protection & Developer Tools**: Atomic settings, backup/restore, and a developer diagnostics screen.
+- ✅ **BLE HID Implementation**: BLE keyboard, mouse, HID device support (multiple commits: blehiddevice, Mousekeyboard).
+- ✅ **BLE UI Integration**: BLE settings screen, remote control screen (blesui commit).
+- ✅ **Storage & SD Card**: Storage manager, palette storage, SD card driver and explorer screen (storage, sdcard, storagepalette commits).
+- ✅ **LED Enhancements**: RGB LED driver, LED patterns, settings screen, themes (rgbLed, vivetheme, ui LED rework commits).
+- ✅ **Theme System**: Theme settings screen, multiple themes (live, night, natural circles, gradients, themes screen (livetheme, nightcircle, livetheme, rgbhcircle commits).
+- ✅ **Dock Widgets**: Enhanced dock with scroll, palette, glyph integration (dockscroll, docknatural, glyph commits).
+- ✅ **CommandCenter Web Bridge**: HTTP API for executing commands with web UI (webuicommand commit).
+- ✅ **LVGL Buffer Optimization**: Runtime buffer switching, DRAM/PSRAM modes (lvglBufferMOde commits).
+- ✅ **Font & Emoji Integration**: Custom font generation, emoji support (uicapi, frees up font tools).
+- ✅ **WiFi Button Fix & UI Tweaks**: UI improvements, button fixes, card heights (wifibtnfix, ui-card-heightfix, uiFix commits).
+- ✅ **System Log Screen**: Log viewer screen with live updates (log commit).
+- ✅ **Orientation & Display Handling**: Portrait/landscape support, size optimizations (orient, size commits).
+- ✅ **LVGL Double Buffer Mode**: Active DRAM double buffer for optimal performance (DRAM buffer optimizations).
+- ✅ **Thread-Safe Architecture**: Core affinity configuration, system tasks for message passing (task_config.h, SystemTasks).
+- ✅ **I2C Scanner Utility**: Peripheral diagnostics (i2c_scanner utility).
 
 ---
 
@@ -59,32 +74,36 @@ This roadmap outlines the development plan for the ESP32-S3 Touch Display firmwa
 
 ### Task 2.2: Complete BLE Client Functionality
 
+**Status**: Backend ✅ IMPLEMENTED (BleClientManager exists with scan and connect methods). UI screen pending (BleClientScreen not created yet).
+
 **Goal**: Enable the device to connect to other BLE peripherals, discover their services, and interact with them.
 
 **Implementation:**
 1.  **Connection Logic:**
-    -   In `BleClientManager`, implement the `connectTo()` method fully. It should handle the connection process and manage the `NimBLEClient` instance.
+    -   In `BleClientManager`, implement the `connectTo()` method fully. It should handle the connection process and manage the `NimBLEClient` instance. ✅ DONE
 2.  **Service Discovery:**
-    -   After connecting, add logic to iterate through the peripheral's services and characteristics, logging them for debugging.
+    -   After connecting, add logic to iterate through the peripheral's services and characteristics, logging them for debugging. (Pending full implementation)
 3.  **Read/Write/Notify:**
     -   Implement wrapper functions in `BleClientManager` to:
         -   `readCharacteristic(service_uuid, char_uuid)`
         -   `writeCharacteristic(service_uuid, char_uuid, data)`
-        -   `subscribeToNotifications(service_uuid, char_uuid, callback)`
+        -   `subscribeToNotifications(service_uuid, char_uuid, callback)` (Basic connection logic present, wrappers to complete)
 4.  **UI Integration:**
     -   Create a new screen, `BleClientScreen`, accessible from `BleSettingsScreen`.
     -   This screen will list discovered devices from a scan.
     -   Tapping a device will attempt to connect.
-    -   Once connected, it will display the device's services and characteristics.
+    -   Once connected, it will display the device's services and characteristics. (Not implemented)
 
 **Files to create/modify:**
-- `src/core/ble_client_manager.h` / `src/core/ble_client_manager.cpp`
-- `src/screens/ble_client_screen.h` / `src/screens/ble_client_screen.cpp` (new)
-- `src/screens/ble_settings_screen.cpp` (to launch the new screen)
+- `src/core/ble_client_manager.h` / `src/core/ble_client_manager.cpp` ✅ (Backend exists)
+- `src/screens/ble_client_screen.h` / `src/screens/ble_client_screen.cpp` (new) (Pending)
+- `src/screens/ble_settings_screen.cpp` (to launch the new screen) (Check if launch access is added)
 
 ---
 
 ### Task 2.3: Bridge CommandCenter to HTTP (Refinement)
+
+✅ **COMPLETED** (2025-11-22): CommandCenter exposed via HTTP with `/api/commands` endpoint and web UI in `commands.html`.
 
 **Goal**: Expose the `CommandCenter` via a web interface for easy testing and integration. (Refines original Phase 2 tasks).
 
@@ -173,6 +192,38 @@ This roadmap outlines the development plan for the ESP32-S3 Touch Display firmwa
 -   Create `docs/API.md` to document the HTTP and BLE command interfaces.
 
 ---
+
+## Future Features & TODO
+
+Based on TODO.md and recent development priorities:
+
+### 🔧 Upcoming Tasks (From TODO.md)
+- **LLM MCP Preparation**: Expand CommandCenter instance usage for LLM integrations and MCP (Model Context Protocol) support.
+- **Extended Web Interface**: Enhanced web server with file manager for uploading/downloading files from SD card.
+- **Audio/Video Player**: SD card-based audio/video player with automatic quality reduction based on screen resolution.
+- **Performance Optimization**: Continued improvements following architectural guidelines.
+
+### 🚀 Potential Future Phases
+
+**Phase 8: Media Center**
+- Audio playback from SD card with playlist support
+- Video playback proof-of-concept (MJPEG low-res)
+- File browser for media files
+
+**Phase 9: Voice Assistant Integration**
+- Voice input via I2S microphone
+- Wake word detection
+- Integration with local LLM or cloud services via CommandCenter
+
+**Phase 10: Advanced Networking**
+- MQTT client for IoT integration
+- WebSocket support in WebServerManager
+- Advanced BLE mesh networking
+
+**Phase 11: System Expansion**
+- GPIO expansion board support (more peripherals)
+- External display/output options
+- Modular hardware support
 
 ## Deprecated / Merged Phases
 
