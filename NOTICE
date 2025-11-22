@@ -1,0 +1,16 @@
+ESP32-S3 Touch Display OS
+Copyright 2025 Reder
+
+This project is licensed under the Apache License, Version 2.0.
+You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
+
+Third-party components:
+- LVGL (MIT) — lvgl/lvgl
+- ArduinoJson (MIT) — bblanchon/ArduinoJson
+- NimBLE-Arduino (Apache-2.0) — h2zero/NimBLE-Arduino
+- TFT_eSPI (MIT) — lib/TFT_eSPI/license.txt
+- Fonts for optional emoji/text generation:
+  - NotoSansSymbols2 (SIL Open Font License 1.1) — tools/fonts/NotoSansSymbols2-Regular.ttf
+  - Montserrat (SIL Open Font License 1.1) — tools/fonts/Montserrat-Regular.ttf
+
+For bundled fonts, emoji, or other assets, see their respective documentation and ensure required attributions are preserved.

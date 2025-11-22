@@ -3,6 +3,7 @@
 ## Overview
 
 Successfully generated 5 custom LVGL fonts with emoji support for ESP32-S3 project using `lv_font_conv` CLI tool.
+Note: These generated C files are not currently checked into `src/`; rerun the scripts if you need them.
 
 ## Generated Files
 

@@ -2,6 +2,10 @@
 
 Firmware avanzato per Freenove ESP32-S3 con display touch 2.8" (320×240).
 
+## Licenza
+
+Apache-2.0. Vedi `LICENSE` e `NOTICE` per dettagli e attribution di terze parti.
+
 ## 🚀 Quick Start
 
 ```bash

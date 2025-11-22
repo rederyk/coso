@@ -19,8 +19,10 @@ This directory contains scripts and fonts for generating custom LVGL emoji fonts
 - **test_font_ranges.sh** - Tests basic Unicode range availability
 - **test_more_ranges.sh** - Tests extended emoji ranges
 - **fonts/** - Directory containing source font files
-  - `NotoSansSymbols2-Regular.ttf` - Primary font (642KB)
-  - Other fonts (for testing/backup)
+  - `NotoSansSymbols2-Regular.ttf` - Primary emoji/symbol font (SIL OFL 1.1)
+  - `Montserrat-Regular.ttf` - UI text font for mixed font generation (SIL OFL 1.1)
+
+ℹ️ Removed fonts: Symbola, Unifont, TwemojiMozilla, FontAwesome TTF, and DejaVu were removed to avoid incompatible or unclear licensing in firmware builds. Stick to the two bundled OFL fonts when generating assets.
 
 ## Generated Output
 
@@ -241,5 +243,6 @@ Full options:
 ## License
 
 - NotoSansSymbols2: SIL Open Font License 1.1
+- Montserrat: SIL Open Font License 1.1
 - Scripts: Same as project license
 - lv_font_conv: MIT License

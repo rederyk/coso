@@ -1,6 +1,7 @@
 # FreeType Dynamic Font Loading Guide
 
 Complete guide for using dynamic TTF font loading with LVGL FreeType on ESP32-S3.
+> Status: FreeType integration and color-emoji loading are still aspirational. No FreeType pipeline or NotoColorEmoji font is compiled in the current firmware—treat this guide as future work notes.
 
 ## Overview
 

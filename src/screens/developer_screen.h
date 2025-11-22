@@ -39,15 +39,9 @@ private:
     lv_obj_t* memory_card = nullptr;
     lv_obj_t* memory_title_label = nullptr;
     lv_obj_t* memory_label = nullptr;
-    lv_obj_t* memory_actions_card = nullptr;
-    lv_obj_t* memory_actions_title_label = nullptr;
+    lv_obj_t* backup_status_label = nullptr;
     lv_obj_t* memory_help_label = nullptr;
     lv_obj_t* memory_result_label = nullptr;
-    lv_obj_t* backup_card = nullptr;
-    lv_obj_t* backup_title_label = nullptr;
-    lv_obj_t* backup_status_label = nullptr;
-    lv_obj_t* actions_card = nullptr;
-    lv_obj_t* actions_title_label = nullptr;
     lv_obj_t* free_psram_btn = nullptr;
     lv_obj_t* free_dram_btn = nullptr;
     lv_obj_t* backup_btn = nullptr;
