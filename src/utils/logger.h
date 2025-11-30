@@ -18,6 +18,7 @@ public:
     ~Logger();
 
     void begin(unsigned long baud_rate = 115200);
+    void setLevel(LogLevel level);
 
     void log(LogLevel level, const char* message);
     void log(LogLevel level, const String& message);
@@ -63,5 +64,6 @@ private:
     BufferEntry* buffer_;
     size_t next_index_;
     bool buffer_filled_;
+    LogLevel min_level_ = LogLevel::Debug;
     mutable portMUX_TYPE spinlock_;
 };

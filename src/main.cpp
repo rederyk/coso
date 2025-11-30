@@ -38,6 +38,10 @@
 #include "screens/ble_remote_screen.h"
 #include "screens/ble_keyboard_screen.h"
 #include "screens/ble_mouse_screen.h"
+#include "screens/audio_player_screen.h"
+#include "screens/web_radio_screen.h"
+#include "screens/audio_effects_screen.h"
+#include "core/audio_manager.h"
 #include "ui/ui_symbols.h"
 #include "utils/logger.h"
 #include "utils/lvgl_mutex.h"
@@ -321,6 +325,12 @@ void setup() {
         logger.warn("⚠ PSRAM not available - using internal RAM only");
     }
 
+    // Initialize Audio Manager
+    logger.info("[Audio] Initializing audio manager");
+    AudioManager& audio_manager = AudioManager::getInstance();
+    audio_manager.begin();
+    logger.info("[Audio] Audio manager ready");
+
     touch_driver_init();
     bool has_touch = touch_driver_available();
 
@@ -483,6 +493,9 @@ void setup() {
     static BleRemoteScreen ble_remote;
     static BleKeyboardScreen ble_keyboard_screen;
     static BleMouseScreen ble_mouse_screen;
+    static AudioPlayerScreen audio_player;
+    static WebRadioScreen web_radio;
+    static AudioEffectsScreen audio_effects;
 
     // Registra le app nel dock
     app_manager->registerApp("dashboard", UI_SYMBOL_HOME, "Home", &dashboard);
@@ -492,6 +505,9 @@ void setup() {
     app_manager->registerApp("system_log", UI_SYMBOL_SYSLOG, "SysLog", &system_log);
     app_manager->registerApp("info", UI_SYMBOL_INFO, "Info", &info);
     app_manager->registerApp("sd_explorer", UI_SYMBOL_STORAGE, "SD Card", &sd_explorer);
+    app_manager->registerApp("audio_player", LV_SYMBOL_AUDIO, "Music", &audio_player);
+    app_manager->registerApp("web_radio", LV_SYMBOL_WIFI, "Radio", &web_radio);
+    app_manager->registerApp("audio_effects", LV_SYMBOL_SETTINGS, "FX", &audio_effects);
 
     // Registra le schermate supplementari (non nel dock, accessibili solo da Settings)
     app_manager->registerHiddenApp("WiFiSettings", &wifi_settings);
@@ -571,5 +587,9 @@ void setup() {
 }
 
 void loop() {
-    vTaskDelay(portMAX_DELAY);
+    // Audio manager tick (required for playback)
+    AudioManager::getInstance().tick();
+
+    // Yield to FreeRTOS scheduler
+    vTaskDelay(pdMS_TO_TICKS(20));
 }

@@ -36,7 +36,14 @@ void Logger::begin(unsigned long baud_rate) {
     Serial.begin(baud_rate);
 }
 
+void Logger::setLevel(LogLevel level) {
+    min_level_ = level;
+}
+
 void Logger::log(LogLevel level, const char* message) {
+    if (static_cast<int>(level) < static_cast<int>(min_level_)) {
+        return;
+    }
     if (!message) {
         return;
     }
