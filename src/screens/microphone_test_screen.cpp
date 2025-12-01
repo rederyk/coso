@@ -8,6 +8,8 @@
 #include <vector>
 #include <string>
 #include <algorithm>
+#include <cstring>
+#include <cstdlib>
 #include <utility>
 #include <functional>
 #include <limits>
@@ -182,11 +184,89 @@ lv_obj_t* create_button(lv_obj_t* parent, const char* text, lv_color_t bg_color)
     return btn;
 }
 
+bool parseRecordingIndex(const std::string& path, uint32_t& out_index) {
+    if (path.empty()) {
+        return false;
+    }
+
+    size_t slash = path.find_last_of('/');
+    size_t name_start = (slash == std::string::npos) ? 0 : slash + 1;
+    constexpr const char* kPrefix = "test_";
+    constexpr const char* kSuffix = ".wav";
+
+    if (path.size() < name_start + strlen(kPrefix) + strlen(kSuffix)) {
+        return false;
+    }
+
+    if (path.compare(name_start, strlen(kPrefix), kPrefix) != 0) {
+        return false;
+    }
+
+    size_t suffix_pos = path.rfind(kSuffix);
+    if (suffix_pos == std::string::npos || suffix_pos <= name_start + strlen(kPrefix)) {
+        return false;
+    }
+
+    std::string number_str = path.substr(name_start + strlen(kPrefix),
+                                         suffix_pos - (name_start + strlen(kPrefix)));
+    if (number_str.empty()) {
+        return false;
+    }
+
+    char* end_ptr = nullptr;
+    long value = strtol(number_str.c_str(), &end_ptr, 10);
+    if (!end_ptr || *end_ptr != '\0' || value < 0) {
+        return false;
+    }
+
+    out_index = static_cast<uint32_t>(value);
+    return true;
+}
+
+uint32_t findNextRecordingIndex(const RecordingStorageInfo& storage) {
+    if (!storage.fs || !ensureRecordingDirectory(storage)) {
+        return 0;
+    }
+
+    uint32_t max_index = 0;
+    bool found_any = false;
+
+    File dir = storage.fs->open(storage.directory);
+    if (dir && dir.isDirectory()) {
+        File entry = dir.openNextFile();
+        while (entry) {
+            if (!entry.isDirectory()) {
+                uint32_t idx = 0;
+                if (parseRecordingIndex(entry.name(), idx)) {
+                    if (!found_any || idx > max_index) {
+                        max_index = idx;
+                        found_any = true;
+                    }
+                }
+            }
+            entry = dir.openNextFile();
+        }
+        dir.close();
+    }
+
+    if (!found_any) {
+        return 0;
+    }
+    return max_index + 1;
+}
+
 // Generate a unique filename for recording
-std::string generateRecordingFilename() {
-    static uint32_t counter = 0;
-    char filename[32];
-    sprintf(filename, "/test_recordings/test_%06d.wav", counter++);
+std::string generateRecordingFilename(const RecordingStorageInfo& storage) {
+    uint32_t next_index = findNextRecordingIndex(storage);
+    std::string directory = (storage.directory && storage.directory[0] != '\0')
+                                ? storage.directory
+                                : kRecordingsDir;
+    if (!directory.empty() && directory.back() == '/') {
+        directory.pop_back();
+    }
+
+    char filename[48];
+    snprintf(filename, sizeof(filename), "%s/test_%06u.wav", directory.c_str(), next_index);
     return filename;
 }
 
@@ -225,7 +305,7 @@ bool recordAudioToFile(const RecordingStorageInfo& storage,
         .mode = i2s_mode_t(I2S_MODE_MASTER | I2S_MODE_RX),
         .sample_rate = kMicSampleRate,
         .bits_per_sample = i2s_bits_per_sample_t(16),
-        .channel_format = I2S_CHANNEL_FMT_RIGHT_LEFT,
+        .channel_format = I2S_CHANNEL_FMT_ONLY_LEFT,
         .communication_format = I2S_COMM_FORMAT_STAND_I2S,
         .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1,
         .dma_buf_count = 4,
@@ -255,14 +335,13 @@ bool recordAudioToFile(const RecordingStorageInfo& storage,
         file.close();
         return false;
     }
-    i2s_set_clk(I2S_NUM_1, i2s_config.sample_rate, i2s_config.bits_per_sample, I2S_CHANNEL_STEREO);
+    i2s_set_clk(I2S_NUM_1, i2s_config.sample_rate, i2s_config.bits_per_sample, I2S_CHANNEL_MONO);
 
-    // Buffer for audio data (stereo frames converted to mono)
-    constexpr size_t kMonoSamplesPerChunk = 1024;
-    constexpr size_t kStereoSamplesPerChunk = kMonoSamplesPerChunk * 2;
-    constexpr float kTargetPeak = 28000.0f;
-    constexpr float kMaxGainFactor = 6.0f;
-    uint8_t* buffer = (uint8_t*)malloc(kStereoSamplesPerChunk * sizeof(int16_t));
+    // Buffer for audio data (mono frames)
+    constexpr size_t kSamplesPerChunk = 2048;
+    constexpr float kTargetPeak = 30000.0f;
+    constexpr float kMaxGainFactor = 12.0f;
+    uint8_t* buffer = static_cast<uint8_t*>(malloc(kSamplesPerChunk * sizeof(int16_t)));
     if (!buffer) {
         Logger::getInstance().error("Failed to allocate audio buffer");
         i2s_driver_uninstall(I2S_NUM_1);
@@ -291,24 +370,13 @@ bool recordAudioToFile(const RecordingStorageInfo& storage,
         size_t bytes_read = 0;
         err = i2s_read(I2S_NUM_1,
                        buffer,
-                       kStereoSamplesPerChunk * sizeof(int16_t),
+                       kSamplesPerChunk * sizeof(int16_t),
                        &bytes_read,
                        pdMS_TO_TICKS(100));
 
-        if (err == ESP_OK && bytes_read >= sizeof(int16_t) * 2) {
-            int16_t* raw_samples = reinterpret_cast<int16_t*>(buffer);
-            size_t stereo_count = bytes_read / sizeof(int16_t);
-            size_t mono_sample_count = stereo_count / 2;
-            if (mono_sample_count == 0) {
-                continue;
-            }
-
-            for (size_t i = 0; i < mono_sample_count; ++i) {
-                raw_samples[i] = raw_samples[i * 2]; // Keep left channel
-            }
-
-            int16_t* samples = raw_samples;
-            size_t sample_count = mono_sample_count;
+        if (err == ESP_OK && bytes_read >= sizeof(int16_t)) {
+            int16_t* samples = reinterpret_cast<int16_t*>(buffer);
+            size_t sample_count = bytes_read / sizeof(int16_t);
             size_t mono_bytes = sample_count * sizeof(int16_t);
             int32_t chunk_peak = 0;
 
@@ -409,8 +477,22 @@ void MicrophoneTestScreen::recordingTask(void* param) {
         return;
     }
 
-    std::string filename = generateRecordingFilename();
     auto storage = getRecordingStorageInfo();
+    if (!storage.fs || !ensureRecordingDirectory(storage)) {
+        Logger::getInstance().error("[MicTest] Unable to access recording storage");
+        if (screen->record_status_label) {
+            lv_label_set_text(screen->record_status_label, "Storage non disponibile");
+        }
+        screen->is_recording = false;
+        screen->stop_recording_requested.store(false);
+        screen->recording_task_handle = nullptr;
+        screen->applyThemeStyles(SettingsManager::getInstance().getSnapshot());
+        screen->updateMicLevelIndicator(0);
+        vTaskDelete(nullptr);
+        return;
+    }
+
+    std::string filename = generateRecordingFilename(storage);
     if (storage.storage == RecordingStorage::LITTLEFS) {
         Logger::getInstance().warn("[MicTest] SD card unavailable, recording to LittleFS");
     }
