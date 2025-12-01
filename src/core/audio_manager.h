@@ -37,6 +37,9 @@ public:
     void setPause(bool pause);
     void setVolume(int percent);
     void seek(int seconds);
+    void toggleStorageMode();
+    StorageMode currentStorageMode() const;
+    StorageMode preferredStorageMode() const { return preferred_storage_mode_; }
 
     // Radio stations management
     size_t getNumStations() const { return radio_stations_.size(); }
@@ -82,6 +85,7 @@ private:
     std::unique_ptr<AudioPlayer> player_;
     std::vector<RadioStation> radio_stations_;
     TimeshiftManager* current_timeshift_;
+    StorageMode preferred_storage_mode_;
 
     ProgressCallback progress_callback_;
     MetadataCallback metadata_callback_;

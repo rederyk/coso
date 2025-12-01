@@ -4,6 +4,7 @@
 #include <lvgl.h>
 
 struct Metadata;
+enum class StorageMode;
 
 /**
  * Web Radio Screen
@@ -23,6 +24,8 @@ private:
     void refreshProgressLabels(uint32_t display_pos_ms, uint32_t dur_ms);
     void seekToSliderValue(int slider_value);
     uint32_t sliderValueToMs(int slider_value, uint32_t duration_ms) const;
+    void syncStorageModeButton();
+    static const char* storageModeToText(StorageMode mode);
     static void formatTime(char* buffer, size_t size, uint32_t ms);
 
     static void onStationSelected(lv_event_t* event);
@@ -33,6 +36,7 @@ private:
     static void onUpdateTimer(lv_timer_t* timer);
     static void onMetadataCallback(const Metadata& meta);
     static void onProgressSliderEvent(lv_event_t* event);
+    static void onStorageModeButtonClicked(lv_event_t* event);
 
     // UI Elements
     lv_obj_t* station_list = nullptr;
@@ -42,6 +46,8 @@ private:
     lv_obj_t* progress_slider = nullptr;
     lv_obj_t* progress_time_label = nullptr;
     lv_obj_t* shift_info_label = nullptr;
+    lv_obj_t* storage_mode_btn = nullptr;
+    lv_obj_t* storage_mode_label = nullptr;
     lv_obj_t* play_pause_btn = nullptr;
     lv_obj_t* play_pause_label = nullptr;
     lv_obj_t* volume_slider = nullptr;

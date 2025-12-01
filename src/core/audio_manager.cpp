@@ -9,6 +9,7 @@ AudioManager& AudioManager::getInstance() {
 
 AudioManager::AudioManager()
     : current_timeshift_(nullptr),
+      preferred_storage_mode_(StorageMode::SD_CARD),
       progress_callback_(nullptr),
       metadata_callback_(nullptr),
       state_callback_(nullptr),
@@ -93,7 +94,7 @@ bool AudioManager::playRadio(const char* url) {
 
     // Create timeshift manager
     auto* ts = new TimeshiftManager();
-    ts->setStorageMode(StorageMode::SD_CARD);
+    ts->setStorageMode(preferred_storage_mode_);
 
     if (!ts->open(url)) {
         logger.error("[AudioMgr] Failed to open stream URL");
@@ -185,6 +186,33 @@ void AudioManager::seek(int seconds) {
         player_->request_seek(seconds);
     }
 }
+
+void AudioManager::toggleStorageMode() {
+    StorageMode current_mode = current_timeshift_ ? current_timeshift_->getStorageMode() : preferred_storage_mode_;
+    StorageMode new_mode = (current_mode == StorageMode::SD_CARD) ? StorageMode::PSRAM_ONLY : StorageMode::SD_CARD;
+
+    if (current_timeshift_) {
+        if (!current_timeshift_->switchStorageMode(new_mode)) {
+            Logger::getInstance().error("[AudioMgr] Failed to switch timeshift storage mode");
+            return;
+        }
+        Logger::getInstance().infof("[AudioMgr] Timeshift storage switched to %s",
+                                    new_mode == StorageMode::SD_CARD ? "SD" : "PSRAM");
+    } else {
+        Logger::getInstance().infof("[AudioMgr] Preferred timeshift storage set to %s",
+                                    new_mode == StorageMode::SD_CARD ? "SD" : "PSRAM");
+    }
+
+    preferred_storage_mode_ = new_mode;
+}
+
+StorageMode AudioManager::currentStorageMode() const {
+    if (current_timeshift_) {
+        return current_timeshift_->getStorageMode();
+    }
+    return preferred_storage_mode_;
+}
+
 
 const RadioStation* AudioManager::getStation(size_t index) const {
     if (index >= radio_stations_.size()) {

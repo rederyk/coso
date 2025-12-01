@@ -117,6 +117,17 @@ void WebRadioScreen::build(lv_obj_t* parent) {
     lv_obj_set_style_text_font(shift_info_label, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(shift_info_label, muted_card, 0);
 
+    storage_mode_btn = lv_btn_create(now_playing_card);
+    lv_obj_set_size(storage_mode_btn, 80, 36);
+    lv_obj_set_style_radius(storage_mode_btn, 12, 0);
+    lv_obj_set_style_bg_color(storage_mode_btn, lv_color_mix(accent_color, card_color, LV_OPA_60), 0);
+    lv_obj_add_event_cb(storage_mode_btn, onStorageModeButtonClicked, LV_EVENT_CLICKED, this);
+
+    storage_mode_label = lv_label_create(storage_mode_btn);
+    lv_label_set_text(storage_mode_label, "SD");
+    lv_obj_center(storage_mode_label);
+    ColorUtils::applyAutoButtonTextColor(storage_mode_btn);
+
     // Controls Card
     lv_obj_t* controls_card = create_card(root, lv_color_mix(dock_color, primary_color, LV_OPA_40), CONTROLS_CARD_MIN_HEIGHT);
     lv_obj_set_layout(controls_card, LV_LAYOUT_FLEX);
@@ -209,6 +220,7 @@ void WebRadioScreen::build(lv_obj_t* parent) {
     lv_obj_set_style_radius(station_list, 8, 0);
 
     refreshStationList();
+    syncStorageModeButton();
 }
 
 void WebRadioScreen::onShow() {
@@ -328,6 +340,7 @@ void WebRadioScreen::updatePlaybackInfo() {
     }
 
     updateProgress(pos_ms, dur_ms);
+    syncStorageModeButton();
 }
 
 void WebRadioScreen::updateProgress(uint32_t pos_ms, uint32_t dur_ms) {
@@ -421,6 +434,26 @@ void WebRadioScreen::formatTime(char* buffer, size_t size, uint32_t ms) {
     snprintf(buffer, size, "%u:%02u", minutes, seconds);
 }
 
+void WebRadioScreen::syncStorageModeButton() {
+    if (!storage_mode_btn || !storage_mode_label) {
+        return;
+    }
+
+    auto& audio = AudioManager::getInstance();
+    StorageMode mode = audio.currentStorageMode();
+    lv_label_set_text(storage_mode_label, storageModeToText(mode));
+}
+
+const char* WebRadioScreen::storageModeToText(StorageMode mode) {
+    switch (mode) {
+        case StorageMode::PSRAM_ONLY:
+            return "PSRAM";
+        case StorageMode::SD_CARD:
+        default:
+            return "SD";
+    }
+}
+
 void WebRadioScreen::showAddStationDialog() {
     // TODO: Implement keyboard input dialog for adding custom stations
     // For now, just log
@@ -506,4 +539,18 @@ void WebRadioScreen::onProgressSliderEvent(lv_event_t* event) {
         uint32_t preview_ms = screen->sliderValueToMs(slider_value, screen->last_duration_ms_);
         screen->refreshProgressLabels(preview_ms, screen->last_duration_ms_);
     }
+}
+
+void WebRadioScreen::onStorageModeButtonClicked(lv_event_t* event) {
+    WebRadioScreen* screen = static_cast<WebRadioScreen*>(lv_event_get_user_data(event));
+    if (!screen || !screen->storage_mode_btn) {
+        return;
+    }
+
+    if (lv_obj_has_state(screen->storage_mode_btn, LV_STATE_DISABLED)) {
+        return;
+    }
+
+    AudioManager::getInstance().toggleStorageMode();
+    screen->syncStorageModeButton();
 }
