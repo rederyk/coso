@@ -18,7 +18,8 @@ private:
     void applySnapshot(const SettingsSnapshot& snapshot);
     void applyThemeStyles(const SettingsSnapshot& snapshot);
 
-    static void handleTriggerAssistantButton(lv_event_t* e);
+    static void handleTriggerPressed(lv_event_t* e);
+    static void handleTriggerReleased(lv_event_t* e);
     static void handleApiKeyInput(lv_event_t* e);
     static void handleEndpointInput(lv_event_t* e);
     static void handleEnabledSwitch(lv_event_t* e);
@@ -29,6 +30,7 @@ private:
     lv_obj_t* api_card = nullptr;
     lv_obj_t* endpoint_card = nullptr;
     lv_obj_t* trigger_button = nullptr;
+    lv_obj_t* trigger_btn_label = nullptr;
     lv_obj_t* enabled_switch = nullptr;
     lv_obj_t* api_key_input = nullptr;
     lv_obj_t* endpoint_input = nullptr;

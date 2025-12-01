@@ -16,6 +16,22 @@ public:
     void onShow() override;
     void onHide() override;
 
+    // Public recording API for Voice Assistant to use
+    struct RecordingResult {
+        bool success;
+        std::string file_path;  // Absolute path to the recorded WAV file
+        size_t file_size_bytes;
+        uint32_t duration_ms;
+    };
+
+    /**
+     * Record audio to a file (blocking call - runs recording synchronously)
+     * @param duration_seconds Maximum recording duration (0 = unlimited)
+     * @param stop_flag Atomic flag to stop recording early
+     * @return RecordingResult with success status and file path
+     */
+    static RecordingResult recordToFile(uint32_t duration_seconds, std::atomic<bool>& stop_flag);
+
 protected:
     void applySnapshot(const SettingsSnapshot& snapshot);
     void applyThemeStyles(const SettingsSnapshot& snapshot);

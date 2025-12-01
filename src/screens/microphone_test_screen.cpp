@@ -323,7 +323,9 @@ bool recordAudioToFile(const RecordingStorageInfo& storage,
 
     esp_err_t err = i2s_driver_install(I2S_NUM_1, &i2s_config, 0, nullptr);
     if (err != ESP_OK) {
-        Logger::getInstance().errorf("I2S install failed: %d", err);
+        Logger::getInstance().errorf("[MicTest] I2S install failed: %d (%s)",
+                                     err,
+                                     err == ESP_ERR_INVALID_STATE ? "I2S already in use - stop audio playback first!" : "Unknown error");
         file.close();
         return false;
     }
@@ -478,7 +480,54 @@ bool recordAudioToFile(const RecordingStorageInfo& storage,
     file.close();
     return total_bytes > 0;
 }
+
 } // namespace
+
+// Public API implementation for Voice Assistant
+MicrophoneTestScreen::RecordingResult MicrophoneTestScreen::recordToFile(
+    uint32_t duration_seconds,
+    std::atomic<bool>& stop_flag) {
+
+    RecordingResult result;
+    result.success = false;
+    result.file_size_bytes = 0;
+    result.duration_ms = 0;
+
+    auto storage = getRecordingStorageInfo();
+    if (!storage.fs || !ensureRecordingDirectory(storage)) {
+        Logger::getInstance().error("[MicTest] Unable to access recording storage for voice assistant");
+        return result;
+    }
+
+    std::string filename = generateRecordingFilename(storage);
+    uint32_t start_ms = millis();
+
+    // Call the internal recording function without UI callbacks
+    bool success = recordAudioToFile(storage, filename.c_str(), duration_seconds, stop_flag, nullptr);
+
+    result.duration_ms = millis() - start_ms;
+
+    if (success) {
+        result.success = true;
+        result.file_path = buildPlaybackPath(storage, filename);
+
+        // Get file size
+        File file = storage.fs->open(filename.c_str(), FILE_READ);
+        if (file) {
+            result.file_size_bytes = file.size();
+            file.close();
+        }
+
+        Logger::getInstance().infof("[MicTest] Voice assistant recording complete: %s (%u bytes, %u ms)",
+                                    result.file_path.c_str(),
+                                    result.file_size_bytes,
+                                    result.duration_ms);
+    } else {
+        Logger::getInstance().error("[MicTest] Voice assistant recording failed");
+    }
+
+    return result;
+}
 
 void MicrophoneTestScreen::recordingTask(void* param) {
     auto* screen = static_cast<MicrophoneTestScreen*>(param);

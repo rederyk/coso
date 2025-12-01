@@ -3,11 +3,11 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <freertos/queue.h>
-#include <driver/i2s.h>
 
 #include <cJSON.h>
 #include <string>
 #include <vector>
+#include <atomic>
 
 /**
  * Voice Assistant Module
@@ -62,7 +62,16 @@ public:
     /** Manually trigger voice assistant listening, bypassing wake word */
     void triggerListening();
 
+    /** Start recording audio (called when button is pressed) */
+    void startRecording();
+
+    /** Stop recording and process the captured audio (called when button is released) */
+    void stopRecordingAndProcess();
+
     QueueHandle_t getCommandQueue() const { return voiceCommandQueue_; }
+
+    /** Get the last recorded file path (for external use) */
+    std::string getLastRecordedFile() const { return last_recorded_file_; }
 
 private:
     VoiceAssistant();
@@ -71,7 +80,7 @@ private:
     VoiceAssistant& operator=(const VoiceAssistant&) = delete;
 
     // Task functions
-    static void voiceCaptureTask(void* param);
+    static void recordingTask(void* param);      // Manages recording via MicrophoneTestScreen
     static void speechToTextTask(void* param);
     static void aiProcessingTask(void* param);
 
@@ -90,14 +99,11 @@ private:
     QueueHandle_t commandQueue_ = nullptr;
     QueueHandle_t voiceCommandQueue_ = nullptr; // Public command output
 
-    TaskHandle_t captureTask_ = nullptr;
+    TaskHandle_t recordingTask_ = nullptr;    // Manages recording via MicrophoneTestScreen
     TaskHandle_t sttTask_ = nullptr;
     TaskHandle_t aiTask_ = nullptr;
 
     bool initialized_ = false;
-
-    // Audio input
-    uint8_t* psram_buffer_ = nullptr;
-    static constexpr size_t AUDIO_BUFFER_SIZE = 32768; // 32KB buffer for 2 seconds at 16kHz mono 16-bit
-    i2s_port_t i2s_input_port_ = I2S_NUM_1;
+    std::atomic<bool> stop_recording_flag_{false};  // Flag to stop recording
+    std::string last_recorded_file_;                // Path to last recorded file
 };

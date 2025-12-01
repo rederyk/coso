@@ -5,6 +5,9 @@
 #include "core/voice_assistant.h"
 #include "core/app_manager.h"
 
+// Forward declaration to avoid include issues
+class VoiceAssistant;
+
 namespace {
 lv_obj_t* create_fixed_card(lv_obj_t* parent, const char* title, lv_color_t bg_color = lv_color_hex(0x10182c)) {
     lv_obj_t* card = lv_obj_create(parent);
@@ -73,13 +76,15 @@ void VoiceAssistantSettingsScreen::build(lv_obj_t* parent) {
     lv_obj_set_width(title_label, lv_pct(100));
 
     // Trigger assistant button card
-    trigger_card = create_fixed_card(root, "Trigger Assistant");
+    trigger_card = create_fixed_card(root, "Voice Assistant");
     trigger_button = lv_btn_create(trigger_card);
     lv_obj_set_height(trigger_button, 50);
-    lv_obj_add_event_cb(trigger_button, handleTriggerAssistantButton, LV_EVENT_CLICKED, this);
+    lv_obj_add_event_cb(trigger_button, handleTriggerPressed, LV_EVENT_PRESSED, this);
+    lv_obj_add_event_cb(trigger_button, handleTriggerReleased, LV_EVENT_RELEASED, this);
     lv_obj_set_style_bg_color(trigger_button, lv_color_hex(0x00aa44), 0); // Green trigger button
-    lv_obj_t* trigger_btn_label = lv_label_create(trigger_button);
-    lv_label_set_text(trigger_btn_label, LV_SYMBOL_AUDIO " Skip Activation & Listen");
+    lv_obj_set_style_bg_color(trigger_button, lv_color_hex(0xaa0000), LV_STATE_PRESSED); // Red when pressed
+    trigger_btn_label = lv_label_create(trigger_button);
+    lv_label_set_text(trigger_btn_label, LV_SYMBOL_AUDIO " Hold to Talk");
     lv_obj_center(trigger_btn_label);
     lv_obj_set_style_text_font(trigger_btn_label, &lv_font_montserrat_16, 0);
     lv_obj_set_style_text_color(trigger_btn_label, lv_color_hex(0xffffff), 0);
@@ -128,6 +133,20 @@ void VoiceAssistantSettingsScreen::build(lv_obj_t* parent) {
 
 void VoiceAssistantSettingsScreen::onShow() {
     Logger::getInstance().info(LV_SYMBOL_AUDIO " Voice assistant settings screen shown");
+
+    // Initialize VoiceAssistant if not already done
+    // Note: We do this here because VoiceAssistant is not initialized at system startup
+    static bool voice_assistant_initialized = false;
+    if (!voice_assistant_initialized) {
+        Logger::getInstance().info("[VoiceAssistant] Initializing voice assistant from settings screen");
+        if (VoiceAssistant::getInstance().begin()) {
+            Logger::getInstance().info("[VoiceAssistant] Voice assistant initialized successfully");
+            voice_assistant_initialized = true;
+        } else {
+            Logger::getInstance().warn("[VoiceAssistant] Voice assistant initialization failed");
+        }
+    }
+
     applySnapshot(SettingsManager::getInstance().getSnapshot());
 }
 
@@ -208,12 +227,32 @@ void VoiceAssistantSettingsScreen::applyThemeStyles(const SettingsSnapshot& snap
     }
 }
 
-void VoiceAssistantSettingsScreen::handleTriggerAssistantButton(lv_event_t* e) {
+void VoiceAssistantSettingsScreen::handleTriggerPressed(lv_event_t* e) {
     auto* screen = static_cast<VoiceAssistantSettingsScreen*>(lv_event_get_user_data(e));
     if (!screen) return;
 
-    VoiceAssistant::getInstance().triggerListening();
-    Logger::getInstance().info(LV_SYMBOL_AUDIO " Manual voice assistant trigger initiated");
+    // Start recording
+    VoiceAssistant::getInstance().startRecording();
+    Logger::getInstance().info(LV_SYMBOL_AUDIO " Voice recording started");
+
+    // Update button text to show recording state
+    if (screen->trigger_btn_label) {
+        lv_label_set_text(screen->trigger_btn_label, LV_SYMBOL_AUDIO " Recording... (Release to Process)");
+    }
+}
+
+void VoiceAssistantSettingsScreen::handleTriggerReleased(lv_event_t* e) {
+    auto* screen = static_cast<VoiceAssistantSettingsScreen*>(lv_event_get_user_data(e));
+    if (!screen) return;
+
+    // Stop recording and process
+    VoiceAssistant::getInstance().stopRecordingAndProcess();
+    Logger::getInstance().info(LV_SYMBOL_AUDIO " Voice recording stopped, processing...");
+
+    // Reset button text
+    if (screen->trigger_btn_label) {
+        lv_label_set_text(screen->trigger_btn_label, LV_SYMBOL_AUDIO " Hold to Talk");
+    }
 }
 
 void VoiceAssistantSettingsScreen::handleApiKeyInput(lv_event_t* e) {
@@ -246,4 +285,18 @@ void VoiceAssistantSettingsScreen::handleEnabledSwitch(lv_event_t* e) {
     bool checked = lv_obj_has_state(switch_obj, LV_STATE_CHECKED);
     SettingsManager::getInstance().setVoiceAssistantEnabled(checked);
     Logger::getInstance().infof(LV_SYMBOL_AUDIO " Voice assistant %s", checked ? "enabled" : "disabled");
+
+    // If enabling, try to initialize VoiceAssistant now
+    if (checked) {
+        static bool voice_assistant_initialized = false;
+        if (!voice_assistant_initialized) {
+            Logger::getInstance().info("[VoiceAssistant] Initializing voice assistant after enable");
+            if (VoiceAssistant::getInstance().begin()) {
+                Logger::getInstance().info("[VoiceAssistant] Voice assistant initialized successfully");
+                voice_assistant_initialized = true;
+            } else {
+                Logger::getInstance().warn("[VoiceAssistant] Voice assistant initialization failed");
+            }
+        }
+    }
 }

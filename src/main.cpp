@@ -44,6 +44,7 @@
 #include "screens/microphone_test_screen.h"
 #include "screens/voice_assistant_settings_screen.h"
 #include "core/audio_manager.h"
+// #include "core/voice_assistant.h"  // Temporarily disabled due to include issues
 #include "ui/ui_symbols.h"
 #include "utils/logger.h"
 #include "utils/lvgl_mutex.h"
@@ -332,6 +333,16 @@ void setup() {
     AudioManager& audio_manager = AudioManager::getInstance();
     audio_manager.begin();
     logger.info("[Audio] Audio manager ready");
+
+    // Initialize Voice Assistant (if enabled in settings)
+    // TODO: Enable after fixing include issues
+    // logger.info("[VoiceAssistant] Initializing voice assistant");
+    // VoiceAssistant& voice_assistant = VoiceAssistant::getInstance();
+    // if (voice_assistant.begin()) {
+    //     logger.info("[VoiceAssistant] Voice assistant initialized successfully");
+    // } else {
+    //     logger.warn("[VoiceAssistant] Voice assistant initialization failed or disabled");
+    // }
 
     touch_driver_init();
     bool has_touch = touch_driver_available();
