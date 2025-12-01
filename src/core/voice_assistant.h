@@ -58,6 +58,9 @@ public:
 
     bool isEnabled() const;
 
+    /** Manually trigger voice assistant listening, bypassing wake word */
+    void triggerListening();
+
     QueueHandle_t getCommandQueue() const { return voiceCommandQueue_; }
 
 private:

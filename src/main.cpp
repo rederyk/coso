@@ -41,6 +41,7 @@
 #include "screens/audio_player_screen.h"
 #include "screens/web_radio_screen.h"
 #include "screens/audio_effects_screen.h"
+#include "screens/voice_assistant_settings_screen.h"
 #include "core/audio_manager.h"
 #include "ui/ui_symbols.h"
 #include "utils/logger.h"
@@ -496,6 +497,7 @@ void setup() {
     static AudioPlayerScreen audio_player;
     static WebRadioScreen web_radio;
     static AudioEffectsScreen audio_effects;
+    static VoiceAssistantSettingsScreen voice_assistant_settings;
 
     // Registra le app nel dock
     app_manager->registerApp("dashboard", UI_SYMBOL_HOME, "Home", &dashboard);
@@ -516,6 +518,7 @@ void setup() {
     app_manager->registerHiddenApp("Developer", &developer);
     app_manager->registerHiddenApp("ble_keyboard", &ble_keyboard_screen);
     app_manager->registerHiddenApp("ble_mouse", &ble_mouse_screen);
+    app_manager->registerHiddenApp("VoiceAssistantSettings", &voice_assistant_settings);
 
     // Lancia dashboard come app iniziale
     app_manager->launchApp("dashboard");

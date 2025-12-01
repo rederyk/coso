@@ -117,6 +117,16 @@ void SettingsScreen::build(lv_obj_t* parent) {
     lv_obj_center(ble_btn_label);
     lv_obj_set_style_text_font(ble_btn_label, &lv_font_montserrat_16, 0);
 
+    lv_obj_t* voice_settings_btn = lv_btn_create(connectivity_card);
+    lv_obj_set_width(voice_settings_btn, lv_pct(100));
+    lv_obj_set_height(voice_settings_btn, 50);
+    lv_obj_add_event_cb(voice_settings_btn, handleVoiceAssistantSettingsButton, LV_EVENT_CLICKED, this);
+    lv_obj_set_style_bg_color(voice_settings_btn, lv_color_hex(0x0066cc), 0);
+    lv_obj_t* voice_btn_label = lv_label_create(voice_settings_btn);
+    lv_label_set_text(voice_btn_label, LV_SYMBOL_AUDIO " Assistant Vocale");
+    lv_obj_center(voice_btn_label);
+    lv_obj_set_style_text_font(voice_btn_label, &lv_font_montserrat_16, 0);
+
     // Brightness
     display_card = create_card(content_container, UI_SYMBOL_BRIGHTNESS " Display", "backlight (1-100%)");
     brightness_slider = lv_slider_create(display_card);
@@ -384,5 +394,16 @@ void SettingsScreen::handleDeveloperButton(lv_event_t* e) {
     AppManager* app_manager = AppManager::getInstance();
     if (app_manager) {
         app_manager->launchApp("Developer");
+    }
+}
+
+void SettingsScreen::handleVoiceAssistantSettingsButton(lv_event_t* e) {
+    auto* screen = static_cast<SettingsScreen*>(lv_event_get_user_data(e));
+    if (!screen) return;
+
+    Logger::getInstance().info("[Settings] Launching Voice Assistant settings...");
+    AppManager* app_manager = AppManager::getInstance();
+    if (app_manager) {
+        app_manager->launchApp("VoiceAssistantSettings");
     }
 }

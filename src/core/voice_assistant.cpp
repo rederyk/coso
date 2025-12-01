@@ -131,6 +131,12 @@ bool VoiceAssistant::isEnabled() const {
     return SettingsManager::getInstance().getVoiceAssistantEnabled();
 }
 
+void VoiceAssistant::triggerListening() {
+    LOG_I("Voice assistant manually triggered (bypass wake word)");
+    // TODO: Signal the capture task to start listening
+    // For now, just log the trigger
+}
+
 // Task implementations (stubs for initial integration)
 void VoiceAssistant::voiceCaptureTask(void* param) {
     VoiceAssistant* va = static_cast<VoiceAssistant*>(param);
