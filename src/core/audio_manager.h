@@ -3,7 +3,7 @@
 #include <memory>
 #include <vector>
 #include <string>
-#include "../lib/openESPaudio/src/audio_player.h"
+#include "audio_player_local.h"
 #include "../lib/openESPaudio/src/timeshift_manager.h"
 #include "../lib/openESPaudio/src/audio_effects.h"
 
@@ -58,7 +58,7 @@ public:
     SourceType getSourceType() const { return player_->source_type(); }
 
     // Effects access
-    EffectsChain* getEffectsChain() { return player_->getEffectsChain(); }
+    EffectsChain& getEffectsChain() { return player_->getEffectsChain(); }
 
     // Callbacks
     using ProgressCallback = void(*)(uint32_t pos_ms, uint32_t dur_ms);

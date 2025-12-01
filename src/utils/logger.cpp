@@ -36,11 +36,11 @@ void Logger::begin(unsigned long baud_rate) {
     Serial.begin(baud_rate);
 }
 
-void Logger::setLevel(LogLevel level) {
+void Logger::setLevel(AppLogLevel level) {
     min_level_ = level;
 }
 
-void Logger::log(LogLevel level, const char* message) {
+void Logger::log(AppLogLevel level, const char* message) {
     if (static_cast<int>(level) < static_cast<int>(min_level_)) {
         return;
     }
@@ -53,11 +53,11 @@ void Logger::log(LogLevel level, const char* message) {
     appendToBuffer(message, level, timestamp);
 }
 
-void Logger::log(LogLevel level, const String& message) {
+void Logger::log(AppLogLevel level, const String& message) {
     log(level, message.c_str());
 }
 
-void Logger::logf(LogLevel level, const char* fmt, ...) {
+void Logger::logf(AppLogLevel level, const char* fmt, ...) {
     if (!fmt) {
         return;
     }
@@ -68,50 +68,50 @@ void Logger::logf(LogLevel level, const char* fmt, ...) {
 }
 
 void Logger::debug(const char* message) {
-    log(LogLevel::Debug, message);
+    log(AppLogLevel::Debug, message);
 }
 
 void Logger::debugf(const char* fmt, ...) {
     va_list args;
     va_start(args, fmt);
-    logv(LogLevel::Debug, fmt, args);
+    logv(AppLogLevel::Debug, fmt, args);
     va_end(args);
 }
 
 void Logger::info(const char* message) {
-    log(LogLevel::Info, message);
+    log(AppLogLevel::Info, message);
 }
 
 void Logger::infof(const char* fmt, ...) {
     va_list args;
     va_start(args, fmt);
-    logv(LogLevel::Info, fmt, args);
+    logv(AppLogLevel::Info, fmt, args);
     va_end(args);
 }
 
 void Logger::warn(const char* message) {
-    log(LogLevel::Warn, message);
+    log(AppLogLevel::Warn, message);
 }
 
 void Logger::warnf(const char* fmt, ...) {
     va_list args;
     va_start(args, fmt);
-    logv(LogLevel::Warn, fmt, args);
+    logv(AppLogLevel::Warn, fmt, args);
     va_end(args);
 }
 
 void Logger::error(const char* message) {
-    log(LogLevel::Error, message);
+    log(AppLogLevel::Error, message);
 }
 
 void Logger::errorf(const char* fmt, ...) {
     va_list args;
     va_start(args, fmt);
-    logv(LogLevel::Error, fmt, args);
+    logv(AppLogLevel::Error, fmt, args);
     va_end(args);
 }
 
-void Logger::logv(LogLevel level, const char* fmt, va_list args) {
+void Logger::logv(AppLogLevel level, const char* fmt, va_list args) {
     va_list args_copy;
     va_copy(args_copy, args);
     int needed = vsnprintf(nullptr, 0, fmt, args_copy);
@@ -125,7 +125,7 @@ void Logger::logv(LogLevel level, const char* fmt, va_list args) {
     log(level, message.data());
 }
 
-void Logger::appendToBuffer(const String& message, LogLevel level, uint32_t timestamp) {
+void Logger::appendToBuffer(const String& message, AppLogLevel level, uint32_t timestamp) {
     if (!buffer_) {
         return;
     }
@@ -144,7 +144,7 @@ void Logger::appendToBuffer(const String& message, LogLevel level, uint32_t time
     portEXIT_CRITICAL(&spinlock_);
 }
 
-String Logger::formatLine(LogLevel level, const char* message) const {
+String Logger::formatLine(AppLogLevel level, const char* message) const {
     char line[MAX_SERIAL_LINE];
     unsigned long timestamp = millis();
     snprintf(line,
@@ -156,27 +156,27 @@ String Logger::formatLine(LogLevel level, const char* message) const {
     return String(line);
 }
 
-const char* Logger::levelToString(LogLevel level) const {
+const char* Logger::levelToString(AppLogLevel level) const {
     switch (level) {
-        case LogLevel::Debug: return "DEBUG";
-        case LogLevel::Info:  return "INFO";
-        case LogLevel::Warn:  return "WARN";
-        case LogLevel::Error: return "ERROR";
+        case AppLogLevel::Debug: return "DEBUG";
+        case AppLogLevel::Info:  return "INFO";
+        case AppLogLevel::Warn:  return "WARN";
+        case AppLogLevel::Error: return "ERROR";
         default:              return "LOG";
     }
 }
 
-const char* Logger::levelToShortString(LogLevel level) const {
+const char* Logger::levelToShortString(AppLogLevel level) const {
     switch (level) {
-        case LogLevel::Debug: return "D";
-        case LogLevel::Info:  return "I";
-        case LogLevel::Warn:  return "W";
-        case LogLevel::Error: return "E";
+        case AppLogLevel::Debug: return "D";
+        case AppLogLevel::Info:  return "I";
+        case AppLogLevel::Warn:  return "W";
+        case AppLogLevel::Error: return "E";
         default:              return "?";
     }
 }
 
-String Logger::formatLineCompact(LogLevel level, uint32_t timestamp, const char* message) const {
+String Logger::formatLineCompact(AppLogLevel level, uint32_t timestamp, const char* message) const {
     char line[MAX_SERIAL_LINE];
     // Format: [12345 I] Message
     // Compact format for small displays
@@ -222,7 +222,7 @@ std::vector<String> Logger::getBufferedLogs() const {
     return logs;
 }
 
-std::vector<String> Logger::getBufferedLogs(LogLevel min_level) const {
+std::vector<String> Logger::getBufferedLogs(AppLogLevel min_level) const {
     if (!buffer_) {
         return {};
     }

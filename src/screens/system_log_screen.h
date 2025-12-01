@@ -47,7 +47,7 @@ private:
     String cached_log_text;
 
     // Filter state
-    LogLevel current_filter = LogLevel::Debug;  // Default filter level
+    AppLogLevel current_filter = AppLogLevel::Debug;  // Default filter level
     bool show_all = true;                       // Track "All" separately for UI state
     bool auto_scroll_enabled = true;
 };

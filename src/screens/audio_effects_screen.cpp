@@ -175,11 +175,10 @@ void AudioEffectsScreen::onHide() {
 }
 
 void AudioEffectsScreen::updateEffectsState() {
-    auto* effects = AudioManager::getInstance().getEffectsChain();
-    if (!effects) return;
+    auto& effects = AudioManager::getInstance().getEffectsChain();
 
     // Update EQ state
-    auto* eq = effects->getEqualizer();
+    auto* eq = effects.getEqualizer();
     if (eq) {
         lv_obj_add_state(eq_enable_switch, eq->isEnabled() ? LV_STATE_CHECKED : 0);
 
@@ -190,7 +189,7 @@ void AudioEffectsScreen::updateEffectsState() {
     }
 
     // Update Reverb state
-    auto* reverb = effects->getReverb();
+    auto* reverb = effects.getReverb();
     if (reverb) {
         lv_obj_add_state(reverb_enable_switch, reverb->isEnabled() ? LV_STATE_CHECKED : 0);
         lv_slider_set_value(reverb_room_slider, static_cast<int>(reverb->getRoomSize() * 100), LV_ANIM_OFF);
@@ -199,7 +198,7 @@ void AudioEffectsScreen::updateEffectsState() {
     }
 
     // Update Echo state
-    auto* echo = effects->getEcho();
+    auto* echo = effects.getEcho();
     if (echo) {
         lv_obj_add_state(echo_enable_switch, echo->isEnabled() ? LV_STATE_CHECKED : 0);
         lv_slider_set_value(echo_delay_slider, static_cast<int>(echo->getDelayTime()), LV_ANIM_OFF);
@@ -209,10 +208,9 @@ void AudioEffectsScreen::updateEffectsState() {
 }
 
 void AudioEffectsScreen::applyPreset(const char* preset_name) {
-    auto* effects = AudioManager::getInstance().getEffectsChain();
-    if (!effects) return;
+    auto& effects = AudioManager::getInstance().getEffectsChain();
 
-    auto* eq = effects->getEqualizer();
+    auto* eq = effects.getEqualizer();
     if (eq) {
         eq->applyPreset(preset_name);
 
@@ -228,10 +226,9 @@ void AudioEffectsScreen::applyPreset(const char* preset_name) {
 
 // Event callbacks
 void AudioEffectsScreen::onEqEnableToggled(lv_event_t* event) {
-    auto* effects = AudioManager::getInstance().getEffectsChain();
-    if (!effects) return;
+    auto& effects = AudioManager::getInstance().getEffectsChain();
 
-    auto* eq = effects->getEqualizer();
+    auto* eq = effects.getEqualizer();
     if (eq) {
         lv_obj_t* sw = lv_event_get_target(event);
         bool enabled = lv_obj_has_state(sw, LV_STATE_CHECKED);
@@ -241,10 +238,9 @@ void AudioEffectsScreen::onEqEnableToggled(lv_event_t* event) {
 }
 
 void AudioEffectsScreen::onEqBandChanged(lv_event_t* event) {
-    auto* effects = AudioManager::getInstance().getEffectsChain();
-    if (!effects) return;
+    auto& effects = AudioManager::getInstance().getEffectsChain();
 
-    auto* eq = effects->getEqualizer();
+    auto* eq = effects.getEqualizer();
     if (eq) {
         lv_obj_t* slider = lv_event_get_target(event);
         int band_idx = static_cast<int>(reinterpret_cast<intptr_t>(lv_obj_get_user_data(slider)));
@@ -265,10 +261,9 @@ void AudioEffectsScreen::onPresetSelected(lv_event_t* event) {
 }
 
 void AudioEffectsScreen::onReverbEnableToggled(lv_event_t* event) {
-    auto* effects = AudioManager::getInstance().getEffectsChain();
-    if (!effects) return;
+    auto& effects = AudioManager::getInstance().getEffectsChain();
 
-    auto* reverb = effects->getReverb();
+    auto* reverb = effects.getReverb();
     if (reverb) {
         lv_obj_t* sw = lv_event_get_target(event);
         bool enabled = lv_obj_has_state(sw, LV_STATE_CHECKED);
@@ -278,10 +273,9 @@ void AudioEffectsScreen::onReverbEnableToggled(lv_event_t* event) {
 }
 
 void AudioEffectsScreen::onReverbParamChanged(lv_event_t* event) {
-    auto* effects = AudioManager::getInstance().getEffectsChain();
-    if (!effects) return;
+    auto& effects = AudioManager::getInstance().getEffectsChain();
 
-    auto* reverb = effects->getReverb();
+    auto* reverb = effects.getReverb();
     if (reverb) {
         lv_obj_t* slider = lv_event_get_target(event);
         int param_idx = static_cast<int>(reinterpret_cast<intptr_t>(lv_obj_get_user_data(slider)));
@@ -296,10 +290,9 @@ void AudioEffectsScreen::onReverbParamChanged(lv_event_t* event) {
 }
 
 void AudioEffectsScreen::onEchoEnableToggled(lv_event_t* event) {
-    auto* effects = AudioManager::getInstance().getEffectsChain();
-    if (!effects) return;
+    auto& effects = AudioManager::getInstance().getEffectsChain();
 
-    auto* echo = effects->getEcho();
+    auto* echo = effects.getEcho();
     if (echo) {
         lv_obj_t* sw = lv_event_get_target(event);
         bool enabled = lv_obj_has_state(sw, LV_STATE_CHECKED);
@@ -309,10 +302,9 @@ void AudioEffectsScreen::onEchoEnableToggled(lv_event_t* event) {
 }
 
 void AudioEffectsScreen::onEchoParamChanged(lv_event_t* event) {
-    auto* effects = AudioManager::getInstance().getEffectsChain();
-    if (!effects) return;
+    auto& effects = AudioManager::getInstance().getEffectsChain();
 
-    auto* echo = effects->getEcho();
+    auto* echo = effects.getEcho();
     if (echo) {
         lv_obj_t* slider = lv_event_get_target(event);
         int param_idx = static_cast<int>(reinterpret_cast<intptr_t>(lv_obj_get_user_data(slider)));

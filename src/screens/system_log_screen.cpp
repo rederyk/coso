@@ -61,10 +61,10 @@ void SystemLogScreen::build(lv_obj_t* parent) {
 
     // Filter buttons: All, D, I, W, E
     btn_all = create_filter_btn("All", filterEventHandler, -1);
-    btn_debug = create_filter_btn("D", filterEventHandler, (int)LogLevel::Debug);
-    btn_info = create_filter_btn("I", filterEventHandler, (int)LogLevel::Info);
-    btn_warn = create_filter_btn("W", filterEventHandler, (int)LogLevel::Warn);
-    btn_error = create_filter_btn("E", filterEventHandler, (int)LogLevel::Error);
+    btn_debug = create_filter_btn("D", filterEventHandler, (int)AppLogLevel::Debug);
+    btn_info = create_filter_btn("I", filterEventHandler, (int)AppLogLevel::Info);
+    btn_warn = create_filter_btn("W", filterEventHandler, (int)AppLogLevel::Warn);
+    btn_error = create_filter_btn("E", filterEventHandler, (int)AppLogLevel::Error);
 
     // Control buttons
     btn_clear = lv_btn_create(filter_bar);
@@ -147,7 +147,7 @@ void SystemLogScreen::refreshLogView() {
         return;
     }
 
-    LogLevel effective_filter = show_all ? LogLevel::Debug : current_filter;
+    AppLogLevel effective_filter = show_all ? AppLogLevel::Debug : current_filter;
     uint32_t t_start = millis();
     auto entries = Logger::getInstance().getBufferedLogs(effective_filter);
     uint32_t t_get = millis();
@@ -275,10 +275,10 @@ void SystemLogScreen::updateFilterButtons() {
     };
 
     set_btn_active(btn_all, show_all);
-    set_btn_active(btn_debug, !show_all && current_filter == LogLevel::Debug);
-    set_btn_active(btn_info, !show_all && current_filter == LogLevel::Info);
-    set_btn_active(btn_warn, !show_all && current_filter == LogLevel::Warn);
-    set_btn_active(btn_error, !show_all && current_filter == LogLevel::Error);
+    set_btn_active(btn_debug, !show_all && current_filter == AppLogLevel::Debug);
+    set_btn_active(btn_info, !show_all && current_filter == AppLogLevel::Info);
+    set_btn_active(btn_warn, !show_all && current_filter == AppLogLevel::Warn);
+    set_btn_active(btn_error, !show_all && current_filter == AppLogLevel::Error);
 
     // Update auto-scroll button state
     if (btn_auto_scroll) {
@@ -346,9 +346,9 @@ void SystemLogScreen::filterEventHandler(lv_event_t* event) {
     if (screen) {
         if (level == -1) {  // "All"
             screen->show_all = true;
-        } else if (level >= (int)LogLevel::Debug && level <= (int)LogLevel::Error) {
+        } else if (level >= (int)AppLogLevel::Debug && level <= (int)AppLogLevel::Error) {
             screen->show_all = false;
-            screen->current_filter = static_cast<LogLevel>(level);
+            screen->current_filter = static_cast<AppLogLevel>(level);
         } else {
             return;  // Unknown value
         }
