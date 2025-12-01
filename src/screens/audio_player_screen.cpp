@@ -9,11 +9,15 @@
 
 namespace {
     constexpr uint32_t UPDATE_INTERVAL_MS = 500;
+    constexpr lv_coord_t DEFAULT_CARD_MIN_HEIGHT = 150;
+    constexpr lv_coord_t CONTROLS_CARD_MIN_HEIGHT = 110;
+    constexpr lv_coord_t LIST_CARD_MIN_HEIGHT = 220;
 
-    lv_obj_t* create_card(lv_obj_t* parent, lv_color_t bg_color) {
+    lv_obj_t* create_card(lv_obj_t* parent, lv_color_t bg_color, lv_coord_t min_height = DEFAULT_CARD_MIN_HEIGHT) {
         lv_obj_t* card = lv_obj_create(parent);
         lv_obj_set_width(card, lv_pct(100));
         lv_obj_set_height(card, LV_SIZE_CONTENT);
+        lv_obj_set_style_min_height(card, min_height, 0);
         lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
         lv_obj_set_style_bg_color(card, bg_color, 0);
         lv_obj_set_style_bg_opa(card, LV_OPA_COVER, 0);
@@ -50,13 +54,14 @@ void AudioPlayerScreen::build(lv_obj_t* parent) {
     root = lv_obj_create(parent);
     lv_obj_remove_style_all(root);
     lv_obj_set_size(root, lv_pct(100), lv_pct(100));
+    lv_obj_add_flag(root, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scroll_dir(root, LV_DIR_VER);
     lv_obj_set_layout(root, LV_LAYOUT_FLEX);
     lv_obj_set_flex_flow(root, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_style_bg_color(root, primary_color, 0);
     lv_obj_set_style_bg_opa(root, LV_OPA_COVER, 0);
     lv_obj_set_style_pad_all(root, 6, 0);
     lv_obj_set_style_pad_row(root, 8, 0);
-    lv_obj_set_scroll_dir(root, LV_DIR_VER);
 
     // Header
     lv_obj_t* header = lv_label_create(root);
@@ -65,7 +70,7 @@ void AudioPlayerScreen::build(lv_obj_t* parent) {
     lv_obj_set_style_text_color(header, accent_color, 0);
 
     // Now Playing Card
-    lv_obj_t* now_playing_card = create_card(root, card_color);
+    lv_obj_t* now_playing_card = create_card(root, card_color, DEFAULT_CARD_MIN_HEIGHT);
     lv_obj_set_style_pad_all(now_playing_card, 16, 0);
 
     title_label = lv_label_create(now_playing_card);
@@ -98,7 +103,7 @@ void AudioPlayerScreen::build(lv_obj_t* parent) {
     lv_obj_set_style_text_color(time_label, muted_card_text, 0);
 
     // Controls Card
-    lv_obj_t* controls_card = create_card(root, lv_color_mix(dock_color, primary_color, LV_OPA_40));
+    lv_obj_t* controls_card = create_card(root, lv_color_mix(dock_color, primary_color, LV_OPA_40), CONTROLS_CARD_MIN_HEIGHT);
     lv_obj_set_layout(controls_card, LV_LAYOUT_FLEX);
     lv_obj_set_flex_flow(controls_card, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(controls_card, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
@@ -146,8 +151,7 @@ void AudioPlayerScreen::build(lv_obj_t* parent) {
     lv_obj_set_style_border_width(volume_slider, 0, LV_PART_KNOB);
 
     // File List Card
-    lv_obj_t* list_card = create_card(root, list_card_color);
-    lv_obj_set_flex_grow(list_card, 1);
+    lv_obj_t* list_card = create_card(root, list_card_color, LIST_CARD_MIN_HEIGHT);
     lv_obj_set_layout(list_card, LV_LAYOUT_FLEX);
     lv_obj_set_flex_flow(list_card, LV_FLEX_FLOW_COLUMN);
 
@@ -156,13 +160,17 @@ void AudioPlayerScreen::build(lv_obj_t* parent) {
     lv_obj_set_style_text_font(list_title, &lv_font_montserrat_16, 0);
     lv_obj_set_style_text_color(list_title, ColorUtils::invertColor(list_card_color), 0);
 
-    file_list = lv_list_create(list_card);
-    lv_obj_set_size(file_list, lv_pct(100), lv_pct(100));
-    lv_obj_set_flex_grow(file_list, 1);
-    lv_obj_set_style_bg_color(file_list, lv_color_mix(list_card_color, primary_color, LV_OPA_20), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(file_list, LV_OPA_COVER, LV_PART_MAIN);
-    lv_obj_set_style_border_width(file_list, 0, LV_PART_MAIN);
-    lv_obj_set_style_radius(file_list, 8, LV_PART_MAIN);
+    file_list = lv_obj_create(list_card);
+    lv_obj_remove_style_all(file_list);
+    lv_obj_set_width(file_list, lv_pct(100));
+    lv_obj_set_height(file_list, LV_SIZE_CONTENT);
+    lv_obj_set_layout(file_list, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(file_list, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_row(file_list, 10, 0);
+    lv_obj_clear_flag(file_list, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_style_bg_color(file_list, lv_color_mix(list_card_color, primary_color, LV_OPA_20), 0);
+    lv_obj_set_style_bg_opa(file_list, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(file_list, 8, 0);
 
     refreshFileList();
 }
@@ -204,9 +212,9 @@ void AudioPlayerScreen::refreshFileList() {
 
     auto& sd = SdCardDriver::getInstance();
     if (!sd.isMounted()) {
-        lv_obj_t* btn = lv_list_add_btn(file_list, LV_SYMBOL_WARNING, "SD card not mounted");
-        style_list_button(btn, list_item_color);
-        lv_obj_clear_flag(btn, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_t* placeholder = lv_label_create(file_list);
+        lv_label_set_text(placeholder, LV_SYMBOL_WARNING " SD card not mounted");
+        lv_obj_set_style_text_color(placeholder, ColorUtils::invertColor(list_item_color), 0);
         return;
     }
 
@@ -227,15 +235,33 @@ void AudioPlayerScreen::refreshFileList() {
 
         if (!is_audio) continue;
 
-        lv_obj_t* btn = lv_list_add_btn(file_list, LV_SYMBOL_AUDIO, name);
+        lv_obj_t* btn = lv_btn_create(file_list);
+        lv_obj_set_width(btn, lv_pct(100));
+        lv_obj_set_height(btn, 50);
+        lv_obj_set_layout(btn, LV_LAYOUT_FLEX);
+        lv_obj_set_flex_flow(btn, LV_FLEX_FLOW_ROW);
+        lv_obj_set_flex_align(btn,
+                              LV_FLEX_ALIGN_START,
+                              LV_FLEX_ALIGN_CENTER,
+                              LV_FLEX_ALIGN_CENTER);
+        lv_obj_set_style_pad_left(btn, 12, 0);
+        lv_obj_set_style_pad_right(btn, 12, 0);
+        lv_obj_set_style_pad_column(btn, 10, 0);
         style_list_button(btn, list_item_color);
+
+        lv_obj_t* icon = lv_label_create(btn);
+        lv_label_set_text(icon, LV_SYMBOL_AUDIO);
+
+        lv_obj_t* lbl = lv_label_create(btn);
+        lv_label_set_text(lbl, name);
+
         lv_obj_add_event_cb(btn, onFileSelected, LV_EVENT_CLICKED, this);
     }
 
     if (lv_obj_get_child_cnt(file_list) == 0) {
-        lv_obj_t* btn = lv_list_add_btn(file_list, LV_SYMBOL_FILE, "No audio files found");
-        style_list_button(btn, list_item_color);
-        lv_obj_clear_flag(btn, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_t* placeholder = lv_label_create(file_list);
+        lv_label_set_text(placeholder, LV_SYMBOL_FILE " No audio files found");
+        lv_obj_set_style_text_color(placeholder, ColorUtils::invertColor(list_item_color), 0);
     }
 }
 

@@ -9,11 +9,15 @@
 
 namespace {
     constexpr uint32_t UPDATE_INTERVAL_MS = 1000;
+    constexpr lv_coord_t DEFAULT_CARD_MIN_HEIGHT = 150;
+    constexpr lv_coord_t CONTROLS_CARD_MIN_HEIGHT = 110;
+    constexpr lv_coord_t LIST_CARD_MIN_HEIGHT = 220;
 
-    lv_obj_t* create_card(lv_obj_t* parent, lv_color_t bg_color) {
+    lv_obj_t* create_card(lv_obj_t* parent, lv_color_t bg_color, lv_coord_t min_height = DEFAULT_CARD_MIN_HEIGHT) {
         lv_obj_t* card = lv_obj_create(parent);
         lv_obj_set_width(card, lv_pct(100));
         lv_obj_set_height(card, LV_SIZE_CONTENT);
+        lv_obj_set_style_min_height(card, min_height, 0);
         lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
         lv_obj_set_style_bg_color(card, bg_color, 0);
         lv_obj_set_style_bg_opa(card, LV_OPA_COVER, 0);
@@ -52,13 +56,14 @@ void WebRadioScreen::build(lv_obj_t* parent) {
     root = lv_obj_create(parent);
     lv_obj_remove_style_all(root);
     lv_obj_set_size(root, lv_pct(100), lv_pct(100));
+    lv_obj_add_flag(root, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scroll_dir(root, LV_DIR_VER);
     lv_obj_set_layout(root, LV_LAYOUT_FLEX);
     lv_obj_set_flex_flow(root, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_style_bg_color(root, primary_color, 0);
     lv_obj_set_style_bg_opa(root, LV_OPA_COVER, 0);
     lv_obj_set_style_pad_all(root, 6, 0);
     lv_obj_set_style_pad_row(root, 8, 0);
-    lv_obj_set_scroll_dir(root, LV_DIR_VER);
 
     // Header
     lv_obj_t* header = lv_label_create(root);
@@ -67,7 +72,7 @@ void WebRadioScreen::build(lv_obj_t* parent) {
     lv_obj_set_style_text_color(header, accent_color, 0);
 
     // Now Playing Card
-    lv_obj_t* now_playing_card = create_card(root, card_color);
+    lv_obj_t* now_playing_card = create_card(root, card_color, DEFAULT_CARD_MIN_HEIGHT);
     lv_obj_set_style_pad_all(now_playing_card, 16, 0);
 
     station_label = lv_label_create(now_playing_card);
@@ -90,7 +95,7 @@ void WebRadioScreen::build(lv_obj_t* parent) {
     lv_obj_set_style_text_color(status_label, muted_card, 0);
 
     // Controls Card
-    lv_obj_t* controls_card = create_card(root, lv_color_mix(dock_color, primary_color, LV_OPA_40));
+    lv_obj_t* controls_card = create_card(root, lv_color_mix(dock_color, primary_color, LV_OPA_40), CONTROLS_CARD_MIN_HEIGHT);
     lv_obj_set_layout(controls_card, LV_LAYOUT_FLEX);
     lv_obj_set_flex_flow(controls_card, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(controls_card, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
@@ -138,8 +143,7 @@ void WebRadioScreen::build(lv_obj_t* parent) {
     lv_obj_set_style_border_width(volume_slider, 0, LV_PART_KNOB);
 
     // Stations List Card
-    lv_obj_t* list_card = create_card(root, list_card_color);
-    lv_obj_set_flex_grow(list_card, 1);
+    lv_obj_t* list_card = create_card(root, list_card_color, LIST_CARD_MIN_HEIGHT);
     lv_obj_set_layout(list_card, LV_LAYOUT_FLEX);
     lv_obj_set_flex_flow(list_card, LV_FLEX_FLOW_COLUMN);
 
@@ -168,13 +172,18 @@ void WebRadioScreen::build(lv_obj_t* parent) {
     lv_obj_center(add_label);
     ColorUtils::applyAutoButtonTextColor(add_station_btn);
 
-    station_list = lv_list_create(list_card);
-    lv_obj_set_size(station_list, lv_pct(100), lv_pct(100));
-    lv_obj_set_flex_grow(station_list, 1);
-    lv_obj_set_style_bg_color(station_list, lv_color_mix(list_card_color, primary_color, LV_OPA_20), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(station_list, LV_OPA_COVER, LV_PART_MAIN);
-    lv_obj_set_style_border_width(station_list, 0, LV_PART_MAIN);
-    lv_obj_set_style_radius(station_list, 8, LV_PART_MAIN);
+    station_list = lv_obj_create(list_card);
+    lv_obj_remove_style_all(station_list);
+    lv_obj_set_width(station_list, lv_pct(100));
+    lv_obj_set_height(station_list, LV_SIZE_CONTENT);
+    lv_obj_set_layout(station_list, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(station_list, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_row(station_list, 10, 0);
+    lv_obj_set_style_pad_column(station_list, 0, 0);
+    lv_obj_clear_flag(station_list, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_style_bg_color(station_list, lv_color_mix(list_card_color, primary_color, LV_OPA_20), 0);
+    lv_obj_set_style_bg_opa(station_list, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(station_list, 8, 0);
 
     refreshStationList();
 }
@@ -224,8 +233,25 @@ void WebRadioScreen::refreshStationList() {
             label_text += " [" + station->genre + "]";
         }
 
-        lv_obj_t* btn = lv_list_add_btn(station_list, LV_SYMBOL_WIFI, label_text.c_str());
+        lv_obj_t* btn = lv_btn_create(station_list);
+        lv_obj_set_width(btn, lv_pct(100));
+        lv_obj_set_height(btn, 50);
+        lv_obj_set_layout(btn, LV_LAYOUT_FLEX);
+        lv_obj_set_flex_flow(btn, LV_FLEX_FLOW_ROW);
+        lv_obj_set_flex_align(btn,
+                              LV_FLEX_ALIGN_START,
+                              LV_FLEX_ALIGN_CENTER,
+                              LV_FLEX_ALIGN_CENTER);
+        lv_obj_set_style_pad_left(btn, 12, 0);
+        lv_obj_set_style_pad_right(btn, 12, 0);
+        lv_obj_set_style_pad_column(btn, 10, 0);
         style_list_button(btn, item_bg);
+
+        lv_obj_t* icon = lv_label_create(btn);
+        lv_label_set_text(icon, LV_SYMBOL_WIFI);
+
+        lv_obj_t* lbl = lv_label_create(btn);
+        lv_label_set_text(lbl, label_text.c_str());
 
         // Store station index in user data
         lv_obj_set_user_data(btn, reinterpret_cast<void*>(i));
@@ -233,9 +259,9 @@ void WebRadioScreen::refreshStationList() {
     }
 
     if (num_stations == 0) {
-        lv_obj_t* btn = lv_list_add_btn(station_list, LV_SYMBOL_WARNING, "No stations configured");
-        style_list_button(btn, item_bg);
-        lv_obj_clear_flag(btn, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_t* placeholder = lv_label_create(station_list);
+        lv_label_set_text(placeholder, LV_SYMBOL_WARNING " No stations configured");
+        lv_obj_set_style_text_color(placeholder, ColorUtils::invertColor(item_bg), 0);
     }
 }
 
