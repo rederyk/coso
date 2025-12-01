@@ -48,13 +48,13 @@ bool CodecES8311::init(int sample_rate,
 
 int CodecES8311::map_user_volume_to_hw(int user_pct) {
     // Mappatura esponenziale per una migliore percezione uditiva.
-    // L'intervallo hardware udibile è stato identificato tra 55 e 75.
+    // L'intervallo hardware udibile è stato identificato tra 45 e 75.
     // 0% -> 0 (muto)
     // 1-100% -> mappato esponenzialmente su [55, 75]
     if (user_pct == 0) return 0;
 
     // Parametri della curva logaritmica
-    const double hw_min = 55.0; // Volume hardware minimo udibile
+    const double hw_min = 45.0; // Volume hardware minimo udibile
     const double hw_max = 75.0; // Volume hardware massimo desiderato
 
     // La formula di potenza (esponenziale) mappa l'input lineare (1-100) su una curva

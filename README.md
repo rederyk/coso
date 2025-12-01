@@ -14,6 +14,20 @@ Questo firmware trasforma un ESP32-S3 con display touch 2.8" (320×240) in un'in
 - **Memoria Avanzata**: Supporto PSRAM con allocazione ottimizzata per LVGL
 - **Sicurezza**: Salvataggio atomico configurazioni con backup auto
 
+## 🧱 Hardware Target
+
+Il firmware è pensato per il kit Freenove ESP32-S3 con display 2.8" (codice ASIN B0CN1RQGNS su Amazon). I parametri salienti della scheda sono:
+
+| Risorsa | Valore | Note |
+|---------|--------|------|
+| MCU | ESP32-S3 dual-core @ 240 MHz | Wi-Fi + Bluetooth LE integrati |
+| Flash | 16 MB QIO | allineata con `board_upload.flash_size = 16MB` e `partitions_custom_16MB.csv` |
+| PSRAM | 8 MB OPI | limite hardware: i log runtime mostreranno ~8 MB disponibili |
+| SRAM interna | 512 KB | usata per stack/RTOS e buffer LVGL DRAM |
+| Display | 2.8" 240×320 IPS, driver ILI9341 SPI | con touch capacitivo single-point |
+
+> ℹ️  I log di avvio (`[Memory] DRAM/PSRAM ...`) riportano la quantità **effettivamente disponibile**, quindi è normale visualizzare 8 MB di PSRAM pur avendo 16 MB di flash. Questo paragrafo serve a evitare malintesi futuri.
+
 ## Licenza
 
 Apache-2.0. Vedi `LICENSE` e `NOTICE` per dettagli e attribuzioni di terze parti.

@@ -98,9 +98,9 @@ static void logSystemBanner() {
 }
 
 static void logMemoryStats(const char* stage) {
-    const size_t dram_total = heap_caps_get_total_size(MALLOC_CAP_DEFAULT);
-    const size_t dram_free = heap_caps_get_free_size(MALLOC_CAP_DEFAULT);
-    const size_t dram_largest = heap_caps_get_largest_free_block(MALLOC_CAP_DEFAULT);
+    const size_t dram_total = heap_caps_get_total_size(MALLOC_CAP_INTERNAL);
+    const size_t dram_free = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+    const size_t dram_largest = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL);
     const size_t psram_total = heap_caps_get_total_size(MALLOC_CAP_SPIRAM);
     const size_t psram_free = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
     const size_t psram_largest = heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM);

@@ -105,9 +105,9 @@ private:
     static const size_t BUFFER_SIZE = 128 * 1024;
     static const size_t PLAYBACK_BUFFER_SIZE = 256 * 1024;
     static const size_t CHUNK_SIZE = 128 * 1024;
-    static constexpr size_t MAX_PSRAM_POOL_MB = 6;      // Target PSRAM pool size in MB (limit for cleanup)
+    static constexpr size_t MAX_PSRAM_POOL_MB = 2;      // Target PSRAM pool size in MB (limit for cleanup)
 
-    static constexpr size_t MAX_DYNAMIC_CHUNK_BYTES = 512 * 1024;
+    static constexpr size_t MAX_DYNAMIC_CHUNK_BYTES = 64 * 1024;
     static constexpr size_t MAX_RECORDING_BUFFER_CAPACITY = MAX_DYNAMIC_CHUNK_BYTES + (MAX_DYNAMIC_CHUNK_BYTES / 2); // 768 KB
     static constexpr size_t MAX_PLAYBACK_BUFFER_CAPACITY = MAX_DYNAMIC_CHUNK_BYTES * 3; // 1.5 MB
 
@@ -208,7 +208,7 @@ private:
     std::function<void(bool)> auto_pause_callback_ = nullptr;  // Called when buffering required
     bool is_auto_paused_ = false;  // Track if we're in auto-pause state
     uint32_t auto_pause_delay_ms_ = 0;  // Delay before resuming (configurable)
-    size_t auto_pause_min_chunks_ = 0;      // Minimum chunks needed before resuming (configurable)
+    size_t auto_pause_min_chunks_ = 1;      // Minimum chunks needed before resuming (configurable)
 
     // Seek Table (built incrementally)
     Mp3SeekTable seek_table_;

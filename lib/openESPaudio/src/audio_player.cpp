@@ -30,8 +30,8 @@ constexpr uint32_t kI2sWriteTimeout = 200;
 constexpr size_t kI2sChunkBytes = 1536;
 #else
 constexpr const char *kConfigProfile = "DEFAULT";
-constexpr size_t kRingPsram = 128 * 1024;
-constexpr size_t kRingDram = 32 * 1024;
+constexpr size_t kRingPsram = 64 * 1024;
+constexpr size_t kRingDram = 16 * 1024;
 constexpr size_t kRingMin = 16 * 1024;
 constexpr uint32_t kTargetBufferMs = 350;
 constexpr size_t kProducerMinFree = 24 * 1024;

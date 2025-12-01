@@ -1074,6 +1074,8 @@ void TimeshiftManager::download_task_loop()
         vTaskDelete(nullptr);
     };
 
+    bool writer_backpressure_active = false;
+
     while (is_running_)
     {
         // Background migration step (non-blocking)
@@ -1153,6 +1155,27 @@ void TimeshiftManager::download_task_loop()
         };
 
         process_background_migration();
+
+        // Se la coda del writer è piena (SD bloccata) fermiamo il download fino a quando si libera.
+        if (write_queue_)
+        {
+            UBaseType_t free_slots = uxQueueSpacesAvailable(write_queue_);
+            if (free_slots == 0)
+            {
+                if (!writer_backpressure_active)
+                {
+                    LOG_WARN("Chunk writer queue full (SD busy). Pausing download until space is available...");
+                    writer_backpressure_active = true;
+                }
+                vTaskDelay(pdMS_TO_TICKS(50));
+                continue;
+            }
+            else if (writer_backpressure_active)
+            {
+                LOG_INFO("Chunk writer queue drained, resuming download");
+                writer_backpressure_active = false;
+            }
+        }
 
         // Execute pending backend switch only at a chunk boundary to keep data contiguous
         if (storage_switch_requested_ && bytes_in_current_chunk_ == 0)
