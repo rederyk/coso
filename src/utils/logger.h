@@ -5,6 +5,20 @@
 #include <cstdarg>
 #include <vector>
 
+// Compile-time log mode selection (overridden via build flag APP_LOG_MODE)
+#ifndef APP_LOG_MODE_DEFAULT
+#define APP_LOG_MODE_DEFAULT 0
+#endif
+#ifndef APP_LOG_MODE_NOLOG
+#define APP_LOG_MODE_NOLOG 1
+#endif
+#ifndef APP_LOG_MODE
+#define APP_LOG_MODE APP_LOG_MODE_DEFAULT
+#endif
+#if (APP_LOG_MODE != APP_LOG_MODE_DEFAULT) && (APP_LOG_MODE != APP_LOG_MODE_NOLOG)
+#error "APP_LOG_MODE must be APP_LOG_MODE_DEFAULT or APP_LOG_MODE_NOLOG"
+#endif
+
 enum class AppLogLevel : uint8_t {
     Debug = 0,
     Info,
@@ -64,6 +78,6 @@ private:
     BufferEntry* buffer_;
     size_t next_index_;
     bool buffer_filled_;
-    AppLogLevel min_level_ = AppLogLevel::Debug;
+    AppLogLevel min_level_ = AppLogLevel::Error;
     mutable portMUX_TYPE spinlock_;
 };

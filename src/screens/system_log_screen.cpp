@@ -172,6 +172,7 @@ void SystemLogScreen::refreshLogView() {
 
     // Allocate buffer in PSRAM for better performance
     constexpr size_t BUFFER_SIZE = 12288;  // 12KB in PSRAM
+    bool log_buffer_in_psram = false;
     char* log_buffer = (char*)heap_caps_malloc(BUFFER_SIZE, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
 
     if (!log_buffer) {
@@ -181,6 +182,8 @@ void SystemLogScreen::refreshLogView() {
             lv_label_set_text(log_label, "Memory error!");
             return;
         }
+    } else {
+        log_buffer_in_psram = true;
     }
 
     size_t pos = 0;
@@ -212,8 +215,12 @@ void SystemLogScreen::refreshLogView() {
     lv_label_set_text(log_label, log_buffer);
     uint32_t t_set = millis();
 
-    // Free the buffer
-    free(log_buffer);
+    // Free the buffer with the appropriate allocator
+    if (log_buffer_in_psram) {
+        heap_caps_free(log_buffer);
+    } else {
+        free(log_buffer);
+    }
 
     if (auto_scroll_enabled && log_container) {
         lv_obj_scroll_to_y(log_container, LV_COORD_MAX, LV_ANIM_OFF);

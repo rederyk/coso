@@ -136,20 +136,25 @@ private:
 
     // RECORDING BUFFER (Write-Only by download task)
     uint8_t* recording_buffer_ = nullptr;
-    size_t rec_write_head_ = 0;              // Write position in recording buffer (circular)
-    size_t bytes_in_current_chunk_ = 0;      // Bytes accumulated for current pending chunk
-    size_t current_recording_offset_ = 0;    // Total bytes recorded (global offset)
-    uint32_t next_chunk_id_ = 0;             // Next chunk ID to assign
+    bool recording_buffer_is_psram_ = false;  // Track memory type for proper deallocation
+    size_t rec_write_head_ = 0;               // Write position in recording buffer (circular)
+    size_t bytes_in_current_chunk_ = 0;       // Bytes accumulated for current pending chunk
+    size_t current_recording_offset_ = 0;     // Total bytes recorded (global offset)
+    uint32_t next_chunk_id_ = 0;              // Next chunk ID to assign
     size_t recording_buffer_capacity_ = 0;
 
     // PLAYBACK BUFFER (Read-Only by read() method)
     uint8_t* playback_buffer_ = nullptr;
+    bool playback_buffer_is_psram_ = false;   // Track memory type for proper deallocation
     uint32_t current_playback_chunk_abs_id_ = UINT32_MAX;  // Absolute chunk ID (NOT index)
     size_t playback_chunk_loaded_size_ = 0;                // Size of loaded chunk
     uint32_t last_preload_check_chunk_abs_id_ = UINT32_MAX;   // Per evitare controlli di preload ripetuti
     uint32_t preloaded_chunk_abs_id_ = INVALID_CHUNK_ABS_ID;          // Chunk ID that was copied into playback_buffer_+chunk_size
     // Temporary cache used during backend switch to keep playback stable
-    std::vector<uint8_t> switch_cache_;
+    uint8_t* switch_cache_data_ = nullptr;
+    size_t switch_cache_size_ = 0;
+    size_t switch_cache_capacity_ = 0;
+    bool switch_cache_is_psram_ = false;
     bool using_switch_cache_ = false;
     uint32_t switch_cache_cur_id_ = INVALID_CHUNK_ABS_ID;
     uint32_t switch_cache_next_id_ = INVALID_CHUNK_ABS_ID;

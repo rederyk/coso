@@ -17,12 +17,16 @@ Logger::Logger()
       next_index_(0),
       buffer_filled_(false),
       spinlock_(portMUX_INITIALIZER_UNLOCKED) {
+#if APP_LOG_MODE == APP_LOG_MODE_NOLOG
+    buffer_ = nullptr;
+#else
     buffer_ = static_cast<BufferEntry*>(
         heap_caps_calloc(BUFFER_LINES, sizeof(BufferEntry), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
     if (!buffer_) {
         buffer_ = static_cast<BufferEntry*>(
             heap_caps_calloc(BUFFER_LINES, sizeof(BufferEntry), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
     }
+#endif
 }
 
 Logger::~Logger() {
@@ -33,7 +37,11 @@ Logger::~Logger() {
 }
 
 void Logger::begin(unsigned long baud_rate) {
+#if APP_LOG_MODE == APP_LOG_MODE_NOLOG
+    (void)baud_rate;
+#else
     Serial.begin(baud_rate);
+#endif
 }
 
 void Logger::setLevel(AppLogLevel level) {
@@ -41,6 +49,11 @@ void Logger::setLevel(AppLogLevel level) {
 }
 
 void Logger::log(AppLogLevel level, const char* message) {
+#if APP_LOG_MODE == APP_LOG_MODE_NOLOG
+    (void)level;
+    (void)message;
+    return;
+#endif
     if (static_cast<int>(level) < static_cast<int>(min_level_)) {
         return;
     }
@@ -58,6 +71,11 @@ void Logger::log(AppLogLevel level, const String& message) {
 }
 
 void Logger::logf(AppLogLevel level, const char* fmt, ...) {
+#if APP_LOG_MODE == APP_LOG_MODE_NOLOG
+    (void)level;
+    (void)fmt;
+    return;
+#endif
     if (!fmt) {
         return;
     }
@@ -112,6 +130,12 @@ void Logger::errorf(const char* fmt, ...) {
 }
 
 void Logger::logv(AppLogLevel level, const char* fmt, va_list args) {
+#if APP_LOG_MODE == APP_LOG_MODE_NOLOG
+    (void)level;
+    (void)fmt;
+    (void)args;
+    return;
+#endif
     va_list args_copy;
     va_copy(args_copy, args);
     int needed = vsnprintf(nullptr, 0, fmt, args_copy);
@@ -126,6 +150,12 @@ void Logger::logv(AppLogLevel level, const char* fmt, va_list args) {
 }
 
 void Logger::appendToBuffer(const String& message, AppLogLevel level, uint32_t timestamp) {
+#if APP_LOG_MODE == APP_LOG_MODE_NOLOG
+    (void)message;
+    (void)level;
+    (void)timestamp;
+    return;
+#endif
     if (!buffer_) {
         return;
     }
@@ -190,6 +220,9 @@ String Logger::formatLineCompact(AppLogLevel level, uint32_t timestamp, const ch
 }
 
 std::vector<String> Logger::getBufferedLogs() const {
+#if APP_LOG_MODE == APP_LOG_MODE_NOLOG
+    return {};
+#endif
     if (!buffer_) {
         return {};
     }
@@ -223,6 +256,10 @@ std::vector<String> Logger::getBufferedLogs() const {
 }
 
 std::vector<String> Logger::getBufferedLogs(AppLogLevel min_level) const {
+#if APP_LOG_MODE == APP_LOG_MODE_NOLOG
+    (void)min_level;
+    return {};
+#endif
     if (!buffer_) {
         return {};
     }
@@ -266,6 +303,9 @@ std::vector<String> Logger::getBufferedLogs(AppLogLevel min_level) const {
 }
 
 void Logger::clearBuffer() {
+#if APP_LOG_MODE == APP_LOG_MODE_NOLOG
+    return;
+#endif
     if (!buffer_) {
         return;
     }
@@ -281,6 +321,9 @@ void Logger::clearBuffer() {
 }
 
 void Logger::dumpBufferToSerial() const {
+#if APP_LOG_MODE == APP_LOG_MODE_NOLOG
+    return;
+#endif
     const auto snapshot = getBufferedLogs();
     Serial.println(F("[Logger] Dump buffered logs ↓"));
     for (const auto& line : snapshot) {

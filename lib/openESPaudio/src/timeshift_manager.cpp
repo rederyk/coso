@@ -38,10 +38,45 @@ TimeshiftManager::~TimeshiftManager()
     close();
     if (mutex_)
         vSemaphoreDelete(mutex_);
+
+    // Properly free recording buffer based on allocation type
     if (recording_buffer_)
-        free(recording_buffer_);
+    {
+        if (recording_buffer_is_psram_)
+        {
+            heap_caps_free(recording_buffer_);
+        } else {
+            free(recording_buffer_);
+        }
+        recording_buffer_ = nullptr;
+    }
+
+    // Properly free playback buffer based on allocation type
     if (playback_buffer_)
-        free(playback_buffer_);
+    {
+        if (playback_buffer_is_psram_)
+        {
+            heap_caps_free(playback_buffer_);
+        } else {
+            free(playback_buffer_);
+        }
+        playback_buffer_ = nullptr;
+    }
+
+    // Properly free switch cache based on allocation type
+    if (switch_cache_data_)
+    {
+        if (switch_cache_is_psram_)
+        {
+            heap_caps_free(switch_cache_data_);
+        } else {
+            free(switch_cache_data_);
+        }
+        switch_cache_data_ = nullptr;
+        switch_cache_size_ = 0;
+        switch_cache_capacity_ = 0;
+    }
+
     free_psram_pool();
 }
 
@@ -211,7 +246,6 @@ bool TimeshiftManager::open(const char *uri)
     retain_psram_until_migrated_ = false;
     migration_queue_.clear();
     using_switch_cache_ = false;
-    switch_cache_.clear();
     switch_cache_cur_id_ = INVALID_CHUNK_ABS_ID;
     switch_cache_next_id_ = INVALID_CHUNK_ABS_ID;
     switch_cache_cur_start_ = 0;
@@ -249,23 +283,46 @@ bool TimeshiftManager::open(const char *uri)
     }
 
     recording_buffer_capacity_ = MAX_RECORDING_BUFFER_CAPACITY;
-    recording_buffer_ = (uint8_t *)malloc(recording_buffer_capacity_);
+    // Try to allocate recording buffer in PSRAM first, fallback to DRAM
+    recording_buffer_is_psram_ = false;
+    recording_buffer_ = (uint8_t *)heap_caps_malloc(recording_buffer_capacity_, MALLOC_CAP_SPIRAM);
     if (!recording_buffer_)
     {
-        LOG_ERROR("Failed to allocate recording buffer (%u KB)", (unsigned)(recording_buffer_capacity_ / 1024));
-        close();
-        return false;
+        LOG_WARN("Failed to allocate recording buffer (%u KB) in PSRAM, falling back to DRAM", (unsigned)(recording_buffer_capacity_ / 1024));
+        recording_buffer_ = (uint8_t *)malloc(recording_buffer_capacity_);
+        if (!recording_buffer_)
+        {
+            LOG_ERROR("Failed to allocate recording buffer (%u KB) even in DRAM", (unsigned)(recording_buffer_capacity_ / 1024));
+            close();
+            return false;
+        }
+    } else {
+        recording_buffer_is_psram_ = true;
     }
 
     playback_buffer_capacity_ = MAX_PLAYBACK_BUFFER_CAPACITY;
-    playback_buffer_ = (uint8_t *)malloc(playback_buffer_capacity_);
+    // Try to allocate playback buffer in PSRAM first, fallback to DRAM
+    playback_buffer_is_psram_ = false;
+    playback_buffer_ = (uint8_t *)heap_caps_malloc(playback_buffer_capacity_, MALLOC_CAP_SPIRAM);
     if (!playback_buffer_)
     {
-        LOG_ERROR("Failed to allocate playback buffer (%u KB)", (unsigned)(playback_buffer_capacity_ / 1024));
-        free(recording_buffer_);
-        recording_buffer_ = nullptr;
-        close();
-        return false;
+        LOG_WARN("Failed to allocate playback buffer (%u KB) in PSRAM, falling back to DRAM", (unsigned)(playback_buffer_capacity_ / 1024));
+        playback_buffer_ = (uint8_t *)malloc(playback_buffer_capacity_);
+        if (!playback_buffer_)
+        {
+            LOG_ERROR("Failed to allocate playback buffer (%u KB) even in DRAM", (unsigned)(playback_buffer_capacity_ / 1024));
+            if (recording_buffer_is_psram_)
+            {
+                heap_caps_free(recording_buffer_);
+            } else {
+                free(recording_buffer_);
+            }
+            recording_buffer_ = nullptr;
+            close();
+            return false;
+        }
+    } else {
+        playback_buffer_is_psram_ = true;
     }
 
     LOG_INFO("Timeshift buffers allocated: rec=%uKB, play=%uKB (adaptive for %u kbps)",
@@ -300,15 +357,27 @@ void TimeshiftManager::close()
     pending_chunks_.clear();
     ready_chunks_.clear();
 
+    // Properly free recording buffer based on allocation type
     if (recording_buffer_)
     {
-        free(recording_buffer_);
+        if (recording_buffer_is_psram_)
+        {
+            heap_caps_free(recording_buffer_);
+        } else {
+            free(recording_buffer_);
+        }
         recording_buffer_ = nullptr;
     }
 
+    // Properly free playback buffer based on allocation type
     if (playback_buffer_)
     {
-        free(playback_buffer_);
+        if (playback_buffer_is_psram_)
+        {
+            heap_caps_free(playback_buffer_);
+        } else {
+            free(playback_buffer_);
+        }
         playback_buffer_ = nullptr;
     }
 
@@ -320,7 +389,6 @@ void TimeshiftManager::close()
     retain_psram_until_migrated_ = false;
     migration_queue_.clear();
     using_switch_cache_ = false;
-    switch_cache_.clear();
 
     is_open_ = false;
     seek_table_.clear();
@@ -395,7 +463,6 @@ void TimeshiftManager::stop()
     retain_psram_until_migrated_ = false;
     migration_queue_.clear();
     using_switch_cache_ = false;
-    switch_cache_.clear();
 
     auto wait_for_task = [&](TaskHandle_t &handle, const char *name) {
         if (!handle)
@@ -692,19 +759,34 @@ bool TimeshiftManager::snapshot_playback_window()
         return false;
     }
 
-    switch_cache_.assign(total_size, 0);
+    // Allocate cache if needed
+    if (switch_cache_capacity_ < total_size) {
+        if (switch_cache_data_) {
+            if (switch_cache_is_psram_) heap_caps_free(switch_cache_data_);
+            else free(switch_cache_data_);
+        }
+        switch_cache_data_ = (uint8_t *)heap_caps_malloc(total_size, MALLOC_CAP_SPIRAM);
+        if (!switch_cache_data_) {
+            switch_cache_data_ = (uint8_t *)malloc(total_size);
+            switch_cache_is_psram_ = false;
+        } else {
+            switch_cache_is_psram_ = true;
+        }
+        switch_cache_capacity_ = total_size;
+    }
+    switch_cache_size_ = total_size;
 
-    if (!copy_chunk_into_buffer(cur_chunk, switch_cache_.data()))
+    if (!copy_chunk_into_buffer(cur_chunk, switch_cache_data_))
     {
-        switch_cache_.clear();
+        switch_cache_size_ = 0;
         return false;
     }
 
     if (have_next)
     {
-        if (!copy_chunk_into_buffer(next_chunk, switch_cache_.data() + cur_chunk.length))
+        if (!copy_chunk_into_buffer(next_chunk, switch_cache_data_ + cur_chunk.length))
         {
-            switch_cache_.clear();
+            switch_cache_size_ = 0;
             return false;
         }
     }
@@ -754,7 +836,7 @@ bool TimeshiftManager::try_read_from_switch_cache(size_t offset, void *buffer, s
         size_t chunk_offset = offset - start;
         size_t available = len - chunk_offset;
         size_t to_read = std::min(size, available);
-        memcpy(buffer, switch_cache_.data() + base_offset + chunk_offset, to_read);
+        memcpy(buffer, switch_cache_data_ + base_offset + chunk_offset, to_read);
         playback_chunk_loaded_size_ = len;
         current_playback_chunk_abs_id_ = id;
         out_bytes = to_read;
@@ -1357,7 +1439,7 @@ void TimeshiftManager::download_task_loop()
             // Clear temporary cache after migration
             xSemaphoreTake(mutex_, portMAX_DELAY);
             using_switch_cache_ = false;
-            switch_cache_.clear();
+            switch_cache_size_ = 0;
             switch_cache_cur_id_ = INVALID_CHUNK_ABS_ID;
             switch_cache_next_id_ = INVALID_CHUNK_ABS_ID;
             switch_cache_cur_len_ = 0;

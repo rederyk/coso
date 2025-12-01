@@ -9,9 +9,14 @@
 namespace openespaudio {
 
 // Livello di logging corrente
-static LogLevel current_level = LogLevel::INFO;
+static LogLevel current_level = LogLevel::ERROR;
 
 void log_message(LogLevel level, const char* format, ...) {
+#if OPENESPAUDIO_LOG_MODE == OPENESPAUDIO_LOG_MODE_NOLOG
+    (void)level;
+    (void)format;
+    return;
+#else
     if (level > current_level) {
         return;  // Non loggare messaggi sotto il livello corrente
     }
@@ -23,14 +28,23 @@ void log_message(LogLevel level, const char* format, ...) {
     va_end(args);
 
     Serial.print(buffer);  // Output senza newline, poiché includiamo \n nel format
+#endif
 }
 
 void set_log_level(LogLevel level) {
+#if OPENESPAUDIO_LOG_MODE == OPENESPAUDIO_LOG_MODE_NOLOG
+    (void)level;
+#else
     current_level = level;
+#endif
 }
 
 LogLevel get_log_level() {
+#if OPENESPAUDIO_LOG_MODE == OPENESPAUDIO_LOG_MODE_NOLOG
+    return LogLevel::ERROR;
+#else
     return current_level;
+#endif
 }
 
 } // namespace openespaudio
