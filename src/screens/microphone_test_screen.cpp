@@ -4,6 +4,7 @@
 #include "utils/color_utils.h"
 #include "core/voice_assistant.h"
 #include "core/audio_manager.h"
+#include "core/microphone_manager.h"
 #include <Arduino.h>
 #include <vector>
 #include <string>
@@ -12,23 +13,14 @@
 #include <cstdlib>
 #include <utility>
 #include <functional>
-#include <limits>
 #include <FS.h>
 #include <SD_MMC.h>
 #include <LittleFS.h>
-#include <driver/i2s.h>
-#include <freertos/FreeRTOS.h>
-#include <freertos/task.h>
 
 namespace {
 
 constexpr const char* kRecordingsDir = "/test_recordings";
-constexpr int kMicI2sBckPin = 5;
-constexpr int kMicI2sWsPin = 7;
-constexpr int kMicI2sDinPin = 6;
-constexpr int kMicI2sMckPin = 4;
 constexpr uint32_t kDefaultRecordingDurationSeconds = 6;
-constexpr uint32_t kMicSampleRate = 16000;
 
 enum class RecordingStorage {
     SD_CARD,
@@ -125,23 +117,6 @@ void cleanupFileButtonUserData(lv_event_t* e) {
     delete path_ptr;
     lv_obj_set_user_data(target, nullptr);
 }
-
-// WAV file header structure
-struct WAVHeader {
-    char riff[4] = {'R', 'I', 'F', 'F'};
-    uint32_t fileSize = 0;
-    char wave[4] = {'W', 'A', 'V', 'E'};
-    char fmt[4] = {'f', 'm', 't', ' '};
-    uint32_t formatLength = 16;
-    uint16_t formatType = 1; // PCM
-    uint16_t channels = 1;
-    uint32_t sampleRate = 16000;
-    uint32_t bytesPerSecond = 32000; // sampleRate * channels * bitsPerSample / 8
-    uint16_t blockAlign = 2; // channels * bitsPerSample / 8
-    uint16_t bitsPerSample = 16;
-    char data[4] = {'d', 'a', 't', 'a'};
-    uint32_t dataSize = 0;
-};
 
 lv_obj_t* create_fixed_card(lv_obj_t* parent, const char* title, lv_color_t bg_color = lv_color_hex(0x10182c)) {
     lv_obj_t* card = lv_obj_create(parent);
@@ -255,279 +230,7 @@ uint32_t findNextRecordingIndex(const RecordingStorageInfo& storage) {
     return max_index + 1;
 }
 
-// Generate a unique filename for recording
-std::string generateRecordingFilename(const RecordingStorageInfo& storage) {
-    uint32_t next_index = findNextRecordingIndex(storage);
-    std::string directory = (storage.directory && storage.directory[0] != '\0')
-                                ? storage.directory
-                                : kRecordingsDir;
-    if (!directory.empty() && directory.back() == '/') {
-        directory.pop_back();
-    }
-
-    char filename[48];
-    snprintf(filename, sizeof(filename), "%s/test_%06u.wav", directory.c_str(), next_index);
-    return filename;
-}
-
-bool recordAudioToFile(const RecordingStorageInfo& storage,
-                       const char* filename,
-                       uint32_t duration_seconds,
-                       std::atomic<bool>& stop_flag,
-                       const std::function<void(uint16_t)>& level_callback);
-
-// Simple audio recording function (runs in dedicated task)
-bool recordAudioToFile(const RecordingStorageInfo& storage,
-                       const char* filename,
-                       uint32_t duration_seconds,
-                       std::atomic<bool>& stop_flag,
-                       const std::function<void(uint16_t)>& level_callback) {
-    if (!ensureRecordingDirectory(storage) || !storage.fs) {
-        Logger::getInstance().error("[MicTest] Recording directory unavailable");
-        return false;
-    }
-
-    // Open file for writing
-    File file = storage.fs->open(filename, FILE_WRITE);
-    if (!file) {
-        Logger::getInstance().errorf("[MicTest] Failed to open recording file on %s", storage.label);
-        return false;
-    }
-
-    Logger::getInstance().infof("[MicTest] Recording to %s:%s", storage.label, filename);
-
-    // Write initial WAV header (will be updated with correct size at end)
-    WAVHeader initial_header;
-    file.write((uint8_t*)&initial_header, sizeof(WAVHeader));
-
-    // Configure I2S for microphone input (same as VoiceAssistant)
-    const i2s_config_t i2s_config = {
-        .mode = i2s_mode_t(I2S_MODE_MASTER | I2S_MODE_RX),
-        .sample_rate = kMicSampleRate,
-        .bits_per_sample = i2s_bits_per_sample_t(16),
-        .channel_format = I2S_CHANNEL_FMT_ONLY_LEFT,
-        .communication_format = I2S_COMM_FORMAT_STAND_I2S,
-        .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1,
-        .dma_buf_count = 4,
-        .dma_buf_len = 512,
-        .use_apll = true
-    };
-
-    const i2s_pin_config_t pin_config = {
-        .mck_io_num = kMicI2sMckPin,
-        .bck_io_num = kMicI2sBckPin,
-        .ws_io_num = kMicI2sWsPin,
-        .data_out_num = I2S_PIN_NO_CHANGE,
-        .data_in_num = kMicI2sDinPin
-    };
-
-    esp_err_t err = i2s_driver_install(I2S_NUM_1, &i2s_config, 0, nullptr);
-    if (err != ESP_OK) {
-        Logger::getInstance().errorf("[MicTest] I2S install failed: %d (%s)",
-                                     err,
-                                     err == ESP_ERR_INVALID_STATE ? "I2S already in use - stop audio playback first!" : "Unknown error");
-        file.close();
-        return false;
-    }
-
-    err = i2s_set_pin(I2S_NUM_1, &pin_config);
-    if (err != ESP_OK) {
-        Logger::getInstance().errorf("I2S set pin failed: %d", err);
-        i2s_driver_uninstall(I2S_NUM_1);
-        file.close();
-        return false;
-    }
-    i2s_set_clk(I2S_NUM_1, i2s_config.sample_rate, i2s_config.bits_per_sample, I2S_CHANNEL_MONO);
-
-    // Buffer for audio data (mono frames)
-    constexpr size_t kSamplesPerChunk = 2048;
-    constexpr float kTargetPeak = 32000.0f;
-    constexpr float kMaxGainFactor = 20.0f;
-    uint8_t* buffer = static_cast<uint8_t*>(malloc(kSamplesPerChunk * sizeof(int16_t)));
-    if (!buffer) {
-        Logger::getInstance().error("Failed to allocate audio buffer");
-        i2s_driver_uninstall(I2S_NUM_1);
-        file.close();
-        return false;
-    }
-
-    const uint32_t target_duration_ms = duration_seconds * 1000;
-    const bool limit_by_duration = duration_seconds > 0;
-    uint32_t start_ms = millis();
-
-    uint32_t total_bytes = 0;
-    uint64_t recorded_samples = 0;
-
-    Logger::getInstance().info("Starting audio recording");
-
-    while (true) {
-        if (stop_flag.load()) {
-            break;
-        }
-        uint32_t elapsed_ms = millis() - start_ms;
-        if (limit_by_duration && elapsed_ms >= target_duration_ms) {
-            break;
-        }
-
-        size_t bytes_read = 0;
-        err = i2s_read(I2S_NUM_1,
-                       buffer,
-                       kSamplesPerChunk * sizeof(int16_t),
-                       &bytes_read,
-                       pdMS_TO_TICKS(100));
-
-        if (err == ESP_OK && bytes_read >= sizeof(int16_t)) {
-            int16_t* samples = reinterpret_cast<int16_t*>(buffer);
-            size_t sample_count = bytes_read / sizeof(int16_t);
-            size_t mono_bytes = sample_count * sizeof(int16_t);
-            int32_t chunk_peak = 0;
-
-            for (size_t i = 0; i < sample_count; ++i) {
-                int32_t value = std::abs(samples[i]);
-                if (value > chunk_peak) {
-                    chunk_peak = value;
-                }
-            }
-
-            float gain = 1.0f;
-            if (chunk_peak > 0 && chunk_peak < kTargetPeak) {
-                gain = std::min<float>(kMaxGainFactor, kTargetPeak / static_cast<float>(chunk_peak));
-            }
-
-            int32_t scaled_peak = chunk_peak;
-            if (gain != 1.0f) {
-                scaled_peak = 0;
-                constexpr int32_t kInt16Min = std::numeric_limits<int16_t>::min();
-                constexpr int32_t kInt16Max = std::numeric_limits<int16_t>::max();
-                for (size_t i = 0; i < sample_count; ++i) {
-                    float scaled_value = samples[i] * gain;
-                    int32_t scaled_int = static_cast<int32_t>(scaled_value);
-                    if (scaled_int < kInt16Min) {
-                        scaled_int = kInt16Min;
-                    } else if (scaled_int > kInt16Max) {
-                        scaled_int = kInt16Max;
-                    }
-                    samples[i] = static_cast<int16_t>(scaled_int);
-                    int32_t abs_value = std::abs(scaled_int);
-                    if (abs_value > scaled_peak) {
-                        scaled_peak = abs_value;
-                    }
-                }
-            }
-
-            file.write(reinterpret_cast<uint8_t*>(samples), mono_bytes);
-            recorded_samples += sample_count;
-            total_bytes += mono_bytes;
-
-            if (level_callback) {
-                uint16_t level = static_cast<uint16_t>(std::min<int>(100, (scaled_peak * 100) / 32767));
-                level_callback(level);
-            }
-        } else {
-            vTaskDelay(pdMS_TO_TICKS(10));
-        }
-    }
-
-    if (level_callback) {
-        level_callback(0);
-    }
-
-    // Cleanup
-    free(buffer);
-    i2s_driver_uninstall(I2S_NUM_1);
-
-    uint32_t recording_duration_ms = millis() - start_ms;
-    if (recording_duration_ms == 0) {
-        recording_duration_ms = 1;
-    }
-
-    uint32_t configured_sample_rate = i2s_config.sample_rate;
-    uint32_t candidate_rate = recorded_samples > 0
-                                  ? static_cast<uint32_t>((recorded_samples * 1000ull) / recording_duration_ms)
-                                  : 0;
-    // Always store 16000 Hz in WAV header for codec compatibility
-    // APLL ensures recording is accurate, but playback needs standard rate
-    uint32_t measured_sample_rate = configured_sample_rate;
-
-    // Calculate expected duration at stored rate
-    uint32_t expected_duration_ms = recorded_samples > 0 ? (recorded_samples * 1000) / measured_sample_rate : 0;
-
-    Logger::getInstance().infof("Recording complete: %u bytes, %llu samples in %ums (~%u Hz) stored as %u Hz",
-                                total_bytes,
-                                static_cast<unsigned long long>(recorded_samples),
-                                recording_duration_ms,
-                                candidate_rate,
-                                measured_sample_rate);
-    Logger::getInstance().infof("Recording timing: actual %u ms, expected at %u Hz: %u ms (diff: %d ms)",
-                                recording_duration_ms,
-                                measured_sample_rate,
-                                expected_duration_ms,
-                                static_cast<int>(recording_duration_ms) - static_cast<int>(expected_duration_ms));
-
-    // Update WAV header with actual data size
-    if (total_bytes > 0) {
-        WAVHeader header;
-        header.sampleRate = measured_sample_rate;
-        header.bytesPerSecond = header.sampleRate * header.channels * header.bitsPerSample / 8;
-        header.blockAlign = header.channels * (header.bitsPerSample / 8);
-        header.dataSize = total_bytes;
-        header.fileSize = 36 + total_bytes; // 44 - 8 = 36
-
-        file.seek(0);
-        file.write((uint8_t*)&header, sizeof(WAVHeader));
-    }
-
-    file.close();
-    return total_bytes > 0;
-}
-
 } // namespace
-
-// Public API implementation for Voice Assistant
-MicrophoneTestScreen::RecordingResult MicrophoneTestScreen::recordToFile(
-    uint32_t duration_seconds,
-    std::atomic<bool>& stop_flag) {
-
-    RecordingResult result;
-    result.success = false;
-    result.file_size_bytes = 0;
-    result.duration_ms = 0;
-
-    auto storage = getRecordingStorageInfo();
-    if (!storage.fs || !ensureRecordingDirectory(storage)) {
-        Logger::getInstance().error("[MicTest] Unable to access recording storage for voice assistant");
-        return result;
-    }
-
-    std::string filename = generateRecordingFilename(storage);
-    uint32_t start_ms = millis();
-
-    // Call the internal recording function without UI callbacks
-    bool success = recordAudioToFile(storage, filename.c_str(), duration_seconds, stop_flag, nullptr);
-
-    result.duration_ms = millis() - start_ms;
-
-    if (success) {
-        result.success = true;
-        result.file_path = buildPlaybackPath(storage, filename);
-
-        // Get file size
-        File file = storage.fs->open(filename.c_str(), FILE_READ);
-        if (file) {
-            result.file_size_bytes = file.size();
-            file.close();
-        }
-
-        Logger::getInstance().infof("[MicTest] Voice assistant recording complete: %s (%u bytes, %u ms)",
-                                    result.file_path.c_str(),
-                                    result.file_size_bytes,
-                                    result.duration_ms);
-    } else {
-        Logger::getInstance().error("[MicTest] Voice assistant recording failed");
-    }
-
-    return result;
-}
 
 void MicrophoneTestScreen::recordingTask(void* param) {
     auto* screen = static_cast<MicrophoneTestScreen*>(param);
@@ -536,11 +239,29 @@ void MicrophoneTestScreen::recordingTask(void* param) {
         return;
     }
 
-    auto storage = getRecordingStorageInfo();
-    if (!storage.fs || !ensureRecordingDirectory(storage)) {
-        Logger::getInstance().error("[MicTest] Unable to access recording storage");
+    Logger::getInstance().info("[MicTest] Recording task started - using MicrophoneManager");
+
+    // Configure recording with UI callback for level updates
+    MicrophoneManager::RecordingConfig config;
+    config.duration_seconds = kDefaultRecordingDurationSeconds;
+    config.sample_rate = 16000;
+    config.bits_per_sample = 16;
+    config.channels = 1;
+    config.enable_agc = true;
+    config.level_callback = [screen](uint16_t level) {
+        screen->updateMicLevelIndicator(level);
+    };
+
+    // Start recording using MicrophoneManager
+    auto handle = MicrophoneManager::getInstance().startRecording(
+        config,
+        screen->stop_recording_requested
+    );
+
+    if (!handle) {
+        Logger::getInstance().error("[MicTest] Failed to start recording");
         if (screen->record_status_label) {
-            lv_label_set_text(screen->record_status_label, "Storage non disponibile");
+            lv_label_set_text(screen->record_status_label, "Errore avvio registrazione");
         }
         screen->is_recording = false;
         screen->stop_recording_requested.store(false);
@@ -551,32 +272,25 @@ void MicrophoneTestScreen::recordingTask(void* param) {
         return;
     }
 
-    std::string filename = generateRecordingFilename(storage);
-    if (storage.storage == RecordingStorage::LITTLEFS) {
-        Logger::getInstance().warn("[MicTest] SD card unavailable, recording to LittleFS");
-    }
+    // Wait for recording to complete and get result
+    auto result = MicrophoneManager::getInstance().getRecordingResult(handle);
 
-    auto level_callback = [screen](uint16_t level) {
-        screen->updateMicLevelIndicator(level);
-    };
-
-    bool success = recordAudioToFile(storage,
-                                     filename.c_str(),
-                                     kDefaultRecordingDurationSeconds,
-                                     screen->stop_recording_requested,
-                                     level_callback);
     bool cancelled = screen->stop_recording_requested.load();
     screen->stop_recording_requested.store(false);
-    if (success) {
-        screen->current_playback_file = buildPlaybackPath(storage, filename);
+
+    if (result.success) {
+        screen->current_playback_file = result.file_path;
         if (screen->playback_status_label) {
             std::string status = "Selected: " + playbackDisplayName(screen->current_playback_file);
             lv_label_set_text(screen->playback_status_label, status.c_str());
         }
+        Logger::getInstance().infof("[MicTest] Recording saved: %s (%u bytes)",
+                                    result.file_path.c_str(),
+                                    result.file_size_bytes);
     }
 
     if (screen->record_status_label) {
-        if (!success) {
+        if (!result.success) {
             lv_label_set_text(screen->record_status_label, "Recording failed!");
         } else if (cancelled) {
             lv_label_set_text(screen->record_status_label, "Recording stopped");
@@ -591,7 +305,8 @@ void MicrophoneTestScreen::recordingTask(void* param) {
     screen->applyThemeStyles(SettingsManager::getInstance().getSnapshot());
     screen->refreshAudioFilesList();
 
-    Logger::getInstance().infof("Recording task completed, success: %d (cancelled=%d)", success, cancelled);
+    Logger::getInstance().infof("[MicTest] Recording task completed, success: %d (cancelled=%d)",
+                                result.success, cancelled);
     vTaskDelete(nullptr);
 }
 

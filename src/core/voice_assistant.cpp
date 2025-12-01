@@ -1,7 +1,7 @@
 #include "core/voice_assistant.h"
 #include "core/settings_manager.h"
 #include "core/audio_manager.h"
-#include "screens/microphone_test_screen.h"
+#include "core/microphone_manager.h"
 #include "utils/logger.h"
 #include <esp_http_client.h>
 #include <cstring>
@@ -88,7 +88,7 @@ bool VoiceAssistant::begin() {
         this, AI_TASK_PRIORITY, &aiTask_, tskNO_AFFINITY);
 
     initialized_ = true;
-    LOG_I("Voice assistant initialized successfully (recording delegated to MicrophoneTestScreen)");
+    LOG_I("Voice assistant initialized successfully (using MicrophoneManager)");
     return true;
 }
 
@@ -144,7 +144,7 @@ void VoiceAssistant::triggerListening() {
 }
 
 void VoiceAssistant::startRecording() {
-    LOG_I("Starting voice recording session (delegating to MicrophoneTestScreen)");
+    LOG_I("Starting voice recording session (using MicrophoneManager)");
 
     if (recordingTask_) {
         LOG_W("Recording already in progress");
@@ -155,7 +155,7 @@ void VoiceAssistant::startRecording() {
     stop_recording_flag_.store(false);
     last_recorded_file_.clear();
 
-    // Create recording task
+    // Create recording task (lightweight wrapper around MicrophoneManager)
     xTaskCreatePinnedToCore(
         recordingTask, "voice_recording", RECORDING_TASK_STACK,
         this, RECORDING_TASK_PRIORITY, &recordingTask_, tskNO_AFFINITY);
@@ -179,21 +179,33 @@ void VoiceAssistant::recordingTask(void* param) {
         return;
     }
 
-    LOG_I("Recording task started - delegating to MicrophoneTestScreen");
+    LOG_I("Recording task started - using MicrophoneManager");
 
-    // CRITICAL: Stop any ongoing audio playback to free I2S_NUM_1
-    // The recording function needs exclusive access to the I2S port
-    AudioManager::getInstance().stop();
-    LOG_I("Stopped audio playback to free I2S for recording");
+    // Configure recording (unlimited duration, controlled by stop flag)
+    MicrophoneManager::RecordingConfig config;
+    config.duration_seconds = RECORDING_DURATION_SECONDS;  // 0 = unlimited
+    config.sample_rate = 16000;
+    config.bits_per_sample = 16;
+    config.channels = 1;
+    config.enable_agc = true;
+    config.level_callback = nullptr;  // No UI updates needed for voice assistant
 
-    // Small delay to ensure I2S is fully released
-    vTaskDelay(pdMS_TO_TICKS(100));
-
-    // Call MicrophoneTestScreen's recording function
-    auto result = MicrophoneTestScreen::recordToFile(
-        RECORDING_DURATION_SECONDS,
+    // Start recording using MicrophoneManager
+    auto handle = MicrophoneManager::getInstance().startRecording(
+        config,
         va->stop_recording_flag_
     );
+
+    if (!handle) {
+        LOG_E("Failed to start recording");
+        va->recordingTask_ = nullptr;
+        va->stop_recording_flag_.store(false);
+        vTaskDelete(nullptr);
+        return;
+    }
+
+    // Wait for recording to complete and get result
+    auto result = MicrophoneManager::getInstance().getRecordingResult(handle);
 
     if (result.success) {
         LOG_I("Recording completed successfully: %s (%u bytes, %u ms)",

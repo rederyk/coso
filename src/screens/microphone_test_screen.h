@@ -5,6 +5,7 @@
 #include <atomic>
 #include "core/screen.h"
 #include "core/settings_manager.h"
+#include "core/microphone_manager.h"
 
 class MicrophoneTestScreen : public Screen {
 public:
@@ -15,22 +16,6 @@ public:
     void build(lv_obj_t* parent) override;
     void onShow() override;
     void onHide() override;
-
-    // Public recording API for Voice Assistant to use
-    struct RecordingResult {
-        bool success;
-        std::string file_path;  // Absolute path to the recorded WAV file
-        size_t file_size_bytes;
-        uint32_t duration_ms;
-    };
-
-    /**
-     * Record audio to a file (blocking call - runs recording synchronously)
-     * @param duration_seconds Maximum recording duration (0 = unlimited)
-     * @param stop_flag Atomic flag to stop recording early
-     * @return RecordingResult with success status and file path
-     */
-    static RecordingResult recordToFile(uint32_t duration_seconds, std::atomic<bool>& stop_flag);
 
 protected:
     void applySnapshot(const SettingsSnapshot& snapshot);
@@ -65,4 +50,5 @@ protected:
     TaskHandle_t recording_task_handle = nullptr;
     std::string current_playback_file;
     std::atomic<bool> stop_recording_requested{false};
+    MicrophoneManager::RecordingHandle recording_handle = nullptr;
 };
