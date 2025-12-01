@@ -19,6 +19,7 @@ Logger::Logger()
       spinlock_(portMUX_INITIALIZER_UNLOCKED) {
 #if APP_LOG_MODE == APP_LOG_MODE_NOLOG
     buffer_ = nullptr;
+    min_level_ = AppLogLevel::Error; // irrelevant in nolog
 #else
     buffer_ = static_cast<BufferEntry*>(
         heap_caps_calloc(BUFFER_LINES, sizeof(BufferEntry), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
@@ -26,6 +27,15 @@ Logger::Logger()
         buffer_ = static_cast<BufferEntry*>(
             heap_caps_calloc(BUFFER_LINES, sizeof(BufferEntry), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
     }
+#if APP_LOG_MODE == APP_LOG_MODE_ALL
+    min_level_ = AppLogLevel::Trace;
+#elif APP_LOG_MODE == APP_LOG_MODE_ERROR
+    min_level_ = AppLogLevel::Error;
+#elif APP_LOG_MODE == APP_LOG_MODE_DEFAULT
+    min_level_ = AppLogLevel::Info;
+#else
+    min_level_ = AppLogLevel::Error; // fallback
+#endif
 #endif
 }
 
@@ -96,6 +106,17 @@ void Logger::debugf(const char* fmt, ...) {
     va_end(args);
 }
 
+void Logger::trace(const char* message) {
+    log(AppLogLevel::Trace, message);
+}
+
+void Logger::tracef(const char* fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    logv(AppLogLevel::Trace, fmt, args);
+    va_end(args);
+}
+
 void Logger::info(const char* message) {
     log(AppLogLevel::Info, message);
 }
@@ -126,6 +147,17 @@ void Logger::errorf(const char* fmt, ...) {
     va_list args;
     va_start(args, fmt);
     logv(AppLogLevel::Error, fmt, args);
+    va_end(args);
+}
+
+void Logger::user(const char* message) {
+    log(AppLogLevel::User, message);
+}
+
+void Logger::userf(const char* fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    logv(AppLogLevel::User, fmt, args);
     va_end(args);
 }
 
@@ -188,21 +220,25 @@ String Logger::formatLine(AppLogLevel level, const char* message) const {
 
 const char* Logger::levelToString(AppLogLevel level) const {
     switch (level) {
+        case AppLogLevel::Trace: return "TRACE";
         case AppLogLevel::Debug: return "DEBUG";
         case AppLogLevel::Info:  return "INFO";
         case AppLogLevel::Warn:  return "WARN";
         case AppLogLevel::Error: return "ERROR";
-        default:              return "LOG";
+        case AppLogLevel::User:  return "USER";
+        default:               return "LOG";
     }
 }
 
 const char* Logger::levelToShortString(AppLogLevel level) const {
     switch (level) {
+        case AppLogLevel::Trace: return "T";
         case AppLogLevel::Debug: return "D";
         case AppLogLevel::Info:  return "I";
         case AppLogLevel::Warn:  return "W";
         case AppLogLevel::Error: return "E";
-        default:              return "?";
+        case AppLogLevel::User:  return "U";
+        default:               return "?";
     }
 }
 

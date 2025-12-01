@@ -12,18 +12,27 @@
 #ifndef APP_LOG_MODE_NOLOG
 #define APP_LOG_MODE_NOLOG 1
 #endif
+#ifndef APP_LOG_MODE_ALL
+#define APP_LOG_MODE_ALL 2
+#endif
+#ifndef APP_LOG_MODE_ERROR
+#define APP_LOG_MODE_ERROR 3
+#endif
 #ifndef APP_LOG_MODE
 #define APP_LOG_MODE APP_LOG_MODE_DEFAULT
 #endif
-#if (APP_LOG_MODE != APP_LOG_MODE_DEFAULT) && (APP_LOG_MODE != APP_LOG_MODE_NOLOG)
-#error "APP_LOG_MODE must be APP_LOG_MODE_DEFAULT or APP_LOG_MODE_NOLOG"
+#if !((APP_LOG_MODE == APP_LOG_MODE_DEFAULT) || (APP_LOG_MODE == APP_LOG_MODE_NOLOG) || \
+      (APP_LOG_MODE == APP_LOG_MODE_ALL) || (APP_LOG_MODE == APP_LOG_MODE_ERROR))
+#error "APP_LOG_MODE must be APP_LOG_MODE_DEFAULT, APP_LOG_MODE_NOLOG, APP_LOG_MODE_ALL, or APP_LOG_MODE_ERROR"
 #endif
 
 enum class AppLogLevel : uint8_t {
-    Debug = 0,
+    Trace = 0,
+    Debug,
     Info,
     Warn,
-    Error
+    Error,
+    User
 };
 
 class Logger {
@@ -38,6 +47,9 @@ public:
     void log(AppLogLevel level, const String& message);
     void logf(AppLogLevel level, const char* fmt, ...);
 
+    void trace(const char* message);
+    void tracef(const char* fmt, ...);
+
     void debug(const char* message);
     void debugf(const char* fmt, ...);
 
@@ -49,6 +61,9 @@ public:
 
     void error(const char* message);
     void errorf(const char* fmt, ...);
+
+    void user(const char* message);
+    void userf(const char* fmt, ...);
 
     std::vector<String> getBufferedLogs() const;
     std::vector<String> getBufferedLogs(AppLogLevel min_level) const;  // Filter by level
