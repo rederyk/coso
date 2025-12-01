@@ -10,11 +10,13 @@ namespace {
 constexpr int kI2sBck = 5;
 constexpr int kI2sDout = 8;
 constexpr int kI2sWs = 7;
+constexpr int kI2sMck = 4;
 constexpr int kApEnable = 1;
 constexpr int kI2cScl = 15;
 constexpr int kI2cSda = 16;
 constexpr uint32_t kI2cSpeed = 400000;
 constexpr uint32_t kBytesPerSample = sizeof(int16_t);
+constexpr i2s_mclk_multiple_t kI2sMclkMultiple = I2S_MCLK_MULTIPLE_256;
 } // namespace
 
 AudioOutput::AudioOutput() {
@@ -27,17 +29,34 @@ AudioOutput::~AudioOutput() {
 bool AudioOutput::begin(const AudioConfig& cfg, uint32_t sample_rate, uint32_t channels) {
     i2s_write_timeout_ms_ = cfg.i2s_write_timeout_ms;
     current_sample_rate_ = sample_rate;
+    const uint32_t mclk_hz = sample_rate * static_cast<uint32_t>(kI2sMclkMultiple);
 
     // ===== INIT CODEC =====
     // Note: Codec init requires I2C.
-    if (!codec_.init(sample_rate, kApEnable, kI2cSda, kI2cScl, kI2cSpeed, cfg.default_volume_percent)) {
+    if (!codec_.init(sample_rate,
+                     kApEnable,
+                     kI2cSda,
+                     kI2cScl,
+                     kI2cSpeed,
+                     cfg.default_volume_percent,
+                     false,
+                     true,
+                     mclk_hz)) {
         LOG_ERROR("Codec init failed");
         return false;
     }
 
     // ===== INIT I2S =====
     // I2sDriver handles the specific ESP32 I2S configuration
-    i2s_driver_.init(sample_rate, cfg, kBytesPerSample, channels, kI2sBck, kI2sWs, kI2sDout);
+    i2s_driver_.init(sample_rate,
+                     cfg,
+                     kBytesPerSample,
+                     channels,
+                     kI2sBck,
+                     kI2sWs,
+                     kI2sDout,
+                     kI2sMck,
+                     kI2sMclkMultiple);
     
     if (!i2s_driver_.installed()) {
         LOG_ERROR("I2S driver init failed");

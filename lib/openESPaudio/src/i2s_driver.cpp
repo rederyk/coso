@@ -49,22 +49,28 @@ void I2sDriver::init(uint32_t sample_rate,
                      uint32_t channels,
                      int bck_pin,
                      int ws_pin,
-                     int dout_pin) {
+                     int dout_pin,
+                     int mclk_pin,
+                     i2s_mclk_multiple_t mclk_multiple) {
     configure(sample_rate, cfg, bytes_per_sample, channels);
 
-    i2s_config_t i2s_config = {
-        .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_TX),
-        .sample_rate = sample_rate,
-        .bits_per_sample = static_cast<i2s_bits_per_sample_t>(bytes_per_sample * 8),
-        .channel_format = I2S_CHANNEL_FMT_RIGHT_LEFT,
-        .communication_format = I2S_COMM_FORMAT_STAND_I2S,
-        .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1,
-        .dma_buf_count = static_cast<int>(dma_buf_count_active_),
-        .dma_buf_len = static_cast<int>(dma_buf_len_active_),
-        .use_apll = cfg.i2s_use_apll};
+    i2s_config_t i2s_config = {};
+    i2s_config.mode = static_cast<i2s_mode_t>(I2S_MODE_MASTER | I2S_MODE_TX);
+    i2s_config.sample_rate = sample_rate;
+    i2s_config.bits_per_sample = static_cast<i2s_bits_per_sample_t>(bytes_per_sample * 8);
+    i2s_config.channel_format = I2S_CHANNEL_FMT_RIGHT_LEFT;
+    i2s_config.communication_format = I2S_COMM_FORMAT_STAND_I2S;
+    i2s_config.intr_alloc_flags = ESP_INTR_FLAG_LEVEL1;
+    i2s_config.dma_buf_count = static_cast<int>(dma_buf_count_active_);
+    i2s_config.dma_buf_len = static_cast<int>(dma_buf_len_active_);
+    i2s_config.use_apll = cfg.i2s_use_apll;
+    i2s_config.tx_desc_auto_clear = false;
+    i2s_config.fixed_mclk = 0;
+    i2s_config.mclk_multiple = mclk_multiple;
+    i2s_config.bits_per_chan = I2S_BITS_PER_CHAN_DEFAULT;
 
     i2s_pin_config_t pin_config = {
-        .mck_io_num = I2S_PIN_NO_CHANGE,
+        .mck_io_num = mclk_pin,
         .bck_io_num = bck_pin,
         .ws_io_num = ws_pin,
         .data_out_num = dout_pin,

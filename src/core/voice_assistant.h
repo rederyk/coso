@@ -3,6 +3,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <freertos/queue.h>
+#include <driver/i2s.h>
 
 #include <cJSON.h>
 #include <string>
@@ -65,7 +66,7 @@ public:
 
 private:
     VoiceAssistant();
-    ~VoiceAssistant() = default;
+    ~VoiceAssistant();
     VoiceAssistant(const VoiceAssistant&) = delete;
     VoiceAssistant& operator=(const VoiceAssistant&) = delete;
 
@@ -94,4 +95,9 @@ private:
     TaskHandle_t aiTask_ = nullptr;
 
     bool initialized_ = false;
+
+    // Audio input
+    uint8_t* psram_buffer_ = nullptr;
+    static constexpr size_t AUDIO_BUFFER_SIZE = 32768; // 32KB buffer for 2 seconds at 16kHz mono 16-bit
+    i2s_port_t i2s_input_port_ = I2S_NUM_1;
 };

@@ -17,7 +17,10 @@ public:
               int i2c_sda,
               int i2c_scl,
               uint32_t i2c_speed,
-              int default_volume_percent);
+              int default_volume_percent,
+              bool enable_microphone = false,
+              bool use_mclk_pin = false,
+              uint32_t mclk_frequency_hz = 0);
 
     void set_volume(int vol_pct);
     int current_volume() const { return current_volume_percent_; }

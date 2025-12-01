@@ -6,6 +6,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include "driver/i2s.h"
 #include "audio_types.h"
 
 class I2sDriver {
@@ -22,7 +23,9 @@ public:
               uint32_t channels,
               int bck_pin,
               int ws_pin,
-              int dout_pin);
+              int dout_pin,
+              int mclk_pin = I2S_PIN_NO_CHANGE,
+              i2s_mclk_multiple_t mclk_multiple = I2S_MCLK_MULTIPLE_DEFAULT);
     void uninstall();
 
     size_t chunk_bytes() const { return chunk_bytes_active_; }

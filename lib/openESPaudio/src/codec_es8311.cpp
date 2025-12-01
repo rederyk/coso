@@ -13,7 +13,10 @@ bool CodecES8311::init(int sample_rate,
                        int i2c_sda,
                        int i2c_scl,
                        uint32_t i2c_speed,
-                       int default_volume_percent) {
+                       int default_volume_percent,
+                       bool enable_microphone,
+                       bool use_mclk_pin,
+                       uint32_t mclk_frequency_hz) {
     pinMode(enable_pin, OUTPUT);
     digitalWrite(enable_pin, LOW);
 
@@ -25,11 +28,17 @@ bool CodecES8311::init(int sample_rate,
         return false;
     }
 
+    if (use_mclk_pin && mclk_frequency_hz == 0) {
+        LOG_ERROR("MCLK frequency must be provided when using dedicated MCLK pin");
+        es8311_delete(es_handle);
+        return false;
+    }
+
     const es8311_clock_config_t es_clk = {
         .mclk_inverted = false,
         .sclk_inverted = false,
-        .mclk_from_mclk_pin = false,
-        .mclk_frequency = 0,
+        .mclk_from_mclk_pin = use_mclk_pin,
+        .mclk_frequency = use_mclk_pin ? static_cast<int>(mclk_frequency_hz) : 0,
         .sample_frequency = sample_rate};
 
     if (es8311_init(es_handle, &es_clk, ES8311_RESOLUTION_16, ES8311_RESOLUTION_16) != ESP_OK) {
@@ -40,7 +49,7 @@ bool CodecES8311::init(int sample_rate,
 
     handle_ = es_handle;
     set_volume(default_volume_percent);
-    es8311_microphone_config(handle_, false);
+    es8311_microphone_config(handle_, enable_microphone ? true : false);
 
     LOG_INFO("ES8311 pronto.");
     return true;

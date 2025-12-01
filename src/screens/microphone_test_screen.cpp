@@ -1,0 +1,636 @@
+#include "screens/microphone_test_screen.h"
+#include "ui/ui_symbols.h"
+#include "utils/logger.h"
+#include "utils/color_utils.h"
+#include "core/voice_assistant.h"
+#include "core/audio_manager.h"
+#include <Arduino.h>
+#include <vector>
+#include <string>
+#include <algorithm>
+#include <utility>
+#include <FS.h>
+#include <SD_MMC.h>
+#include <LittleFS.h>
+#include <driver/i2s.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+
+namespace {
+
+constexpr const char* kRecordingsDir = "/test_recordings";
+
+enum class RecordingStorage {
+    SD_CARD,
+    LITTLEFS
+};
+
+struct RecordingStorageInfo {
+    RecordingStorage storage = RecordingStorage::LITTLEFS;
+    fs::FS* fs = nullptr;
+    const char* directory = kRecordingsDir;
+    const char* playback_prefix = "";
+    const char* label = "LittleFS";
+};
+
+RecordingStorageInfo getRecordingStorageInfo() {
+    RecordingStorageInfo info;
+    if (SD_MMC.cardType() != CARD_NONE) {
+        info.storage = RecordingStorage::SD_CARD;
+        info.fs = &SD_MMC;
+        info.playback_prefix = "/sd";
+        info.label = "SD card";
+    } else {
+        info.storage = RecordingStorage::LITTLEFS;
+        info.fs = &LittleFS;
+        info.playback_prefix = "";
+        info.label = "LittleFS";
+    }
+    return info;
+}
+
+bool ensureRecordingDirectory(const RecordingStorageInfo& info) {
+    if (!info.fs) {
+        Logger::getInstance().error("[MicTest] No filesystem available for recordings");
+        return false;
+    }
+
+    if (info.fs->exists(info.directory)) {
+        return true;
+    }
+
+    if (!info.fs->mkdir(info.directory)) {
+        Logger::getInstance().errorf("[MicTest] Failed to create %s on %s", info.directory, info.label);
+        return false;
+    }
+    return true;
+}
+
+std::string normalizeRelativePath(const char* raw_name, const RecordingStorageInfo& info) {
+    std::string path = raw_name ? raw_name : "";
+    if (path.empty()) {
+        return path;
+    }
+
+    if (path.front() != '/') {
+        std::string base = info.directory ? info.directory : "";
+        if (!base.empty() && base.back() != '/') {
+            base += '/';
+        }
+        path = base + path;
+    }
+    return path;
+}
+
+std::string buildPlaybackPath(const RecordingStorageInfo& info, const std::string& relative_path) {
+    if (info.playback_prefix && info.playback_prefix[0] != '\0') {
+        return std::string(info.playback_prefix) + relative_path;
+    }
+    return relative_path;
+}
+
+std::string playbackDisplayName(const std::string& playback_path) {
+    if (playback_path.empty()) {
+        return "";
+    }
+    std::string display = playback_path;
+    if (display.rfind("/sd/", 0) == 0) {
+        display.erase(0, 3);
+    }
+    size_t slash = display.find_last_of('/');
+    if (slash != std::string::npos && slash + 1 < display.size()) {
+        display = display.substr(slash + 1);
+    }
+    return display;
+}
+
+void cleanupFileButtonUserData(lv_event_t* e) {
+    if (!e) return;
+    if (lv_event_get_code(e) != LV_EVENT_DELETE) {
+        return;
+    }
+    lv_obj_t* target = lv_event_get_target(e);
+    if (!target) return;
+    auto* path_ptr = static_cast<std::string*>(lv_obj_get_user_data(target));
+    delete path_ptr;
+    lv_obj_set_user_data(target, nullptr);
+}
+
+// WAV file header structure
+struct WAVHeader {
+    char riff[4] = {'R', 'I', 'F', 'F'};
+    uint32_t fileSize = 0;
+    char wave[4] = {'W', 'A', 'V', 'E'};
+    char fmt[4] = {'f', 'm', 't', ' '};
+    uint32_t formatLength = 16;
+    uint16_t formatType = 1; // PCM
+    uint16_t channels = 1;
+    uint32_t sampleRate = 16000;
+    uint32_t bytesPerSecond = 32000; // sampleRate * channels * bitsPerSample / 8
+    uint16_t blockAlign = 2; // channels * bitsPerSample / 8
+    uint16_t bitsPerSample = 16;
+    char data[4] = {'d', 'a', 't', 'a'};
+    uint32_t dataSize = 0;
+};
+
+lv_obj_t* create_fixed_card(lv_obj_t* parent, const char* title, lv_color_t bg_color = lv_color_hex(0x10182c)) {
+    lv_obj_t* card = lv_obj_create(parent);
+    lv_obj_remove_style_all(card);
+    lv_obj_set_width(card, lv_pct(100));
+    lv_obj_set_height(card, LV_SIZE_CONTENT);
+    lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_style_bg_color(card, bg_color, 0);
+    lv_obj_set_style_bg_opa(card, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(card, 14, 0);
+    lv_obj_set_style_border_width(card, 0, 0);
+    lv_obj_set_style_outline_width(card, 0, 0);
+    lv_obj_set_style_pad_all(card, 12, 0);
+    lv_obj_set_layout(card, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(card, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(card,
+                          LV_FLEX_ALIGN_START,
+                          LV_FLEX_ALIGN_CENTER,
+                          LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_row(card, 4, 0);
+
+    lv_obj_t* header = lv_label_create(card);
+    lv_label_set_text(header, title);
+    lv_obj_set_style_text_font(header, &lv_font_montserrat_16, 0);
+    lv_color_t text_color = ColorUtils::invertColor(bg_color);
+    lv_obj_set_style_text_color(header, text_color, 0);
+
+    return card;
+}
+
+lv_obj_t* create_button(lv_obj_t* parent, const char* text, lv_color_t bg_color) {
+    lv_obj_t* btn = lv_btn_create(parent);
+    lv_obj_set_height(btn, 50);
+    lv_obj_set_style_bg_color(btn, bg_color, 0);
+    lv_obj_t* lbl = lv_label_create(btn);
+    lv_label_set_text(lbl, text);
+    lv_obj_center(lbl);
+    lv_obj_set_style_text_font(lbl, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_color(lbl, lv_color_hex(0xffffff), 0);
+    return btn;
+}
+
+// Generate a unique filename for recording
+std::string generateRecordingFilename() {
+    static uint32_t counter = 0;
+    char filename[32];
+    sprintf(filename, "/test_recordings/test_%06d.wav", counter++);
+    return filename;
+}
+
+bool recordAudioToFile(const RecordingStorageInfo& storage, const char* filename, uint32_t duration_seconds);
+
+// Simple audio recording function (runs in dedicated task)
+bool recordAudioToFile(const RecordingStorageInfo& storage, const char* filename, uint32_t duration_seconds = 3) {
+    if (!ensureRecordingDirectory(storage) || !storage.fs) {
+        Logger::getInstance().error("[MicTest] Recording directory unavailable");
+        return false;
+    }
+
+    // Open file for writing
+    File file = storage.fs->open(filename, FILE_WRITE);
+    if (!file) {
+        Logger::getInstance().errorf("[MicTest] Failed to open recording file on %s", storage.label);
+        return false;
+    }
+
+    Logger::getInstance().infof("[MicTest] Recording to %s:%s", storage.label, filename);
+
+    // Write initial WAV header (will be updated with correct size at end)
+    WAVHeader initial_header;
+    file.write((uint8_t*)&initial_header, sizeof(WAVHeader));
+
+    // Configure I2S for microphone input (same as VoiceAssistant)
+    const i2s_config_t i2s_config = {
+        .mode = i2s_mode_t(I2S_MODE_MASTER | I2S_MODE_RX),
+        .sample_rate = 16000,
+        .bits_per_sample = i2s_bits_per_sample_t(16),
+        .channel_format = I2S_CHANNEL_FMT_ONLY_LEFT,
+        .communication_format = I2S_COMM_FORMAT_STAND_I2S,
+        .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1,
+        .dma_buf_count = 4,
+        .dma_buf_len = 512,
+        .use_apll = false
+    };
+
+    const i2s_pin_config_t pin_config = {
+        .mck_io_num = I2S_PIN_NO_CHANGE,
+        .bck_io_num = 6,
+        .ws_io_num = 7,
+        .data_out_num = I2S_PIN_NO_CHANGE,
+        .data_in_num = 5
+    };
+
+    esp_err_t err = i2s_driver_install(I2S_NUM_1, &i2s_config, 0, nullptr);
+    if (err != ESP_OK) {
+        Logger::getInstance().errorf("I2S install failed: %d", err);
+        file.close();
+        return false;
+    }
+
+    err = i2s_set_pin(I2S_NUM_1, &pin_config);
+    if (err != ESP_OK) {
+        Logger::getInstance().errorf("I2S set pin failed: %d", err);
+        i2s_driver_uninstall(I2S_NUM_1);
+        file.close();
+        return false;
+    }
+
+    // Buffer for audio data
+    const size_t CHUNK_SIZE = 1024;
+    uint8_t* buffer = (uint8_t*)malloc(CHUNK_SIZE * sizeof(int16_t));
+    if (!buffer) {
+        Logger::getInstance().error("Failed to allocate audio buffer");
+        i2s_driver_uninstall(I2S_NUM_1);
+        file.close();
+        return false;
+    }
+
+    // Record for specified duration
+    uint32_t total_bytes = 0;
+    uint32_t target_samples = 16000 * duration_seconds;
+    uint32_t recorded_samples = 0;
+
+    Logger::getInstance().info("Starting audio recording");
+
+    while (recorded_samples < target_samples) {
+        size_t bytes_read = 0;
+        size_t samples_to_read = std::min((size_t)(target_samples - recorded_samples), CHUNK_SIZE);
+
+        err = i2s_read(I2S_NUM_1, buffer, samples_to_read * sizeof(int16_t), &bytes_read, pdMS_TO_TICKS(100));
+        if (err == ESP_OK && bytes_read > 0) {
+            file.write(buffer, bytes_read);
+            recorded_samples += bytes_read / sizeof(int16_t);
+            total_bytes += bytes_read;
+        } else {
+            vTaskDelay(pdMS_TO_TICKS(10));
+        }
+    }
+
+    // Cleanup
+    free(buffer);
+    i2s_driver_uninstall(I2S_NUM_1);
+
+    Logger::getInstance().infof("Recording complete, %d bytes written", total_bytes);
+
+    // Update WAV header with actual data size
+    if (total_bytes > 0) {
+        WAVHeader header;
+        header.dataSize = total_bytes;
+        header.fileSize = 36 + total_bytes; // 44 - 8 = 36
+
+        file.seek(0);
+        file.write((uint8_t*)&header, sizeof(WAVHeader));
+    }
+
+    file.close();
+    return total_bytes > 0;
+}
+} // namespace
+
+void MicrophoneTestScreen::recordingTask(void* param) {
+    auto* screen = static_cast<MicrophoneTestScreen*>(param);
+    if (!screen) {
+        vTaskDelete(nullptr);
+        return;
+    }
+
+    std::string filename = generateRecordingFilename();
+    auto storage = getRecordingStorageInfo();
+    if (storage.storage == RecordingStorage::LITTLEFS) {
+        Logger::getInstance().warn("[MicTest] SD card unavailable, recording to LittleFS");
+    }
+
+    bool success = recordAudioToFile(storage, filename.c_str(), 3);
+    if (success) {
+        screen->current_playback_file = buildPlaybackPath(storage, filename);
+        if (screen->playback_status_label) {
+            std::string status = "Selected: " + playbackDisplayName(screen->current_playback_file);
+            lv_label_set_text(screen->playback_status_label, status.c_str());
+        }
+    }
+
+    if (screen->record_status_label) {
+        lv_label_set_text(screen->record_status_label,
+                          success ? "Recording saved!" : "Recording failed!");
+    }
+
+    screen->is_recording = false;
+    screen->recording_task_handle = nullptr;
+    screen->applyThemeStyles(SettingsManager::getInstance().getSnapshot());
+    screen->refreshAudioFilesList();
+
+    Logger::getInstance().infof("Recording task completed, success: %d", success);
+    vTaskDelete(nullptr);
+}
+
+MicrophoneTestScreen::~MicrophoneTestScreen() {
+    if (settings_listener_id != 0) {
+        SettingsManager::getInstance().removeListener(settings_listener_id);
+        settings_listener_id = 0;
+    }
+}
+
+void MicrophoneTestScreen::build(lv_obj_t* parent) {
+    if (!parent) {
+        return;
+    }
+
+    SettingsManager& manager = SettingsManager::getInstance();
+    const SettingsSnapshot& snapshot = manager.getSnapshot();
+
+    root = lv_obj_create(parent);
+    lv_obj_remove_style_all(root);
+    lv_obj_set_size(root, lv_pct(100), lv_pct(100));
+    lv_obj_set_style_bg_color(root, lv_color_hex(0x040b18), 0);
+    lv_obj_set_style_bg_opa(root, LV_OPA_COVER, 0);
+    lv_obj_add_flag(root, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scroll_dir(root, LV_DIR_VER);
+    lv_obj_set_layout(root, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(root, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_all(root, 6, 0);
+    lv_obj_set_style_pad_row(root, 8, 0);
+    lv_obj_set_style_border_width(root, 0, 0);
+    lv_obj_set_style_outline_width(root, 0, 0);
+
+    title_label = lv_label_create(root);
+    lv_label_set_text(title_label, LV_SYMBOL_AUDIO " Microphone Test");
+    lv_obj_set_style_text_font(title_label, &lv_font_montserrat_24, 0);
+    lv_obj_set_style_text_color(title_label, lv_color_hex(0xffffff), 0);
+    lv_obj_set_width(title_label, lv_pct(100));
+
+    // Recording card
+    record_card = create_fixed_card(root, "Recording Test");
+    record_button = create_button(record_card, LV_SYMBOL_AUDIO " Start Recording", lv_color_hex(0xff4444));
+    lv_obj_add_event_cb(record_button, handleRecordButton, LV_EVENT_CLICKED, this);
+    record_status_label = lv_label_create(record_card);
+    lv_label_set_text(record_status_label, "Ready to record");
+    lv_obj_set_style_text_font(record_status_label, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(record_status_label, lv_color_hex(0xa0a0a0), 0);
+
+    // Playback card
+    playback_card = create_fixed_card(root, "Playback Test");
+    playback_button = create_button(playback_card, LV_SYMBOL_PLAY " Play Test Audio", lv_color_hex(0x44aa44));
+    lv_obj_add_event_cb(playback_button, handlePlaybackButton, LV_EVENT_CLICKED, this);
+    playback_status_label = lv_label_create(playback_card);
+    lv_label_set_text(playback_status_label, "No audio file to play");
+    lv_obj_set_style_text_font(playback_status_label, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(playback_status_label, lv_color_hex(0xa0a0a0), 0);
+
+    // Saved files card
+    files_card = create_fixed_card(root, "Saved Audio Files");
+    files_container = lv_obj_create(files_card);
+    lv_obj_remove_style_all(files_container);
+    lv_obj_set_size(files_container, lv_pct(100), LV_SIZE_CONTENT);
+    lv_obj_set_layout(files_container, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(files_container, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_row(files_container, 8, 0);
+
+    refreshAudioFilesList();
+
+    applySnapshot(snapshot);
+
+    if (settings_listener_id == 0) {
+        settings_listener_id = manager.addListener([this](SettingsManager::SettingKey, const SettingsSnapshot& snap) {
+            if (!root) return;
+            applySnapshot(snap);
+        });
+    }
+}
+
+void MicrophoneTestScreen::onShow() {
+    Logger::getInstance().info(LV_SYMBOL_AUDIO " Microphone test screen shown");
+    applySnapshot(SettingsManager::getInstance().getSnapshot());
+    refreshAudioFilesList();
+}
+
+void MicrophoneTestScreen::onHide() {
+    Logger::getInstance().info(LV_SYMBOL_AUDIO " Microphone test screen hidden");
+}
+
+void MicrophoneTestScreen::applySnapshot(const SettingsSnapshot& snapshot) {
+    updating_from_manager = true;
+    applyThemeStyles(snapshot);
+    updating_from_manager = false;
+}
+
+void MicrophoneTestScreen::applyThemeStyles(const SettingsSnapshot& snapshot) {
+    lv_color_t primary = lv_color_hex(snapshot.primaryColor);
+    lv_color_t accent = lv_color_hex(snapshot.accentColor);
+
+    if (root) {
+        lv_obj_set_style_bg_color(root, primary, 0);
+    }
+    if (title_label) {
+        lv_obj_set_style_text_color(title_label, accent, 0);
+    }
+
+    auto style_card = [&](lv_obj_t* card) {
+        if (!card) return;
+        lv_color_t card_color = lv_color_hex(snapshot.cardColor);
+        lv_obj_set_style_bg_color(card, card_color, 0);
+        lv_obj_set_style_radius(card, snapshot.borderRadius, 0);
+
+        uint32_t child_count = lv_obj_get_child_cnt(card);
+        for (uint32_t i = 0; i < child_count; ++i) {
+            lv_obj_t* child = lv_obj_get_child(card, i);
+            if (child && lv_obj_check_type(child, &lv_label_class)) {
+                const lv_font_t* font = lv_obj_get_style_text_font(child, 0);
+                if (font == &lv_font_montserrat_16) {
+                    lv_color_t header_color = ColorUtils::invertColor(card_color);
+                    lv_obj_set_style_text_color(child, header_color, 0);
+                } else {
+                    lv_obj_set_style_text_color(child, lv_color_mix(accent, lv_color_hex(0xffffff), LV_OPA_40), 0);
+                }
+            }
+        }
+    };
+
+    style_card(record_card);
+    style_card(playback_card);
+    style_card(files_card);
+
+    if (record_button) {
+        lv_color_t button_color = is_recording ? lv_color_hex(0x884444) : lv_color_hex(0xff4444);
+        lv_obj_set_style_bg_color(record_button, button_color, 0);
+        lv_obj_t* btn_label = lv_obj_get_child(record_button, 0);
+        if (btn_label) {
+            lv_label_set_text(btn_label, is_recording ? LV_SYMBOL_STOP " Stop Recording" : LV_SYMBOL_AUDIO " Start Recording");
+        }
+    }
+    if (playback_button) {
+        lv_color_t button_color = is_playing ? lv_color_hex(0x448844) : lv_color_hex(0x44aa44);
+        lv_obj_set_style_bg_color(playback_button, button_color, 0);
+        lv_obj_t* btn_label = lv_obj_get_child(playback_button, 0);
+        if (btn_label) {
+            lv_label_set_text(btn_label, is_playing ? LV_SYMBOL_PAUSE " Stop Playback" : LV_SYMBOL_PLAY " Play Test Audio");
+        }
+    }
+}
+
+void MicrophoneTestScreen::refreshAudioFilesList() {
+    if (!files_container) return;
+
+    lv_obj_clean(files_container);
+
+    struct AudioFileEntry {
+        std::string display_name;
+        std::string playback_path;
+    };
+
+    std::vector<AudioFileEntry> audio_files;
+    auto storage = getRecordingStorageInfo();
+
+    if (!storage.fs || !ensureRecordingDirectory(storage)) {
+        lv_obj_t* no_storage = lv_label_create(files_container);
+        lv_label_set_text(no_storage, "Recording storage not available");
+        lv_obj_set_style_text_color(no_storage, lv_color_hex(0xff6666), 0);
+        current_playback_file.clear();
+        if (playback_status_label) {
+            lv_label_set_text(playback_status_label, "No audio file to play");
+        }
+        return;
+    }
+
+    File root_dir = storage.fs->open(storage.directory);
+    if (root_dir && root_dir.isDirectory()) {
+        File file = root_dir.openNextFile();
+        while (file) {
+            if (!file.isDirectory()) {
+                std::string name = file.name();
+                std::string relative_path = normalizeRelativePath(name.c_str(), storage);
+                if (relative_path.find(".wav") != std::string::npos) {
+                    AudioFileEntry entry;
+                    entry.playback_path = buildPlaybackPath(storage, relative_path);
+                    entry.display_name = playbackDisplayName(entry.playback_path);
+                    audio_files.push_back(std::move(entry));
+                }
+            }
+            file = root_dir.openNextFile();
+        }
+        root_dir.close();
+    }
+
+    if (audio_files.empty()) {
+        lv_obj_t* no_files = lv_label_create(files_container);
+        lv_label_set_text(no_files, "No recorded audio files found");
+        lv_obj_set_style_text_color(no_files, lv_color_hex(0xc0c0c0), 0);
+        current_playback_file.clear();
+        if (playback_status_label) {
+            lv_label_set_text(playback_status_label, "No audio file to play");
+        }
+    } else {
+        bool selection_valid = false;
+        for (const auto& entry : audio_files) {
+            if (entry.playback_path == current_playback_file) {
+                selection_valid = true;
+                break;
+            }
+        }
+        if (!selection_valid) {
+            current_playback_file.clear();
+            if (playback_status_label) {
+                lv_label_set_text(playback_status_label, "Select a recording to play");
+            }
+        }
+
+        for (const auto& filename : audio_files) {
+            lv_obj_t* file_btn = lv_btn_create(files_container);
+            lv_obj_set_height(file_btn, 40);
+            lv_obj_set_width(file_btn, lv_pct(100));
+            lv_obj_set_style_bg_color(file_btn, lv_color_hex(0x2a3a4a), 0);
+            lv_obj_set_style_radius(file_btn, 8, 0);
+
+            lv_obj_t* btn_label = lv_label_create(file_btn);
+            std::string btn_text = std::string(LV_SYMBOL_FILE) + " " + filename.display_name;
+            lv_label_set_text(btn_label, btn_text.c_str());
+            lv_obj_set_style_text_font(btn_label, &lv_font_montserrat_14, 0);
+            lv_obj_set_style_text_color(btn_label, lv_color_hex(0xffffff), 0);
+            lv_obj_set_align(btn_label, LV_ALIGN_LEFT_MID);
+
+            // Store filename in user data for callback
+            lv_obj_set_user_data(file_btn, new std::string(filename.playback_path));
+
+            lv_obj_add_event_cb(file_btn, handleAudioFileButton, LV_EVENT_CLICKED, this);
+            lv_obj_add_event_cb(file_btn, cleanupFileButtonUserData, LV_EVENT_DELETE, nullptr);
+        }
+    }
+}
+
+void MicrophoneTestScreen::handleRecordButton(lv_event_t* e) {
+    auto* screen = static_cast<MicrophoneTestScreen*>(lv_event_get_user_data(e));
+    if (!screen) return;
+
+    if (screen->is_recording) {
+        // Stop recording task if running
+        if (screen->recording_task_handle) {
+            vTaskDelete(screen->recording_task_handle);
+            screen->recording_task_handle = nullptr;
+        }
+        screen->is_recording = false;
+        if (screen->record_status_label) lv_label_set_text(screen->record_status_label, "Recording cancelled");
+        Logger::getInstance().info("Microphone recording cancelled");
+        screen->applyThemeStyles(SettingsManager::getInstance().getSnapshot());
+    } else {
+        // Start recording in background task
+        screen->is_recording = true;
+        if (screen->record_status_label) lv_label_set_text(screen->record_status_label, "Recording...");
+        Logger::getInstance().info("Starting microphone recording task");
+
+        // Create recording task
+        xTaskCreate(MicrophoneTestScreen::recordingTask,
+                    "mic_recording",
+                    4096,
+                    screen,
+                    1,
+                    &screen->recording_task_handle);
+
+        screen->applyThemeStyles(SettingsManager::getInstance().getSnapshot());
+    }
+}
+
+void MicrophoneTestScreen::handlePlaybackButton(lv_event_t* e) {
+    auto* screen = static_cast<MicrophoneTestScreen*>(lv_event_get_user_data(e));
+    if (!screen || screen->current_playback_file.empty()) return;
+
+    if (screen->is_playing) {
+        // Stop playback
+        AudioManager::getInstance().stop();
+        screen->is_playing = false;
+        if (screen->playback_status_label) lv_label_set_text(screen->playback_status_label, "Playback stopped");
+        Logger::getInstance().info("Audio playback stopped");
+    } else {
+        // Start playback
+        bool started = AudioManager::getInstance().playFile(screen->current_playback_file.c_str());
+        screen->is_playing = started;
+        if (screen->playback_status_label) {
+            lv_label_set_text(screen->playback_status_label,
+                              started ? "Playing..." : "Playback failed");
+        }
+        if (started) {
+            Logger::getInstance().info("Audio playback started");
+        } else {
+            Logger::getInstance().error("Failed to start audio playback");
+        }
+    }
+
+    screen->applyThemeStyles(SettingsManager::getInstance().getSnapshot());
+}
+
+void MicrophoneTestScreen::handleAudioFileButton(lv_event_t* e) {
+    auto* screen = static_cast<MicrophoneTestScreen*>(lv_event_get_user_data(e));
+    if (!screen) return;
+
+    auto* filename_ptr = static_cast<std::string*>(lv_obj_get_user_data(lv_event_get_target(e)));
+    if (!filename_ptr) return;
+
+    screen->current_playback_file = *filename_ptr;
+    std::string status = "Selected: " + playbackDisplayName(*filename_ptr);
+    if (screen->playback_status_label) lv_label_set_text(screen->playback_status_label, status.c_str());
+
+    Logger::getInstance().infof("Selected audio file: %s", filename_ptr->c_str());
+}

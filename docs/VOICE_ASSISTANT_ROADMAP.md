@@ -21,32 +21,32 @@ Implementare un assistente vocale locale sempre in ascolto nel dispositivo ESP32
 
 ## 🗓️ Roadmap di Sviluppo
 
-### Fase 1: Fondazioni Core (Sprint 1-2)
-- [ ] **Estendere CommandCenter**
-  - Aggiungere comandi vocali: `radio_play`, `wifi_switch`, `bt_pair`, `volume_*`, `brightness_*`
+### Fase 1: Fondazioni Core (Sprint 1-2) ✅ COMPLETATA
+- [x] **Estendere CommandCenter**
+  - Aggiungere comandi vocali: `radio_play`, `bt_pair`, `volume_*`, `palette_*`
   - Comandi offline per fallback senza internet
   - Rate limiting handler per sicurezza
 
-- [ ] **Implementare VoiceAssistant Base**
-  - Classi VoiceAssistant singleton e task structure
-  - QueueHandle_t voiceQueue per command dispatch
-  - Integrazione SettingsManager per API keys
+- [x] **Implementare VoiceAssistant Base**
+  - Classi VoiceAssistant singleton e task structure ✅ IMPLEMENTATA
+  - QueueHandle_t voiceQueue per command dispatch ✅ IMPLEMENTATO
+  - Integrazione SettingsManager per API keys ✅ IMPLEMENTATA
 
-- [ ] **Estendere SettingsManager**
+- [x] **Estendere SettingsManager**
   - Aggiungere campi: `OpenAiApiKey`, `OpenAiEndpoint`, `VoiceAssistantEnabled`
   - Metodo per salvare/recuperare token OpenAI
 
-### Fase 2: Audio Input Pipeline (Sprint 3-4)
-- [ ] **VoiceCaptureTask**
-  - Configurare I2S per input microphone (separato da output)
-  - Abilitare ES8311 microphone config
-  - Implementare Voice Activity Detection (VAD) semplice
-  - Buffer management per PSRAM
-  - Wake-word detection placeholder (esp826kbd per cortex_m4)
+### Fase 2: Audio Input Pipeline (Sprint 3-4) 🚧 IN PROGRESSO
+- [x] **VoiceCaptureTask** ✅ IMPLEMENTATA
+  - ✅ Configurare I2S per input microphone (separato da output) - I2S_NUM_1 utilizzato
+  - 🔄 Abilitare ES8311 microphone config - Framework pronto, da integrare
+  - ✅ Implementare Voice Activity Detection (VAD) semplice (soglia 800, 2s timeout)
+  - ✅ Buffer management per PSRAM (32KB allocato)
+  - ✅ Wake-word detection placeholder - VAD semplice implementata
 
-- [ ] **Integrazione Audio**
-  - Modificare openESPaudio per supportare I2S input
-  - Test baseline con es8311_microphone_config(true)
+- [x] **Integrazione Audio**
+  - ✅ Modificare openESPaudio per supportare I2S input - enable_microphone parameter aggiunto
+  - ⏳ Test baseline con es8311_microphone_config(true) - Da testare
 
 ### Fase 3: OpenAI Integration (Sprint 5-6)
 - [ ] **STTTask (Whisper API)**

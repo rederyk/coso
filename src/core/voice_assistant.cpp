@@ -44,7 +44,18 @@ VoiceAssistant& VoiceAssistant::getInstance() {
 }
 
 VoiceAssistant::VoiceAssistant() {
+    // Initialize audio buffer for input
+    psram_buffer_ = static_cast<uint8_t*>(heap_caps_malloc(AUDIO_BUFFER_SIZE, MALLOC_CAP_SPIRAM));
+    if (!psram_buffer_) {
+        LOG_E("Failed to allocate PSRAM buffer for audio input");
+    }
+}
 
+VoiceAssistant::~VoiceAssistant() {
+    if (psram_buffer_) {
+        heap_caps_free(psram_buffer_);
+        psram_buffer_ = nullptr;
+    }
 }
 
 bool VoiceAssistant::begin() {
@@ -137,16 +148,129 @@ void VoiceAssistant::triggerListening() {
     // For now, just log the trigger
 }
 
-// Task implementations (stubs for initial integration)
+// Task implementations
 void VoiceAssistant::voiceCaptureTask(void* param) {
     VoiceAssistant* va = static_cast<VoiceAssistant*>(param);
     LOG_I("Voice capture task started");
 
-    // TODO: Implement audio capture
-    while (va->initialized_) {
-        vTaskDelay(pdMS_TO_TICKS(1000));
+    // Configure microphone if not already enabled
+    // TODO: Enable microphone in ES8311 codec
+    LOG_I("Microphone initialization pending - need codec access");
+
+    // Initialize I2S for microphone input
+    const i2s_config_t i2s_config = {
+        .mode = i2s_mode_t(I2S_MODE_MASTER | I2S_MODE_RX),
+        .sample_rate = SAMPLE_RATE,
+        .bits_per_sample = i2s_bits_per_sample_t(BITS_PER_SAMPLE * 8),
+        .channel_format = I2S_CHANNEL_FMT_ONLY_LEFT,
+        .communication_format = I2S_COMM_FORMAT_STAND_I2S,
+        .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1,
+        .dma_buf_count = 4,
+        .dma_buf_len = 512,
+        .use_apll = false
+    };
+
+    const i2s_pin_config_t pin_config = {
+        .mck_io_num = I2S_PIN_NO_CHANGE,
+        .bck_io_num = 6,   // I2S BCLK pin
+        .ws_io_num = 7,    // I2S WS (LRCLK) pin
+        .data_out_num = I2S_PIN_NO_CHANGE,
+        .data_in_num = 5   // I2S DIN pin for microphone
+    };
+
+    esp_err_t err = i2s_driver_install(va->i2s_input_port_, &i2s_config, 0, nullptr);
+    if (err != ESP_OK) {
+        LOG_E("Failed to install I2S driver: %d", err);
+        return;
     }
 
+    err = i2s_set_pin(va->i2s_input_port_, &pin_config);
+    if (err != ESP_OK) {
+        LOG_E("Failed to set I2S pins: %d", err);
+        i2s_driver_uninstall(va->i2s_input_port_);
+        return;
+    }
+
+    LOG_I("I2S input driver configured for microphone");
+
+    // Simple VAD settings
+    const int16_t VAD_THRESHOLD = 800;  // Volume threshold for voice detection
+    const size_t CHUNK_SIZE = 1024;     // Samples to read per chunk (1024 * 2 bytes = 2KB)
+    const size_t SILENCE_DURATION_MS = 2000; // Stop recording after 2s silence
+    const TickType_t SILENCE_TIMEOUT = pdMS_TO_TICKS(SILENCE_DURATION_MS);
+    const size_t MAX_RECORDING_SAMPLES = (SAMPLE_RATE * 10); // Max 10 seconds recording
+
+    size_t total_samples = 0;
+    bool is_recording = false;
+    TickType_t last_voice_tick = xTaskGetTickCount();
+
+    while (va->initialized_) {
+        size_t bytes_read = 0;
+
+        // Read audio chunk
+        if (va->psram_buffer_) {
+            err = i2s_read(va->i2s_input_port_, va->psram_buffer_, CHUNK_SIZE * sizeof(int16_t), &bytes_read, pdMS_TO_TICKS(100));
+            if (err != ESP_OK) {
+                LOG_W("I2S read error: %d", err);
+                vTaskDelay(pdMS_TO_TICKS(100));
+                continue;
+            }
+
+            if (bytes_read == 0) {
+                vTaskDelay(pdMS_TO_TICKS(10));
+                continue;
+            }
+
+            size_t samples_read = bytes_read / sizeof(int16_t);
+            total_samples += samples_read;
+
+            // Simple VAD: check for samples above threshold
+            bool has_voice = false;
+            const int16_t* pcm_samples = reinterpret_cast<const int16_t*>(va->psram_buffer_);
+
+            for (size_t i = 0; i < samples_read; ++i) {
+                if (abs(pcm_samples[i]) > VAD_THRESHOLD) {
+                    has_voice = true;
+                    break;
+                }
+            }
+
+            if (has_voice) {
+                if (!is_recording) {
+                    LOG_I("Voice detected, starting recording");
+                    is_recording = true;
+                    total_samples = 0; // Reset count for new recording
+                }
+                last_voice_tick = xTaskGetTickCount();
+
+                // Send audio buffer if recording and queue not full
+                if (is_recording && total_samples < MAX_RECORDING_SAMPLES) {
+                    // Create AudioBuffer for downstream processing
+                    AudioBuffer* buffer = new AudioBuffer();
+                    buffer->data = new uint8_t[bytes_read];
+                    memcpy(buffer->data, va->psram_buffer_, bytes_read);
+                    buffer->size = bytes_read;
+                    buffer->sample_rate = SAMPLE_RATE;
+                    buffer->bits_per_sample = BITS_PER_SAMPLE;
+                    buffer->channels = CHANNELS;
+
+                    va->sendAudioBuffer(buffer);
+                }
+            } else if (is_recording) {
+                // Check for silence timeout
+                if (xTaskGetTickCount() - last_voice_tick > SILENCE_TIMEOUT) {
+                    LOG_I("Silence timeout, stopping recording (recorded %d samples)", total_samples);
+                    is_recording = false;
+                    // Could send end-of-speech signal here
+                }
+            }
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(10)); // Small delay to prevent hogging CPU
+    }
+
+    // Cleanup
+    i2s_driver_uninstall(va->i2s_input_port_);
     LOG_I("Voice capture task ended");
     vTaskDelete(NULL);
 }
@@ -193,10 +317,22 @@ bool VoiceAssistant::parseGPTCommand(const std::string& response, VoiceCommand& 
     return false;
 }
 
-// Queue helpers (stubs)
+// Queue helpers
 bool VoiceAssistant::sendAudioBuffer(AudioBuffer* buffer) {
-    // TODO: Implement audio send
-    return false;
+    if (!audioQueue_) return false;
+
+    QueueMessage* msg = new QueueMessage();
+    msg->type = MessageType::AudioBuffer;
+    msg->payload.audio_buffer = buffer;
+
+    if (xQueueSend(audioQueue_, &msg, pdMS_TO_TICKS(100)) != pdPASS) {
+        LOG_W("Audio queue full, discarding buffer");
+        delete buffer; // Free buffer if queue is full
+        delete msg;
+        return false;
+    }
+
+    return true;
 }
 
 bool VoiceAssistant::receiveTranscribedText(std::string& text) {
