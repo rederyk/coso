@@ -6,6 +6,7 @@
 #include "utils/logger.h"
 #include "utils/color_utils.h"
 #include <algorithm>
+#include <LittleFS.h>
 
 namespace {
     constexpr uint32_t UPDATE_INTERVAL_MS = 500;
@@ -34,6 +35,15 @@ namespace {
         lv_obj_set_style_border_width(btn, 0, LV_PART_MAIN);
         lv_obj_set_style_radius(btn, 10, LV_PART_MAIN);
         ColorUtils::applyAutoButtonTextColor(btn);
+    }
+
+    void cleanup_file_button_user_data(lv_event_t* e) {
+        if (!e || lv_event_get_code(e) != LV_EVENT_DELETE) return;
+        lv_obj_t* target = lv_event_get_target(e);
+        if (!target) return;
+        auto* path_ptr = static_cast<std::string*>(lv_obj_get_user_data(target));
+        delete path_ptr;
+        lv_obj_set_user_data(target, nullptr);
     }
 }
 
@@ -210,31 +220,21 @@ void AudioPlayerScreen::refreshFileList() {
 
     lv_obj_clean(file_list);
 
-    auto& sd = SdCardDriver::getInstance();
-    if (!sd.isMounted()) {
+    auto add_section_label = [&](const char* text, lv_color_t color) {
+        lv_obj_t* label = lv_label_create(file_list);
+        lv_label_set_text(label, text);
+        lv_obj_set_style_text_color(label, color, 0);
+        lv_obj_set_style_text_font(label, &lv_font_montserrat_16, 0);
+        lv_obj_set_style_pad_bottom(label, 4, 0);
+    };
+
+    auto add_message = [&](const char* text) {
         lv_obj_t* placeholder = lv_label_create(file_list);
-        lv_label_set_text(placeholder, LV_SYMBOL_WARNING " SD card not mounted");
+        lv_label_set_text(placeholder, text);
         lv_obj_set_style_text_color(placeholder, ColorUtils::invertColor(list_item_color), 0);
-        return;
-    }
+    };
 
-    auto entries = sd.listDirectory("/", 100);
-
-    for (const auto& entry : entries) {
-        if (entry.isDirectory) continue;
-
-        // Filter audio files
-        const char* name = entry.name.c_str();
-        const char* ext = strrchr(name, '.');
-        if (!ext) continue;
-
-        bool is_audio = (strcasecmp(ext, ".mp3") == 0 ||
-                        strcasecmp(ext, ".wav") == 0 ||
-                        strcasecmp(ext, ".flac") == 0 ||
-                        strcasecmp(ext, ".aac") == 0);
-
-        if (!is_audio) continue;
-
+    auto add_button = [&](const std::string& label_text, const std::string& path) {
         lv_obj_t* btn = lv_btn_create(file_list);
         lv_obj_set_width(btn, lv_pct(100));
         lv_obj_set_height(btn, 50);
@@ -253,12 +253,91 @@ void AudioPlayerScreen::refreshFileList() {
         lv_label_set_text(icon, LV_SYMBOL_AUDIO);
 
         lv_obj_t* lbl = lv_label_create(btn);
-        lv_label_set_text(lbl, name);
+        lv_label_set_text(lbl, label_text.c_str());
 
+        lv_obj_set_user_data(btn, new std::string(path));
         lv_obj_add_event_cb(btn, onFileSelected, LV_EVENT_CLICKED, this);
+        lv_obj_add_event_cb(btn, cleanup_file_button_user_data, LV_EVENT_DELETE, nullptr);
+    };
+
+    bool sd_found = false;
+
+    // SD card section
+    auto& sd = SdCardDriver::getInstance();
+    add_section_label(LV_SYMBOL_SD_CARD " SD card", ColorUtils::invertColor(list_item_color));
+
+    if (!sd.isMounted()) {
+        add_message(LV_SYMBOL_WARNING " SD card not mounted");
+    } else {
+        auto entries = sd.listDirectory("/", 100);
+        for (const auto& entry : entries) {
+            if (entry.isDirectory) continue;
+
+            const char* name = entry.name.c_str();
+            const char* ext = strrchr(name, '.');
+            if (!ext) continue;
+
+            bool is_audio = (strcasecmp(ext, ".mp3") == 0 ||
+                             strcasecmp(ext, ".wav") == 0 ||
+                             strcasecmp(ext, ".flac") == 0 ||
+                             strcasecmp(ext, ".aac") == 0);
+
+            if (!is_audio) continue;
+
+            std::string display = entry.name;
+            size_t slash = display.find_last_of('/');
+            if (slash != std::string::npos && slash + 1 < display.size()) {
+                display = display.substr(slash + 1);
+            }
+            std::string full_path = std::string("/sdcard/") + entry.name;
+            add_button(display, full_path);
+            sd_found = true;
+        }
+        if (!sd_found) {
+            add_message(LV_SYMBOL_FILE " No SD audio files found");
+        }
     }
 
-    if (lv_obj_get_child_cnt(file_list) == 0) {
+    // LittleFS section
+    add_section_label(LV_SYMBOL_DRIVE " Internal audio", ColorUtils::invertColor(list_item_color));
+    bool littlefs_found = false;
+    File root = LittleFS.open("/");
+    if (root && root.isDirectory()) {
+        File file = root.openNextFile();
+        while (file) {
+            if (!file.isDirectory()) {
+                std::string name = file.name();
+                const char* ext = strrchr(name.c_str(), '.');
+                if (ext) {
+                    bool is_audio = (strcasecmp(ext, ".mp3") == 0 ||
+                                     strcasecmp(ext, ".wav") == 0 ||
+                                     strcasecmp(ext, ".flac") == 0 ||
+                                     strcasecmp(ext, ".aac") == 0);
+                    if (is_audio) {
+                        std::string display = name;
+                        size_t slash = display.find_last_of('/');
+                        if (slash != std::string::npos && slash + 1 < display.size()) {
+                            display = display.substr(slash + 1);
+                        }
+                        std::string full_path = name;
+                        if (!full_path.empty() && full_path.front() != '/') {
+                            full_path = "/" + full_path;
+                        }
+                        add_button(display, full_path);
+                        littlefs_found = true;
+                    }
+                }
+            }
+            file = root.openNextFile();
+        }
+        root.close();
+    }
+
+    if (!littlefs_found) {
+        add_message(LV_SYMBOL_FILE " No LittleFS audio files");
+    }
+
+    if (!sd_found && !littlefs_found) {
         lv_obj_t* placeholder = lv_label_create(file_list);
         lv_label_set_text(placeholder, LV_SYMBOL_FILE " No audio files found");
         lv_obj_set_style_text_color(placeholder, ColorUtils::invertColor(list_item_color), 0);
@@ -331,18 +410,16 @@ void AudioPlayerScreen::formatTime(char* buffer, size_t size, uint32_t ms) {
 // Event callbacks
 void AudioPlayerScreen::onFileSelected(lv_event_t* event) {
     AudioPlayerScreen* screen = static_cast<AudioPlayerScreen*>(lv_event_get_user_data(event));
+    if (!screen) return;
     lv_obj_t* btn = lv_event_get_target(event);
-    lv_obj_t* label = lv_obj_get_child(btn, 1);  // Second child is the text label
-    const char* filename = lv_label_get_text(label);
+    auto* path_ptr = static_cast<std::string*>(lv_obj_get_user_data(btn));
+    if (!path_ptr) return;
 
-    std::string path = "/sdcard/";
-    path += filename;
-
-    screen->current_path_ = path;
-    AudioManager::getInstance().playFile(path.c_str());
+    screen->current_path_ = *path_ptr;
+    AudioManager::getInstance().playFile(path_ptr->c_str());
     screen->updatePlaybackInfo();
 
-    Logger::getInstance().infof("[AudioPlayer] Selected file: %s", filename);
+    Logger::getInstance().infof("[AudioPlayer] Selected file: %s", path_ptr->c_str());
 }
 
 void AudioPlayerScreen::onPlayPauseClicked(lv_event_t* event) {

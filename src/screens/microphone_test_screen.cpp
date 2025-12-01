@@ -9,6 +9,7 @@
 #include <string>
 #include <algorithm>
 #include <utility>
+#include <functional>
 #include <FS.h>
 #include <SD_MMC.h>
 #include <LittleFS.h>
@@ -22,6 +23,8 @@ constexpr const char* kRecordingsDir = "/test_recordings";
 constexpr int kMicI2sBckPin = 5;
 constexpr int kMicI2sWsPin = 7;
 constexpr int kMicI2sDinPin = 6;
+constexpr int kMicI2sMckPin = 4;
+constexpr uint32_t kDefaultRecordingDurationSeconds = 6;
 
 enum class RecordingStorage {
     SD_CARD,
@@ -185,10 +188,18 @@ std::string generateRecordingFilename() {
     return filename;
 }
 
-bool recordAudioToFile(const RecordingStorageInfo& storage, const char* filename, uint32_t duration_seconds);
+bool recordAudioToFile(const RecordingStorageInfo& storage,
+                       const char* filename,
+                       uint32_t duration_seconds,
+                       std::atomic<bool>& stop_flag,
+                       const std::function<void(uint16_t)>& level_callback);
 
 // Simple audio recording function (runs in dedicated task)
-bool recordAudioToFile(const RecordingStorageInfo& storage, const char* filename, uint32_t duration_seconds = 3) {
+bool recordAudioToFile(const RecordingStorageInfo& storage,
+                       const char* filename,
+                       uint32_t duration_seconds,
+                       std::atomic<bool>& stop_flag,
+                       const std::function<void(uint16_t)>& level_callback) {
     if (!ensureRecordingDirectory(storage) || !storage.fs) {
         Logger::getInstance().error("[MicTest] Recording directory unavailable");
         return false;
@@ -221,7 +232,7 @@ bool recordAudioToFile(const RecordingStorageInfo& storage, const char* filename
     };
 
     const i2s_pin_config_t pin_config = {
-        .mck_io_num = I2S_PIN_NO_CHANGE,
+        .mck_io_num = kMicI2sMckPin,
         .bck_io_num = kMicI2sBckPin,
         .ws_io_num = kMicI2sWsPin,
         .data_out_num = I2S_PIN_NO_CHANGE,
@@ -242,6 +253,7 @@ bool recordAudioToFile(const RecordingStorageInfo& storage, const char* filename
         file.close();
         return false;
     }
+    i2s_set_clk(I2S_NUM_1, i2s_config.sample_rate, i2s_config.bits_per_sample, I2S_CHANNEL_MONO);
 
     // Buffer for audio data
     const size_t CHUNK_SIZE = 1024;
@@ -260,7 +272,7 @@ bool recordAudioToFile(const RecordingStorageInfo& storage, const char* filename
 
     Logger::getInstance().info("Starting audio recording");
 
-    while (recorded_samples < target_samples) {
+    while (recorded_samples < target_samples && !stop_flag.load()) {
         size_t bytes_read = 0;
         size_t samples_to_read = std::min((size_t)(target_samples - recorded_samples), CHUNK_SIZE);
 
@@ -269,9 +281,26 @@ bool recordAudioToFile(const RecordingStorageInfo& storage, const char* filename
             file.write(buffer, bytes_read);
             recorded_samples += bytes_read / sizeof(int16_t);
             total_bytes += bytes_read;
+
+            if (level_callback) {
+                int16_t* samples = reinterpret_cast<int16_t*>(buffer);
+                size_t sample_count = bytes_read / sizeof(int16_t);
+                int32_t peak = 0;
+                for (size_t i = 0; i < sample_count; ++i) {
+                    int32_t value = std::abs(samples[i]);
+                    if (value > peak) {
+                        peak = value;
+                    }
+                }
+                uint16_t level = static_cast<uint16_t>(std::min<int>(100, (peak * 100) / 32767));
+                level_callback(level);
+            }
         } else {
             vTaskDelay(pdMS_TO_TICKS(10));
         }
+    }
+    if (level_callback) {
+        level_callback(0);
     }
 
     // Cleanup
@@ -308,7 +337,17 @@ void MicrophoneTestScreen::recordingTask(void* param) {
         Logger::getInstance().warn("[MicTest] SD card unavailable, recording to LittleFS");
     }
 
-    bool success = recordAudioToFile(storage, filename.c_str(), 3);
+    auto level_callback = [screen](uint16_t level) {
+        screen->updateMicLevelIndicator(level);
+    };
+
+    bool success = recordAudioToFile(storage,
+                                     filename.c_str(),
+                                     kDefaultRecordingDurationSeconds,
+                                     screen->stop_recording_requested,
+                                     level_callback);
+    bool cancelled = screen->stop_recording_requested.load();
+    screen->stop_recording_requested.store(false);
     if (success) {
         screen->current_playback_file = buildPlaybackPath(storage, filename);
         if (screen->playback_status_label) {
@@ -318,16 +357,22 @@ void MicrophoneTestScreen::recordingTask(void* param) {
     }
 
     if (screen->record_status_label) {
-        lv_label_set_text(screen->record_status_label,
-                          success ? "Recording saved!" : "Recording failed!");
+        if (!success) {
+            lv_label_set_text(screen->record_status_label, "Recording failed!");
+        } else if (cancelled) {
+            lv_label_set_text(screen->record_status_label, "Recording stopped");
+        } else {
+            lv_label_set_text(screen->record_status_label, "Recording saved!");
+        }
     }
 
     screen->is_recording = false;
+    screen->updateMicLevelIndicator(0);
     screen->recording_task_handle = nullptr;
     screen->applyThemeStyles(SettingsManager::getInstance().getSnapshot());
     screen->refreshAudioFilesList();
 
-    Logger::getInstance().infof("Recording task completed, success: %d", success);
+    Logger::getInstance().infof("Recording task completed, success: %d (cancelled=%d)", success, cancelled);
     vTaskDelete(nullptr);
 }
 
@@ -368,12 +413,39 @@ void MicrophoneTestScreen::build(lv_obj_t* parent) {
 
     // Recording card
     record_card = create_fixed_card(root, "Recording Test");
-    record_button = create_button(record_card, LV_SYMBOL_AUDIO " Start Recording", lv_color_hex(0xff4444));
-    lv_obj_add_event_cb(record_button, handleRecordButton, LV_EVENT_CLICKED, this);
+
+    lv_obj_t* controls_row = lv_obj_create(record_card);
+    lv_obj_remove_style_all(controls_row);
+    lv_obj_set_width(controls_row, lv_pct(100));
+    lv_obj_set_height(controls_row, LV_SIZE_CONTENT);
+    lv_obj_set_layout(controls_row, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(controls_row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_style_pad_column(controls_row, 8, 0);
+
+    record_start_button = create_button(controls_row, LV_SYMBOL_AUDIO " Avvia", lv_color_hex(0xff4444));
+    lv_obj_set_flex_grow(record_start_button, 1);
+    lv_obj_add_event_cb(record_start_button, handleRecordStartButton, LV_EVENT_CLICKED, this);
+
+    record_stop_button = create_button(controls_row, LV_SYMBOL_STOP " Stop", lv_color_hex(0x2a3a4a));
+    lv_obj_set_flex_grow(record_stop_button, 1);
+    lv_obj_add_event_cb(record_stop_button, handleRecordStopButton, LV_EVENT_CLICKED, this);
+
     record_status_label = lv_label_create(record_card);
-    lv_label_set_text(record_status_label, "Ready to record");
+    lv_label_set_text(record_status_label, "Premi Avvia per registrare");
     lv_obj_set_style_text_font(record_status_label, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(record_status_label, lv_color_hex(0xa0a0a0), 0);
+
+    mic_level_arc = lv_arc_create(record_card);
+    lv_obj_set_size(mic_level_arc, 140, 140);
+    lv_arc_set_range(mic_level_arc, 0, 100);
+    lv_arc_set_value(mic_level_arc, 0);
+    lv_arc_set_rotation(mic_level_arc, 270);
+    lv_arc_set_bg_angles(mic_level_arc, 0, 360);
+    lv_obj_center(mic_level_arc);
+    mic_level_label = lv_label_create(mic_level_arc);
+    lv_label_set_text(mic_level_label, "0%");
+    lv_obj_center(mic_level_label);
+    updateMicLevelIndicator(0);
 
     // Playback card
     playback_card = create_fixed_card(root, "Playback Test");
@@ -413,6 +485,9 @@ void MicrophoneTestScreen::onShow() {
 
 void MicrophoneTestScreen::onHide() {
     Logger::getInstance().info(LV_SYMBOL_AUDIO " Microphone test screen hidden");
+    if (is_recording) {
+        requestStopRecording();
+    }
 }
 
 void MicrophoneTestScreen::applySnapshot(const SettingsSnapshot& snapshot) {
@@ -457,13 +532,38 @@ void MicrophoneTestScreen::applyThemeStyles(const SettingsSnapshot& snapshot) {
     style_card(playback_card);
     style_card(files_card);
 
-    if (record_button) {
-        lv_color_t button_color = is_recording ? lv_color_hex(0x884444) : lv_color_hex(0xff4444);
-        lv_obj_set_style_bg_color(record_button, button_color, 0);
-        lv_obj_t* btn_label = lv_obj_get_child(record_button, 0);
-        if (btn_label) {
-            lv_label_set_text(btn_label, is_recording ? LV_SYMBOL_STOP " Stop Recording" : LV_SYMBOL_AUDIO " Start Recording");
+    if (record_start_button) {
+        lv_color_t button_color = is_recording ? lv_color_hex(0x555555) : lv_color_hex(0xff4444);
+        lv_obj_set_style_bg_color(record_start_button, button_color, 0);
+        if (is_recording) {
+            lv_obj_add_state(record_start_button, LV_STATE_DISABLED);
+        } else {
+            lv_obj_clear_state(record_start_button, LV_STATE_DISABLED);
         }
+        lv_obj_t* btn_label = lv_obj_get_child(record_start_button, 0);
+        if (btn_label) {
+            lv_label_set_text(btn_label, LV_SYMBOL_AUDIO " Avvia");
+        }
+    }
+    if (record_stop_button) {
+        lv_color_t button_color = is_recording ? lv_color_hex(0x2266aa) : lv_color_hex(0x2a3a4a);
+        lv_obj_set_style_bg_color(record_stop_button, button_color, 0);
+        if (is_recording) {
+            lv_obj_clear_state(record_stop_button, LV_STATE_DISABLED);
+        } else {
+            lv_obj_add_state(record_stop_button, LV_STATE_DISABLED);
+        }
+        lv_obj_t* btn_label = lv_obj_get_child(record_stop_button, 0);
+        if (btn_label) {
+            lv_label_set_text(btn_label, LV_SYMBOL_STOP " Stop");
+        }
+    }
+    if (mic_level_arc) {
+        lv_obj_set_style_arc_color(mic_level_arc, lv_color_mix(accent, lv_color_hex(0x000000), LV_OPA_80), LV_PART_INDICATOR);
+        lv_obj_set_style_arc_color(mic_level_arc, lv_color_mix(accent, primary, LV_OPA_20), LV_PART_MAIN);
+    }
+    if (mic_level_label) {
+        lv_obj_set_style_text_color(mic_level_label, lv_color_hex(0xffffff), 0);
     }
     if (playback_button) {
         lv_color_t button_color = is_playing ? lv_color_hex(0x448844) : lv_color_hex(0x44aa44);
@@ -473,6 +573,32 @@ void MicrophoneTestScreen::applyThemeStyles(const SettingsSnapshot& snapshot) {
             lv_label_set_text(btn_label, is_playing ? LV_SYMBOL_PAUSE " Stop Playback" : LV_SYMBOL_PLAY " Play Test Audio");
         }
     }
+}
+
+void MicrophoneTestScreen::updateMicLevelIndicator(uint16_t level) {
+    uint16_t value = std::min<uint16_t>(level, 100);
+    if (mic_level_arc) {
+        lv_arc_set_value(mic_level_arc, value);
+    }
+    if (mic_level_label) {
+        char buffer[32];
+        snprintf(buffer, sizeof(buffer), "%u%%", value);
+        lv_label_set_text(mic_level_label, buffer);
+    }
+}
+
+void MicrophoneTestScreen::requestStopRecording() {
+    if (!is_recording) {
+        if (record_status_label) {
+            lv_label_set_text(record_status_label, "Nessuna registrazione attiva");
+        }
+        return;
+    }
+    stop_recording_requested.store(true);
+    if (record_status_label) {
+        lv_label_set_text(record_status_label, "Arresto registrazione...");
+    }
+    Logger::getInstance().info("[MicTest] Stop requested");
 }
 
 void MicrophoneTestScreen::refreshAudioFilesList() {
@@ -564,36 +690,33 @@ void MicrophoneTestScreen::refreshAudioFilesList() {
     }
 }
 
-void MicrophoneTestScreen::handleRecordButton(lv_event_t* e) {
+void MicrophoneTestScreen::handleRecordStartButton(lv_event_t* e) {
+    auto* screen = static_cast<MicrophoneTestScreen*>(lv_event_get_user_data(e));
+    if (!screen || screen->is_recording) return;
+
+    screen->is_recording = true;
+    screen->stop_recording_requested.store(false);
+    screen->updateMicLevelIndicator(0);
+    if (screen->record_status_label) {
+        lv_label_set_text(screen->record_status_label, "Registrazione in corso...");
+    }
+    Logger::getInstance().info("Starting microphone recording task");
+
+    xTaskCreate(MicrophoneTestScreen::recordingTask,
+                "mic_recording",
+                4096,
+                screen,
+                1,
+                &screen->recording_task_handle);
+
+    screen->applyThemeStyles(SettingsManager::getInstance().getSnapshot());
+}
+
+void MicrophoneTestScreen::handleRecordStopButton(lv_event_t* e) {
     auto* screen = static_cast<MicrophoneTestScreen*>(lv_event_get_user_data(e));
     if (!screen) return;
-
-    if (screen->is_recording) {
-        // Stop recording task if running
-        if (screen->recording_task_handle) {
-            vTaskDelete(screen->recording_task_handle);
-            screen->recording_task_handle = nullptr;
-        }
-        screen->is_recording = false;
-        if (screen->record_status_label) lv_label_set_text(screen->record_status_label, "Recording cancelled");
-        Logger::getInstance().info("Microphone recording cancelled");
-        screen->applyThemeStyles(SettingsManager::getInstance().getSnapshot());
-    } else {
-        // Start recording in background task
-        screen->is_recording = true;
-        if (screen->record_status_label) lv_label_set_text(screen->record_status_label, "Recording...");
-        Logger::getInstance().info("Starting microphone recording task");
-
-        // Create recording task
-        xTaskCreate(MicrophoneTestScreen::recordingTask,
-                    "mic_recording",
-                    4096,
-                    screen,
-                    1,
-                    &screen->recording_task_handle);
-
-        screen->applyThemeStyles(SettingsManager::getInstance().getSnapshot());
-    }
+    screen->requestStopRecording();
+    screen->applyThemeStyles(SettingsManager::getInstance().getSnapshot());
 }
 
 void MicrophoneTestScreen::handlePlaybackButton(lv_event_t* e) {

@@ -242,11 +242,11 @@ bool AudioPlayer::select_source(const char* uri, SourceType hint) {
     // Auto-detect da URI se hint è LITTLEFS (default)
     SourceType type = hint;
 
-    if (hint == SourceType::LITTLEFS) {
+    if (hint == SourceType::LITTLEFS && uri) {
         // Euristica per auto-detect
         if (strncmp(uri, "http://", 7) == 0 || strncmp(uri, "https://", 8) == 0) {
             type = SourceType::HTTP_STREAM;
-        } else if (strncmp(uri, "/sd/", 4) == 0) {
+        } else if (strncmp(uri, "/sd/", 4) == 0 || strncmp(uri, "/sdcard/", 8) == 0) {
             type = SourceType::SD_CARD;
         } else {
             type = SourceType::LITTLEFS;

@@ -2,6 +2,7 @@
 
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
+#include <atomic>
 #include "core/screen.h"
 #include "core/settings_manager.h"
 
@@ -19,9 +20,12 @@ protected:
     void applySnapshot(const SettingsSnapshot& snapshot);
     void applyThemeStyles(const SettingsSnapshot& snapshot);
     void refreshAudioFilesList();
+    void updateMicLevelIndicator(uint16_t level);
+    void requestStopRecording();
     static void recordingTask(void* param);
 
-    static void handleRecordButton(lv_event_t* e);
+    static void handleRecordStartButton(lv_event_t* e);
+    static void handleRecordStopButton(lv_event_t* e);
     static void handlePlaybackButton(lv_event_t* e);
     static void handleAudioFileButton(lv_event_t* e);
 
@@ -29,7 +33,10 @@ protected:
     lv_obj_t* record_card = nullptr;
     lv_obj_t* playback_card = nullptr;
     lv_obj_t* files_card = nullptr;
-    lv_obj_t* record_button = nullptr;
+    lv_obj_t* record_start_button = nullptr;
+    lv_obj_t* record_stop_button = nullptr;
+    lv_obj_t* mic_level_arc = nullptr;
+    lv_obj_t* mic_level_label = nullptr;
     lv_obj_t* playback_button = nullptr;
     lv_obj_t* record_status_label = nullptr;
     lv_obj_t* playback_status_label = nullptr;
@@ -41,4 +48,5 @@ protected:
     bool is_playing = false;
     TaskHandle_t recording_task_handle = nullptr;
     std::string current_playback_file;
+    std::atomic<bool> stop_recording_requested{false};
 };
