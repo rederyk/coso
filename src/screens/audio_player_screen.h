@@ -16,11 +16,17 @@ public:
     void onShow() override;
     void onHide() override;
 
+    enum class StorageSource {
+        SdCard,
+        LittleFS,
+    };
+
 private:
     void refreshFileList();
     void updatePlaybackInfo();
     void updateProgressBar();
     void formatTime(char* buffer, size_t size, uint32_t ms);
+    void navigateToDirectory(StorageSource source, const std::string& path);
 
     static void onFileSelected(lv_event_t* event);
     static void onPlayPauseClicked(lv_event_t* event);
@@ -42,4 +48,6 @@ private:
     lv_timer_t* update_timer = nullptr;
 
     std::string current_path_;
+    std::string sd_current_path_ = "/";
+    std::string littlefs_current_path_ = "/";
 };
