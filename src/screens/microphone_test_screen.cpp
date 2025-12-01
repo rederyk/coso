@@ -26,6 +26,7 @@ constexpr int kMicI2sWsPin = 7;
 constexpr int kMicI2sDinPin = 6;
 constexpr int kMicI2sMckPin = 4;
 constexpr uint32_t kDefaultRecordingDurationSeconds = 6;
+constexpr uint32_t kMicSampleRate = 16000;
 
 enum class RecordingStorage {
     SD_CARD,
@@ -222,9 +223,9 @@ bool recordAudioToFile(const RecordingStorageInfo& storage,
     // Configure I2S for microphone input (same as VoiceAssistant)
     const i2s_config_t i2s_config = {
         .mode = i2s_mode_t(I2S_MODE_MASTER | I2S_MODE_RX),
-        .sample_rate = 16000,
+        .sample_rate = kMicSampleRate,
         .bits_per_sample = i2s_bits_per_sample_t(16),
-        .channel_format = I2S_CHANNEL_FMT_ONLY_LEFT,
+        .channel_format = I2S_CHANNEL_FMT_RIGHT_LEFT,
         .communication_format = I2S_COMM_FORMAT_STAND_I2S,
         .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1,
         .dma_buf_count = 4,
@@ -254,13 +255,14 @@ bool recordAudioToFile(const RecordingStorageInfo& storage,
         file.close();
         return false;
     }
-    i2s_set_clk(I2S_NUM_1, i2s_config.sample_rate, i2s_config.bits_per_sample, I2S_CHANNEL_MONO);
+    i2s_set_clk(I2S_NUM_1, i2s_config.sample_rate, i2s_config.bits_per_sample, I2S_CHANNEL_STEREO);
 
-    // Buffer for audio data
-    const size_t kChunkSamples = 1024;
-    constexpr float kTargetPeak = 22000.0f;
-    constexpr float kMaxGainFactor = 3.0f;
-    uint8_t* buffer = (uint8_t*)malloc(kChunkSamples * sizeof(int16_t));
+    // Buffer for audio data (stereo frames converted to mono)
+    constexpr size_t kMonoSamplesPerChunk = 1024;
+    constexpr size_t kStereoSamplesPerChunk = kMonoSamplesPerChunk * 2;
+    constexpr float kTargetPeak = 28000.0f;
+    constexpr float kMaxGainFactor = 6.0f;
+    uint8_t* buffer = (uint8_t*)malloc(kStereoSamplesPerChunk * sizeof(int16_t));
     if (!buffer) {
         Logger::getInstance().error("Failed to allocate audio buffer");
         i2s_driver_uninstall(I2S_NUM_1);
@@ -289,13 +291,25 @@ bool recordAudioToFile(const RecordingStorageInfo& storage,
         size_t bytes_read = 0;
         err = i2s_read(I2S_NUM_1,
                        buffer,
-                       kChunkSamples * sizeof(int16_t),
+                       kStereoSamplesPerChunk * sizeof(int16_t),
                        &bytes_read,
                        pdMS_TO_TICKS(100));
 
-        if (err == ESP_OK && bytes_read > 0) {
-            int16_t* samples = reinterpret_cast<int16_t*>(buffer);
-            size_t sample_count = bytes_read / sizeof(int16_t);
+        if (err == ESP_OK && bytes_read >= sizeof(int16_t) * 2) {
+            int16_t* raw_samples = reinterpret_cast<int16_t*>(buffer);
+            size_t stereo_count = bytes_read / sizeof(int16_t);
+            size_t mono_sample_count = stereo_count / 2;
+            if (mono_sample_count == 0) {
+                continue;
+            }
+
+            for (size_t i = 0; i < mono_sample_count; ++i) {
+                raw_samples[i] = raw_samples[i * 2]; // Keep left channel
+            }
+
+            int16_t* samples = raw_samples;
+            size_t sample_count = mono_sample_count;
+            size_t mono_bytes = sample_count * sizeof(int16_t);
             int32_t chunk_peak = 0;
 
             for (size_t i = 0; i < sample_count; ++i) {
@@ -331,9 +345,9 @@ bool recordAudioToFile(const RecordingStorageInfo& storage,
                 }
             }
 
-            file.write(buffer, bytes_read);
+            file.write(reinterpret_cast<uint8_t*>(samples), mono_bytes);
             recorded_samples += sample_count;
-            total_bytes += bytes_read;
+            total_bytes += mono_bytes;
 
             if (level_callback) {
                 uint16_t level = static_cast<uint16_t>(std::min<int>(100, (scaled_peak * 100) / 32767));
@@ -358,34 +372,17 @@ bool recordAudioToFile(const RecordingStorageInfo& storage,
     }
 
     uint32_t configured_sample_rate = i2s_config.sample_rate;
+    uint32_t candidate_rate = recorded_samples > 0
+                                  ? static_cast<uint32_t>((recorded_samples * 1000ull) / recording_duration_ms)
+                                  : 0;
     uint32_t measured_sample_rate = configured_sample_rate;
-    if (recorded_samples > 0) {
-        uint32_t candidate_rate = static_cast<uint32_t>((recorded_samples * 1000ull) / recording_duration_ms);
-        const uint32_t supported_rates[] = {
-            8000, 11025, 12000, 16000, 22050, 24000, 32000, 44100, 48000
-        };
-        uint32_t nearest_rate = configured_sample_rate;
-        uint32_t best_diff = std::numeric_limits<uint32_t>::max();
-        for (uint32_t rate : supported_rates) {
-            uint32_t diff = rate > candidate_rate ? rate - candidate_rate : candidate_rate - rate;
-            if (diff < best_diff) {
-                best_diff = diff;
-                nearest_rate = rate;
-            }
-        }
 
-        constexpr float kTolerance = 0.03f;
-        constexpr size_t kSupportedRateCount = sizeof(supported_rates) / sizeof(supported_rates[0]);
-        if (candidate_rate >= supported_rates[0] && candidate_rate <= supported_rates[kSupportedRateCount - 1]
-            && best_diff <= static_cast<uint32_t>(nearest_rate * kTolerance)) {
-            measured_sample_rate = nearest_rate;
-        } else {
-            Logger::getInstance().warnf("[MicTest] Measured sample rate %u Hz off expected range, using configured %u Hz",
-                                        candidate_rate, measured_sample_rate);
-        }
-    }
-
-    Logger::getInstance().infof("Recording complete: %u bytes @ %u Hz written", total_bytes, measured_sample_rate);
+    Logger::getInstance().infof("Recording complete: %u bytes, %llu samples in %ums (~%u Hz) stored as %u Hz",
+                                total_bytes,
+                                static_cast<unsigned long long>(recorded_samples),
+                                recording_duration_ms,
+                                candidate_rate,
+                                measured_sample_rate);
 
     // Update WAV header with actual data size
     if (total_bytes > 0) {
