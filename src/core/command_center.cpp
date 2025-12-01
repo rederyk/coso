@@ -9,6 +9,9 @@
 #include <esp_timer.h>
 
 #include "drivers/sd_card_driver.h"
+#include "drivers/rgb_led_driver.h"
+#include "core/audio_manager.h"
+#include "core/backlight_manager.h"
 #include "utils/logger.h"
 
 namespace {
@@ -164,5 +167,112 @@ void CommandCenter::registerBuiltins() {
                 }
             }
             return CommandResult{true, output};
+        });
+
+    // Voice assistant commands
+
+    // Radio control
+    registerCommand("radio_play", "Play radio station by name (e.g., 'jazz', 'rock', 'news')",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                return CommandResult{false, "Usage: radio_play <genre/name>"};
+            }
+            std::string genre = args[0];
+            // TODO: Implement radio selection logic
+            std::string msg = "Playing " + genre + " station (placeholder)";
+            return CommandResult{true, msg};
+        });
+
+    // WiFi control
+    registerCommand("wifi_switch", "Switch to different WiFi network",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                return CommandResult{false, "Usage: wifi_switch <ssid>"};
+            }
+            std::string ssid = args[0];
+            std::string msg = "Switching to WiFi '" + ssid + "' (confirmation required)";
+            // TODO: Implement WiFi switching with confirmation
+            return CommandResult{true, msg};
+        });
+
+    // Bluetooth pairing
+    registerCommand("bt_pair", "Pair with Bluetooth device",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                return CommandResult{false, "Usage: bt_pair <device_name>"};
+            }
+            std::string device_name = args[0];
+            std::string msg = "Pairing with '" + device_name + "' (placeholder)";
+            // TODO: Implement BT pairing logic
+            return CommandResult{true, msg};
+        });
+
+    // Volume control
+    registerCommand("volume_up", "Increase audio volume",
+        [](const std::vector<std::string>& args) {
+            auto& audio_mgr = AudioManager::getInstance();
+            int current = audio_mgr.getVolume();
+            int new_volume = std::min(100, current + 10);
+            audio_mgr.setVolume(new_volume);
+            return CommandResult{true, "Volume set to " + std::to_string(new_volume) + "%"};
+        });
+
+    registerCommand("volume_down", "Decrease audio volume",
+        [](const std::vector<std::string>& args) {
+            auto& audio_mgr = AudioManager::getInstance();
+            int current = audio_mgr.getVolume();
+            int new_volume = std::max(0, current - 10);
+            audio_mgr.setVolume(new_volume);
+            return CommandResult{true, "Volume set to " + std::to_string(new_volume) + "%"};
+        });
+
+    // Brightness control
+    registerCommand("brightness_up", "Increase display brightness",
+        [](const std::vector<std::string>& args) {
+            auto& backlight = BacklightManager::getInstance();
+            uint8_t current = backlight.getBrightness();
+            uint8_t new_brightness = std::min<uint8_t>(100, current + 20);
+            backlight.setBrightness(new_brightness);
+            return CommandResult{true, "Brightness set to " + std::to_string(new_brightness) + "%"};
+        });
+
+    registerCommand("brightness_down", "Decrease display brightness",
+        [](const std::vector<std::string>& args) {
+            auto& backlight = BacklightManager::getInstance();
+            uint8_t current = backlight.getBrightness();
+            uint8_t new_brightness = std::max<uint8_t>(10, current - 20);
+            backlight.setBrightness(new_brightness);
+            return CommandResult{true, "Brightness set to " + std::to_string(new_brightness) + "%"};
+        });
+
+    // LED brightness
+    registerCommand("led_brightness", "Set LED brightness",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                return CommandResult{false, "Usage: led_brightness <percentage>"};
+            }
+            uint8_t brightness = std::min<uint8_t>(100, std::max<uint8_t>(0,
+                static_cast<uint8_t>(std::strtoul(args[0].c_str(), nullptr, 10))));
+            RgbLedManager::getInstance().setBrightness(brightness);
+            return CommandResult{true, "LED brightness set to " + std::to_string(brightness) + "%"};
+        });
+
+    // System status
+    registerCommand("system_status", "Get combined system status (heap, wifi, sd)",
+        [](const std::vector<std::string>& args) {
+            const size_t heap_free = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+            const size_t psram_free = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
+
+            SdCardDriver& sd = SdCardDriver::getInstance();
+            std::string sd_status = sd.isMounted() ? "mounted" : "not_mounted";
+
+            // TODO: WiFi status from WiFi manager
+            std::string wifi_status = "unknown"; // Placeholder
+
+            std::string msg = "heap_free=" + std::to_string(heap_free) +
+                             " psram_free=" + std::to_string(psram_free) +
+                             " sd_card=" + sd_status +
+                             " wifi=" + wifi_status;
+            return CommandResult{true, msg};
         });
 }

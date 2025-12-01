@@ -337,6 +337,11 @@ void SettingsManager::loadDefaults() {
     current_.audioVolume = DEFAULT_AUDIO_VOLUME;
     current_.audioEnabled = DEFAULT_AUDIO_ENABLED;
 
+    // Voice Assistant
+    current_.openAiApiKey.clear();
+    current_.openAiEndpoint = "https://api.openai.com/v1";
+    current_.voiceAssistantEnabled = false;
+
     // Theme
     current_.theme = DEFAULT_THEME;
     current_.primaryColor = DEFAULT_PRIMARY_COLOR;
@@ -702,6 +707,34 @@ bool SettingsManager::restoreFromSD() {
 bool SettingsManager::hasBackup() const {
     SdCardDriver& sd = SdCardDriver::getInstance();
     return sd.isMounted() && SD_MMC.exists("/config/settings_backup.json");
+}
+
+// Voice Assistant setters
+void SettingsManager::setOpenAiApiKey(const std::string& key) {
+    if (!initialized_ || key == current_.openAiApiKey) {
+        return;
+    }
+    current_.openAiApiKey = key;
+    persistSnapshot();
+    notify(SettingKey::OpenAIApiKey);
+}
+
+void SettingsManager::setOpenAiEndpoint(const std::string& endpoint) {
+    if (!initialized_ || endpoint == current_.openAiEndpoint) {
+        return;
+    }
+    current_.openAiEndpoint = endpoint;
+    persistSnapshot();
+    notify(SettingKey::OpenAIEndpoint);
+}
+
+void SettingsManager::setVoiceAssistantEnabled(bool enabled) {
+    if (!initialized_ || enabled == current_.voiceAssistantEnabled) {
+        return;
+    }
+    current_.voiceAssistantEnabled = enabled;
+    persistSnapshot();
+    notify(SettingKey::VoiceAssistantEnabled);
 }
 
 void SettingsManager::notify(SettingKey key) {

@@ -35,6 +35,11 @@ struct SettingsSnapshot {
     uint8_t audioVolume = 80;
     bool audioEnabled = true;
 
+    // Voice Assistant
+    std::string openAiApiKey;
+    std::string openAiEndpoint = "https://api.openai.com/v1";
+    bool voiceAssistantEnabled = false;
+
     // Theme
     std::string theme;
     uint32_t primaryColor = 0x0b2035;
@@ -82,6 +87,11 @@ public:
         // Audio
         AudioVolume,
         AudioEnabled,
+
+        // Voice Assistant
+        VoiceAssistantEnabled,
+        OpenAIApiKey,
+        OpenAIEndpoint,
 
         // Theme
         Theme,
@@ -190,6 +200,16 @@ public:
 
     bool getAudioEnabled() const { return current_.audioEnabled; }
     void setAudioEnabled(bool enabled);
+
+    // Voice Assistant
+    const std::string& getOpenAiApiKey() const { return current_.openAiApiKey; }
+    void setOpenAiApiKey(const std::string& key);
+
+    const std::string& getOpenAiEndpoint() const { return current_.openAiEndpoint; }
+    void setOpenAiEndpoint(const std::string& endpoint);
+
+    bool getVoiceAssistantEnabled() const { return current_.voiceAssistantEnabled; }
+    void setVoiceAssistantEnabled(bool enabled);
 
     // System
     uint32_t getBootCount() const { return current_.bootCount; }
