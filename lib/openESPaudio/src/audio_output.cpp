@@ -17,6 +17,14 @@ constexpr int kI2cSda = 16;
 constexpr uint32_t kI2cSpeed = 400000;
 constexpr uint32_t kBytesPerSample = sizeof(int16_t);
 constexpr i2s_mclk_multiple_t kI2sMclkMultiple = I2S_MCLK_MULTIPLE_256;
+
+constexpr uint32_t kDefaultMclkMultipleValue = 256;
+
+uint32_t getMclkMultipleValue() {
+    return (kI2sMclkMultiple == I2S_MCLK_MULTIPLE_DEFAULT)
+               ? kDefaultMclkMultipleValue
+               : static_cast<uint32_t>(kI2sMclkMultiple);
+}
 } // namespace
 
 AudioOutput::AudioOutput() {
@@ -29,7 +37,16 @@ AudioOutput::~AudioOutput() {
 bool AudioOutput::begin(const AudioConfig& cfg, uint32_t sample_rate, uint32_t channels) {
     i2s_write_timeout_ms_ = cfg.i2s_write_timeout_ms;
     current_sample_rate_ = sample_rate;
-    const uint32_t mclk_hz = sample_rate * static_cast<uint32_t>(kI2sMclkMultiple);
+    const uint32_t mclk_hz = sample_rate * getMclkMultipleValue();
+    LOG_INFO("AudioOutput begin: sr=%u ch=%u mclk=%uHz (mult=%u) pins[BCK=%d,WS=%d,DOUT=%d,MCK=%d]",
+             sample_rate,
+             channels,
+             (unsigned)mclk_hz,
+             (unsigned)getMclkMultipleValue(),
+             kI2sBck,
+             kI2sWs,
+             kI2sDout,
+             kI2sMck);
 
     // ===== INIT CODEC =====
     // Note: Codec init requires I2C.
@@ -45,6 +62,7 @@ bool AudioOutput::begin(const AudioConfig& cfg, uint32_t sample_rate, uint32_t c
         LOG_ERROR("Codec init failed");
         return false;
     }
+    LOG_INFO("Codec init OK at %u Hz / %u channels", sample_rate, channels);
 
     // ===== INIT I2S =====
     // I2sDriver handles the specific ESP32 I2S configuration
@@ -102,12 +120,20 @@ size_t AudioOutput::write(const int16_t* data, size_t frames, size_t channels) {
                                     pdMS_TO_TICKS(i2s_write_timeout_ms_));
 
         if (result != ESP_OK) {
-            LOG_ERROR("I2S write error: %s", esp_err_to_name(result));
+            LOG_ERROR("I2S write error: %s (chunk=%u remaining=%u sr=%u)",
+                      esp_err_to_name(result),
+                      (unsigned)chunk,
+                      (unsigned)remaining,
+                      (unsigned)current_sample_rate_);
             break;
         }
 
         if (written == 0) {
-            LOG_ERROR("I2S write returned 0 bytes");
+            LOG_ERROR("I2S write returned 0 bytes (chunk=%u remaining=%u chunk_bytes=%u sr=%u)",
+                      (unsigned)chunk,
+                      (unsigned)remaining,
+                      (unsigned)i2s_driver_.chunk_bytes(),
+                      (unsigned)current_sample_rate_);
             break;
         }
 

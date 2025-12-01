@@ -31,6 +31,9 @@ constexpr size_t VOICE_COMMAND_QUEUE_SIZE = 20;
 constexpr uint32_t SAMPLE_RATE = 16000;
 constexpr uint8_t BITS_PER_SAMPLE = 16;
 constexpr uint8_t CHANNELS = 1;
+constexpr int MIC_I2S_BCK_PIN = 5;
+constexpr int MIC_I2S_WS_PIN = 7;
+constexpr int MIC_I2S_DATA_PIN = 6;
 
 // API endpoints
 constexpr const char* WHISPER_ENDPOINT = "https://api.openai.com/v1/audio/transcriptions";
@@ -161,7 +164,7 @@ void VoiceAssistant::voiceCaptureTask(void* param) {
     const i2s_config_t i2s_config = {
         .mode = i2s_mode_t(I2S_MODE_MASTER | I2S_MODE_RX),
         .sample_rate = SAMPLE_RATE,
-        .bits_per_sample = i2s_bits_per_sample_t(BITS_PER_SAMPLE * 8),
+        .bits_per_sample = i2s_bits_per_sample_t(BITS_PER_SAMPLE),
         .channel_format = I2S_CHANNEL_FMT_ONLY_LEFT,
         .communication_format = I2S_COMM_FORMAT_STAND_I2S,
         .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1,
@@ -172,10 +175,10 @@ void VoiceAssistant::voiceCaptureTask(void* param) {
 
     const i2s_pin_config_t pin_config = {
         .mck_io_num = I2S_PIN_NO_CHANGE,
-        .bck_io_num = 6,   // I2S BCLK pin
-        .ws_io_num = 7,    // I2S WS (LRCLK) pin
+        .bck_io_num = MIC_I2S_BCK_PIN,   // I2S BCLK pin (shared with playback)
+        .ws_io_num = MIC_I2S_WS_PIN,    // I2S WS (LRCLK) pin
         .data_out_num = I2S_PIN_NO_CHANGE,
-        .data_in_num = 5   // I2S DIN pin for microphone
+        .data_in_num = MIC_I2S_DATA_PIN   // I2S DIN pin for microphone
     };
 
     esp_err_t err = i2s_driver_install(va->i2s_input_port_, &i2s_config, 0, nullptr);

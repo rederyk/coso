@@ -563,6 +563,11 @@ void AudioPlayer::audio_task() {
 
     channels = stream_->channels();
     sample_rate = stream_->sample_rate();
+    LOG_INFO("Preparing playback stream: uri=%s sr=%u ch=%u format=%d",
+             stream_->data_source() ? stream_->data_source()->uri() : "n/a",
+             sample_rate,
+             channels,
+             static_cast<int>(stream_->format()));
     // total_pcm_frames_ is updated in start()
 
     // ===== INIT AUDIO OUTPUT (Codec & I2S) =====
@@ -694,6 +699,11 @@ void AudioPlayer::audio_task() {
             size_t frames_decoded = stream_->read(pcm_buffer, pcm_buffer_size_frames);
 
             if (frames_decoded == 0) {
+                LOG_WARN("Decoder returned 0 frames (stop=%s pause=%s) sr=%u ch=%u",
+                         stop_requested_ ? "true" : "false",
+                         pause_flag_ ? "true" : "false",
+                         sample_rate,
+                         channels);
                 if (stop_requested_) {
                     break;
                 }
@@ -743,6 +753,11 @@ void AudioPlayer::audio_task() {
                 if (frames_written < frames_decoded) {
                      // Handle partial write or error if needed, but AudioOutput logs errors.
                      // For now, we continue or could count dropped frames.
+                     LOG_WARN("Partial I2S write: wrote %u/%u frames (sr=%u ch=%u) remaining playback may underrun",
+                              (unsigned)frames_written,
+                              (unsigned)frames_decoded,
+                              sample_rate,
+                              channels);
                 }
             }
         } // end while (!stop_requested_)

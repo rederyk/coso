@@ -19,6 +19,9 @@
 namespace {
 
 constexpr const char* kRecordingsDir = "/test_recordings";
+constexpr int kMicI2sBckPin = 5;
+constexpr int kMicI2sWsPin = 7;
+constexpr int kMicI2sDinPin = 6;
 
 enum class RecordingStorage {
     SD_CARD,
@@ -219,10 +222,10 @@ bool recordAudioToFile(const RecordingStorageInfo& storage, const char* filename
 
     const i2s_pin_config_t pin_config = {
         .mck_io_num = I2S_PIN_NO_CHANGE,
-        .bck_io_num = 6,
-        .ws_io_num = 7,
+        .bck_io_num = kMicI2sBckPin,
+        .ws_io_num = kMicI2sWsPin,
         .data_out_num = I2S_PIN_NO_CHANGE,
-        .data_in_num = 5
+        .data_in_num = kMicI2sDinPin
     };
 
     esp_err_t err = i2s_driver_install(I2S_NUM_1, &i2s_config, 0, nullptr);

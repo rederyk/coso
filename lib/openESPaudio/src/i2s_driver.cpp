@@ -8,6 +8,17 @@
 #include "esp_err.h"
 #include "logger.h"
 
+namespace {
+constexpr uint32_t kDefaultMclkMultipleValue = 256;
+
+uint32_t calculate_mclk_frequency(uint32_t sample_rate, i2s_mclk_multiple_t mclk_multiple) {
+    const uint32_t multiplier = (mclk_multiple == I2S_MCLK_MULTIPLE_DEFAULT)
+                                    ? kDefaultMclkMultipleValue
+                                    : static_cast<uint32_t>(mclk_multiple);
+    return sample_rate * multiplier;
+}
+} // namespace
+
 void I2sDriver::configure(uint32_t sample_rate,
                           const AudioConfig &cfg,
                           uint32_t bytes_per_sample,
@@ -65,7 +76,7 @@ void I2sDriver::init(uint32_t sample_rate,
     i2s_config.dma_buf_len = static_cast<int>(dma_buf_len_active_);
     i2s_config.use_apll = cfg.i2s_use_apll;
     i2s_config.tx_desc_auto_clear = false;
-    i2s_config.fixed_mclk = 0;
+    i2s_config.fixed_mclk = calculate_mclk_frequency(sample_rate, mclk_multiple);
     i2s_config.mclk_multiple = mclk_multiple;
     i2s_config.bits_per_chan = I2S_BITS_PER_CHAN_DEFAULT;
 
