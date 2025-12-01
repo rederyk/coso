@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <utility>
 #include <functional>
+#include <limits>
 #include <FS.h>
 #include <SD_MMC.h>
 #include <LittleFS.h>
@@ -256,8 +257,10 @@ bool recordAudioToFile(const RecordingStorageInfo& storage,
     i2s_set_clk(I2S_NUM_1, i2s_config.sample_rate, i2s_config.bits_per_sample, I2S_CHANNEL_MONO);
 
     // Buffer for audio data
-    const size_t CHUNK_SIZE = 1024;
-    uint8_t* buffer = (uint8_t*)malloc(CHUNK_SIZE * sizeof(int16_t));
+    const size_t kChunkSamples = 1024;
+    constexpr float kTargetPeak = 22000.0f;
+    constexpr float kMaxGainFactor = 3.0f;
+    uint8_t* buffer = (uint8_t*)malloc(kChunkSamples * sizeof(int16_t));
     if (!buffer) {
         Logger::getInstance().error("Failed to allocate audio buffer");
         i2s_driver_uninstall(I2S_NUM_1);
@@ -265,40 +268,82 @@ bool recordAudioToFile(const RecordingStorageInfo& storage,
         return false;
     }
 
-    // Record for specified duration
+    const uint32_t target_duration_ms = duration_seconds * 1000;
+    const bool limit_by_duration = duration_seconds > 0;
+    uint32_t start_ms = millis();
+
     uint32_t total_bytes = 0;
-    uint32_t target_samples = 16000 * duration_seconds;
-    uint32_t recorded_samples = 0;
+    uint64_t recorded_samples = 0;
 
     Logger::getInstance().info("Starting audio recording");
 
-    while (recorded_samples < target_samples && !stop_flag.load()) {
-        size_t bytes_read = 0;
-        size_t samples_to_read = std::min((size_t)(target_samples - recorded_samples), CHUNK_SIZE);
+    while (true) {
+        if (stop_flag.load()) {
+            break;
+        }
+        uint32_t elapsed_ms = millis() - start_ms;
+        if (limit_by_duration && elapsed_ms >= target_duration_ms) {
+            break;
+        }
 
-        err = i2s_read(I2S_NUM_1, buffer, samples_to_read * sizeof(int16_t), &bytes_read, pdMS_TO_TICKS(100));
+        size_t bytes_read = 0;
+        err = i2s_read(I2S_NUM_1,
+                       buffer,
+                       kChunkSamples * sizeof(int16_t),
+                       &bytes_read,
+                       pdMS_TO_TICKS(100));
+
         if (err == ESP_OK && bytes_read > 0) {
+            int16_t* samples = reinterpret_cast<int16_t*>(buffer);
+            size_t sample_count = bytes_read / sizeof(int16_t);
+            int32_t chunk_peak = 0;
+
+            for (size_t i = 0; i < sample_count; ++i) {
+                int32_t value = std::abs(samples[i]);
+                if (value > chunk_peak) {
+                    chunk_peak = value;
+                }
+            }
+
+            float gain = 1.0f;
+            if (chunk_peak > 0 && chunk_peak < kTargetPeak) {
+                gain = std::min<float>(kMaxGainFactor, kTargetPeak / static_cast<float>(chunk_peak));
+            }
+
+            int32_t scaled_peak = chunk_peak;
+            if (gain != 1.0f) {
+                scaled_peak = 0;
+                constexpr int32_t kInt16Min = std::numeric_limits<int16_t>::min();
+                constexpr int32_t kInt16Max = std::numeric_limits<int16_t>::max();
+                for (size_t i = 0; i < sample_count; ++i) {
+                    float scaled_value = samples[i] * gain;
+                    int32_t scaled_int = static_cast<int32_t>(scaled_value);
+                    if (scaled_int < kInt16Min) {
+                        scaled_int = kInt16Min;
+                    } else if (scaled_int > kInt16Max) {
+                        scaled_int = kInt16Max;
+                    }
+                    samples[i] = static_cast<int16_t>(scaled_int);
+                    int32_t abs_value = std::abs(scaled_int);
+                    if (abs_value > scaled_peak) {
+                        scaled_peak = abs_value;
+                    }
+                }
+            }
+
             file.write(buffer, bytes_read);
-            recorded_samples += bytes_read / sizeof(int16_t);
+            recorded_samples += sample_count;
             total_bytes += bytes_read;
 
             if (level_callback) {
-                int16_t* samples = reinterpret_cast<int16_t*>(buffer);
-                size_t sample_count = bytes_read / sizeof(int16_t);
-                int32_t peak = 0;
-                for (size_t i = 0; i < sample_count; ++i) {
-                    int32_t value = std::abs(samples[i]);
-                    if (value > peak) {
-                        peak = value;
-                    }
-                }
-                uint16_t level = static_cast<uint16_t>(std::min<int>(100, (peak * 100) / 32767));
+                uint16_t level = static_cast<uint16_t>(std::min<int>(100, (scaled_peak * 100) / 32767));
                 level_callback(level);
             }
         } else {
             vTaskDelay(pdMS_TO_TICKS(10));
         }
     }
+
     if (level_callback) {
         level_callback(0);
     }
@@ -307,11 +352,47 @@ bool recordAudioToFile(const RecordingStorageInfo& storage,
     free(buffer);
     i2s_driver_uninstall(I2S_NUM_1);
 
-    Logger::getInstance().infof("Recording complete, %d bytes written", total_bytes);
+    uint32_t recording_duration_ms = millis() - start_ms;
+    if (recording_duration_ms == 0) {
+        recording_duration_ms = 1;
+    }
+
+    uint32_t configured_sample_rate = i2s_config.sample_rate;
+    uint32_t measured_sample_rate = configured_sample_rate;
+    if (recorded_samples > 0) {
+        uint32_t candidate_rate = static_cast<uint32_t>((recorded_samples * 1000ull) / recording_duration_ms);
+        const uint32_t supported_rates[] = {
+            8000, 11025, 12000, 16000, 22050, 24000, 32000, 44100, 48000
+        };
+        uint32_t nearest_rate = configured_sample_rate;
+        uint32_t best_diff = std::numeric_limits<uint32_t>::max();
+        for (uint32_t rate : supported_rates) {
+            uint32_t diff = rate > candidate_rate ? rate - candidate_rate : candidate_rate - rate;
+            if (diff < best_diff) {
+                best_diff = diff;
+                nearest_rate = rate;
+            }
+        }
+
+        constexpr float kTolerance = 0.03f;
+        constexpr size_t kSupportedRateCount = sizeof(supported_rates) / sizeof(supported_rates[0]);
+        if (candidate_rate >= supported_rates[0] && candidate_rate <= supported_rates[kSupportedRateCount - 1]
+            && best_diff <= static_cast<uint32_t>(nearest_rate * kTolerance)) {
+            measured_sample_rate = nearest_rate;
+        } else {
+            Logger::getInstance().warnf("[MicTest] Measured sample rate %u Hz off expected range, using configured %u Hz",
+                                        candidate_rate, measured_sample_rate);
+        }
+    }
+
+    Logger::getInstance().infof("Recording complete: %u bytes @ %u Hz written", total_bytes, measured_sample_rate);
 
     // Update WAV header with actual data size
     if (total_bytes > 0) {
         WAVHeader header;
+        header.sampleRate = measured_sample_rate;
+        header.bytesPerSecond = header.sampleRate * header.channels * header.bitsPerSample / 8;
+        header.blockAlign = header.channels * (header.bitsPerSample / 8);
         header.dataSize = total_bytes;
         header.fileSize = 36 + total_bytes; // 44 - 8 = 36
 
