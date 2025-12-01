@@ -36,17 +36,20 @@ Implementare un assistente vocale locale sempre in ascolto nel dispositivo ESP32
   - Aggiungere campi: `OpenAiApiKey`, `OpenAiEndpoint`, `VoiceAssistantEnabled`
   - Metodo per salvare/recuperare token OpenAI
 
-### Fase 2: Audio Input Pipeline (Sprint 3-4) 🚧 IN PROGRESSO
+### Fase 2: Audio Input Pipeline (Sprint 3-4) ✅ COMPLETATA
 - [x] **VoiceCaptureTask** ✅ IMPLEMENTATA
   - ✅ Configurare I2S per input microphone (separato da output) - I2S_NUM_1 utilizzato
-  - 🔄 Abilitare ES8311 microphone config - Framework pronto, da integrare
+  - ✅ Abilitare ES8311 microphone config - Framework integrato con es8311_microphone_config()
   - ✅ Implementare Voice Activity Detection (VAD) semplice (soglia 800, 2s timeout)
   - ✅ Buffer management per PSRAM (32KB allocato)
   - ✅ Wake-word detection placeholder - VAD semplice implementata
 
 - [x] **Integrazione Audio**
   - ✅ Modificare openESPaudio per supportare I2S input - enable_microphone parameter aggiunto
-  - ⏳ Test baseline con es8311_microphone_config(true) - Da testare
+  - ✅ Test baseline con es8311_microphone_config(true) - Completato
+  - ✅ Ottimizzazioni mono/stereo: tracking input_channels, upmix condizionale, logging decisioni
+  - ✅ Buffer PCM allocati per channel count effettivo, duplicazione in-place per mono
+  - ✅ Seek fallback corretto per materiale mono/stereo basato su channel decodificati
 
 ### Fase 3: OpenAI Integration (Sprint 5-6)
 - [ ] **STTTask (Whisper API)**
