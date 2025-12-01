@@ -19,6 +19,8 @@ private:
     void refreshStationList();
     void updatePlaybackInfo();
     void showAddStationDialog();
+    void updateProgress(uint32_t pos_ms, uint32_t dur_ms);
+    static void formatTime(char* buffer, size_t size, uint32_t ms);
 
     static void onStationSelected(lv_event_t* event);
     static void onPlayPauseClicked(lv_event_t* event);
@@ -33,6 +35,8 @@ private:
     lv_obj_t* title_label = nullptr;
     lv_obj_t* station_label = nullptr;
     lv_obj_t* status_label = nullptr;
+    lv_obj_t* progress_bar = nullptr;
+    lv_obj_t* progress_time_label = nullptr;
     lv_obj_t* play_pause_btn = nullptr;
     lv_obj_t* play_pause_label = nullptr;
     lv_obj_t* volume_slider = nullptr;

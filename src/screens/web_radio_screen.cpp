@@ -6,6 +6,7 @@
 #include "utils/logger.h"
 #include "utils/color_utils.h"
 #include <string>
+#include <cstdio>
 
 namespace {
     constexpr uint32_t UPDATE_INTERVAL_MS = 1000;
@@ -93,6 +94,20 @@ void WebRadioScreen::build(lv_obj_t* parent) {
     lv_label_set_text(status_label, LV_SYMBOL_OK " Ready");
     lv_obj_set_style_text_font(status_label, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(status_label, muted_card, 0);
+
+    progress_bar = lv_bar_create(now_playing_card);
+    lv_obj_set_width(progress_bar, lv_pct(100));
+    lv_obj_set_height(progress_bar, 8);
+    lv_bar_set_range(progress_bar, 0, 100);
+    lv_bar_set_value(progress_bar, 0, LV_ANIM_OFF);
+    lv_obj_set_style_bg_color(progress_bar, lv_color_mix(card_color, primary_color, LV_OPA_30), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(progress_bar, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(progress_bar, accent_color, LV_PART_INDICATOR);
+
+    progress_time_label = lv_label_create(now_playing_card);
+    lv_label_set_text(progress_time_label, "0:00 / 0:00");
+    lv_obj_set_style_text_font(progress_time_label, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(progress_time_label, muted_card, 0);
 
     // Controls Card
     lv_obj_t* controls_card = create_card(root, lv_color_mix(dock_color, primary_color, LV_OPA_40), CONTROLS_CARD_MIN_HEIGHT);
@@ -268,6 +283,8 @@ void WebRadioScreen::refreshStationList() {
 void WebRadioScreen::updatePlaybackInfo() {
     auto& audio = AudioManager::getInstance();
     const Metadata& meta = audio.getMetadata();
+    uint32_t pos_ms = audio.getCurrentPositionMs();
+    uint32_t dur_ms = audio.getTotalDurationMs();
 
     if (audio.isPlaying() || audio.getState() == PlayerState::PAUSED) {
         const RadioStation* station = audio.getStation(current_station_index_);
@@ -298,7 +315,39 @@ void WebRadioScreen::updatePlaybackInfo() {
         lv_label_set_text(title_label, "");
         lv_label_set_text(play_pause_label, LV_SYMBOL_PLAY);
         lv_label_set_text(status_label, LV_SYMBOL_OK " Ready");
+        pos_ms = 0;
+        dur_ms = 0;
     }
+
+    updateProgress(pos_ms, dur_ms);
+}
+
+void WebRadioScreen::updateProgress(uint32_t pos_ms, uint32_t dur_ms) {
+    if (progress_bar) {
+        uint32_t progress_pct = (dur_ms > 0) ? (pos_ms * 100) / dur_ms : 0;
+        if (progress_pct > 100) {
+            progress_pct = 100;
+        }
+        lv_bar_set_value(progress_bar, progress_pct, LV_ANIM_OFF);
+    }
+
+    if (progress_time_label) {
+        char pos_buf[16];
+        char dur_buf[16];
+        formatTime(pos_buf, sizeof(pos_buf), pos_ms);
+        formatTime(dur_buf, sizeof(dur_buf), dur_ms);
+
+        char display_buf[40];
+        snprintf(display_buf, sizeof(display_buf), "%s / %s", pos_buf, dur_buf);
+        lv_label_set_text(progress_time_label, display_buf);
+    }
+}
+
+void WebRadioScreen::formatTime(char* buffer, size_t size, uint32_t ms) {
+    uint32_t total_seconds = ms / 1000;
+    uint32_t minutes = total_seconds / 60;
+    uint32_t seconds = total_seconds % 60;
+    snprintf(buffer, size, "%u:%02u", minutes, seconds);
 }
 
 void WebRadioScreen::showAddStationDialog() {
