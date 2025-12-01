@@ -95,19 +95,27 @@ void WebRadioScreen::build(lv_obj_t* parent) {
     lv_obj_set_style_text_font(status_label, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(status_label, muted_card, 0);
 
-    progress_bar = lv_bar_create(now_playing_card);
-    lv_obj_set_width(progress_bar, lv_pct(100));
-    lv_obj_set_height(progress_bar, 8);
-    lv_bar_set_range(progress_bar, 0, 100);
-    lv_bar_set_value(progress_bar, 0, LV_ANIM_OFF);
-    lv_obj_set_style_bg_color(progress_bar, lv_color_mix(card_color, primary_color, LV_OPA_30), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(progress_bar, LV_OPA_COVER, LV_PART_MAIN);
-    lv_obj_set_style_bg_color(progress_bar, accent_color, LV_PART_INDICATOR);
+    progress_slider = lv_slider_create(now_playing_card);
+    lv_obj_set_width(progress_slider, lv_pct(100));
+    lv_obj_set_height(progress_slider, 16);
+    lv_slider_set_range(progress_slider, 0, PROGRESS_SLIDER_MAX);
+    lv_slider_set_value(progress_slider, 0, LV_ANIM_OFF);
+    lv_obj_add_event_cb(progress_slider, onProgressSliderEvent, LV_EVENT_ALL, this);
+    lv_obj_set_style_bg_color(progress_slider, lv_color_mix(card_color, primary_color, LV_OPA_30), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(progress_slider, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(progress_slider, accent_color, LV_PART_INDICATOR);
+    lv_obj_set_style_bg_color(progress_slider, accent_color, LV_PART_KNOB);
+    lv_obj_set_style_border_width(progress_slider, 0, LV_PART_KNOB);
 
     progress_time_label = lv_label_create(now_playing_card);
     lv_label_set_text(progress_time_label, "0:00 / 0:00");
     lv_obj_set_style_text_font(progress_time_label, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(progress_time_label, muted_card, 0);
+
+    shift_info_label = lv_label_create(now_playing_card);
+    lv_label_set_text(shift_info_label, "Live | buffer 0:00");
+    lv_obj_set_style_text_font(shift_info_label, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(shift_info_label, muted_card, 0);
 
     // Controls Card
     lv_obj_t* controls_card = create_card(root, lv_color_mix(dock_color, primary_color, LV_OPA_40), CONTROLS_CARD_MIN_HEIGHT);
@@ -323,24 +331,87 @@ void WebRadioScreen::updatePlaybackInfo() {
 }
 
 void WebRadioScreen::updateProgress(uint32_t pos_ms, uint32_t dur_ms) {
-    if (progress_bar) {
-        uint32_t progress_pct = (dur_ms > 0) ? (pos_ms * 100) / dur_ms : 0;
-        if (progress_pct > 100) {
-            progress_pct = 100;
+    last_position_ms_ = pos_ms;
+    last_duration_ms_ = dur_ms;
+
+    if (progress_slider && !progress_dragging_) {
+        int slider_value = 0;
+        if (dur_ms > 0) {
+            slider_value = static_cast<int>((static_cast<uint64_t>(pos_ms) * PROGRESS_SLIDER_MAX) / dur_ms);
+            if (slider_value > PROGRESS_SLIDER_MAX) {
+                slider_value = PROGRESS_SLIDER_MAX;
+            }
         }
-        lv_bar_set_value(progress_bar, progress_pct, LV_ANIM_OFF);
+        lv_slider_set_value(progress_slider, slider_value, LV_ANIM_OFF);
     }
 
+    uint32_t display_pos_ms = pos_ms;
+    if (progress_dragging_ && progress_slider) {
+        int slider_value = lv_slider_get_value(progress_slider);
+        display_pos_ms = sliderValueToMs(slider_value, dur_ms);
+    }
+
+    refreshProgressLabels(display_pos_ms, dur_ms);
+}
+
+void WebRadioScreen::refreshProgressLabels(uint32_t display_pos_ms, uint32_t dur_ms) {
     if (progress_time_label) {
         char pos_buf[16];
         char dur_buf[16];
-        formatTime(pos_buf, sizeof(pos_buf), pos_ms);
+        formatTime(pos_buf, sizeof(pos_buf), display_pos_ms);
         formatTime(dur_buf, sizeof(dur_buf), dur_ms);
 
         char display_buf[40];
         snprintf(display_buf, sizeof(display_buf), "%s / %s", pos_buf, dur_buf);
         lv_label_set_text(progress_time_label, display_buf);
     }
+
+    if (shift_info_label) {
+        char rel_buf[16];
+        char total_buf[16];
+        uint32_t relative_ms = (dur_ms > display_pos_ms) ? (dur_ms - display_pos_ms) : 0;
+        formatTime(rel_buf, sizeof(rel_buf), relative_ms);
+        formatTime(total_buf, sizeof(total_buf), dur_ms);
+
+        if (dur_ms == 0) {
+            lv_label_set_text(shift_info_label, "Live | buffer 0:00");
+        } else if (relative_ms == 0) {
+            char buf[48];
+            snprintf(buf, sizeof(buf), "Live | buffer %s", total_buf);
+            lv_label_set_text(shift_info_label, buf);
+        } else {
+            char buf[64];
+            snprintf(buf, sizeof(buf), "Delay %s | buffer %s", rel_buf, total_buf);
+            lv_label_set_text(shift_info_label, buf);
+        }
+    }
+}
+
+void WebRadioScreen::seekToSliderValue(int slider_value) {
+    if (!progress_slider || last_duration_ms_ == 0) {
+        return;
+    }
+
+    if (slider_value < 0) {
+        slider_value = 0;
+    }
+    if (slider_value > PROGRESS_SLIDER_MAX) {
+        slider_value = PROGRESS_SLIDER_MAX;
+    }
+
+    uint32_t target_ms = sliderValueToMs(slider_value, last_duration_ms_);
+    int target_seconds = static_cast<int>(target_ms / 1000);
+    AudioManager::getInstance().seek(target_seconds);
+}
+
+uint32_t WebRadioScreen::sliderValueToMs(int slider_value, uint32_t duration_ms) const {
+    if (duration_ms == 0 || slider_value <= 0) {
+        return 0;
+    }
+    if (slider_value >= PROGRESS_SLIDER_MAX) {
+        return duration_ms;
+    }
+    return static_cast<uint32_t>((static_cast<uint64_t>(slider_value) * duration_ms) / PROGRESS_SLIDER_MAX);
 }
 
 void WebRadioScreen::formatTime(char* buffer, size_t size, uint32_t ms) {
@@ -410,4 +481,29 @@ void WebRadioScreen::onUpdateTimer(lv_timer_t* timer) {
 
 void WebRadioScreen::onMetadataCallback(const Metadata& meta) {
     // Metadata will be updated on next timer tick
+}
+
+void WebRadioScreen::onProgressSliderEvent(lv_event_t* event) {
+    WebRadioScreen* screen = static_cast<WebRadioScreen*>(lv_event_get_user_data(event));
+    if (!screen || !screen->progress_slider) {
+        return;
+    }
+
+    lv_event_code_t code = lv_event_get_code(event);
+
+    if (code == LV_EVENT_PRESSED) {
+        screen->progress_dragging_ = true;
+    } else if (code == LV_EVENT_RELEASED || code == LV_EVENT_PRESS_LOST) {
+        bool was_dragging = screen->progress_dragging_;
+        screen->progress_dragging_ = false;
+        if (was_dragging) {
+            int slider_value = lv_slider_get_value(screen->progress_slider);
+            screen->seekToSliderValue(slider_value);
+        }
+        screen->refreshProgressLabels(screen->last_position_ms_, screen->last_duration_ms_);
+    } else if (code == LV_EVENT_VALUE_CHANGED && screen->progress_dragging_) {
+        int slider_value = lv_slider_get_value(screen->progress_slider);
+        uint32_t preview_ms = screen->sliderValueToMs(slider_value, screen->last_duration_ms_);
+        screen->refreshProgressLabels(preview_ms, screen->last_duration_ms_);
+    }
 }
