@@ -546,12 +546,15 @@ void AudioPlayer::audio_task() {
     // Declare all variables before goto to avoid crossing initialization
     bool i2s_ready = false;
     const uint32_t frames_per_chunk = 2048;
-    uint32_t channels = 0;
+    uint32_t input_channels = 0;
+    uint32_t output_channels = 0;
     uint32_t sample_rate = 0;
     int16_t* pcm_buffer = nullptr;
     size_t pcm_buffer_size_frames = 2048;
     uint32_t last_progress_update_ms = 0;
     static constexpr uint32_t kProgressUpdateIntervalMs = 250;  // Update every 250ms
+    bool mono_to_stereo = false;
+    size_t pcm_buffer_sample_count = 0;
 
     // Check is done below with stream check
 
@@ -561,17 +564,24 @@ void AudioPlayer::audio_task() {
         goto cleanup;
     }
 
-    channels = stream_->channels();
+    input_channels = stream_->channels();
     sample_rate = stream_->sample_rate();
+    output_channels = (input_channels == 1) ? 2 : input_channels;
+    mono_to_stereo = (input_channels == 1 && output_channels == 2);
+
     LOG_INFO("Preparing playback stream: uri=%s sr=%u ch=%u format=%d",
              stream_->data_source() ? stream_->data_source()->uri() : "n/a",
              sample_rate,
-             channels,
+             input_channels,
              static_cast<int>(stream_->format()));
+
+    if (mono_to_stereo) {
+        LOG_INFO("Mono source detected, duplicating to stereo for output");
+    }
     // total_pcm_frames_ is updated in start()
 
     // ===== INIT AUDIO OUTPUT (Codec & I2S) =====
-    if (!output_.begin(cfg_, sample_rate, channels)) {
+    if (!output_.begin(cfg_, sample_rate, output_channels)) {
         LOG_ERROR("Audio output init failed");
         schedule_recovery(FailureReason::DECODER_INIT, "output init failed");
         goto cleanup;
@@ -581,7 +591,8 @@ void AudioPlayer::audio_task() {
 
     // ===== ALLOCATE TEMP PCM BUFFER =====
     // Using a heap buffer for PCM data
-    pcm_buffer = (int16_t*)heap_caps_malloc(pcm_buffer_size_frames * channels * sizeof(int16_t), MALLOC_CAP_8BIT);
+    pcm_buffer_sample_count = pcm_buffer_size_frames * output_channels;
+    pcm_buffer = (int16_t*)heap_caps_malloc(pcm_buffer_sample_count * sizeof(int16_t), MALLOC_CAP_8BIT);
     if (!pcm_buffer) {
         LOG_ERROR("Failed to allocate PCM buffer");
         goto cleanup;
@@ -675,8 +686,11 @@ void AudioPlayer::audio_task() {
                     uint32_t brute_start_ms = millis();
                     // Fallback a brute force per stream non-seekable
                     while (current_played_frames_ < target_frame && !stop_requested_) {
-                         // Read small chunks to discard
-                        size_t frames_to_discard = 1024 / channels; // arbitrary small chunk
+                        // Read small chunks to discard
+                        size_t frames_to_discard = (input_channels > 0) ? (1024 / input_channels) : 1024;
+                        if (frames_to_discard == 0) {
+                            frames_to_discard = 1;
+                        }
                         size_t discard = stream_->read(pcm_buffer, frames_to_discard);
                         if (discard == 0) break;
                         current_played_frames_ += discard;
@@ -703,7 +717,7 @@ void AudioPlayer::audio_task() {
                          stop_requested_ ? "true" : "false",
                          pause_flag_ ? "true" : "false",
                          sample_rate,
-                         channels);
+                         input_channels);
                 if (stop_requested_) {
                     break;
                 }
@@ -736,6 +750,15 @@ void AudioPlayer::audio_task() {
 
             current_played_frames_ += frames_decoded;
 
+            if (mono_to_stereo && frames_decoded > 0) {
+                for (size_t i = frames_decoded; i > 0; --i) {
+                    int16_t sample = pcm_buffer[i - 1];
+                    size_t dst_index = (i - 1) * 2;
+                    pcm_buffer[dst_index] = sample;
+                    pcm_buffer[dst_index + 1] = sample;
+                }
+            }
+
             // Progress callback (every 250ms)
             uint32_t now = millis();
             if (now - last_progress_update_ms >= kProgressUpdateIntervalMs) {
@@ -749,7 +772,7 @@ void AudioPlayer::audio_task() {
                 // Apply effects chain
                 effects_chain_.process(pcm_buffer, frames_decoded);
 
-                size_t frames_written = output_.write(pcm_buffer, frames_decoded, channels);
+                size_t frames_written = output_.write(pcm_buffer, frames_decoded, output_channels);
                 if (frames_written < frames_decoded) {
                      // Handle partial write or error if needed, but AudioOutput logs errors.
                      // For now, we continue or could count dropped frames.
@@ -757,7 +780,7 @@ void AudioPlayer::audio_task() {
                               (unsigned)frames_written,
                               (unsigned)frames_decoded,
                               sample_rate,
-                              channels);
+                              output_channels);
                 }
             }
         } // end while (!stop_requested_)
