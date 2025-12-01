@@ -270,6 +270,8 @@ void AudioManager::onMetadata(const Metadata& meta, const char* path) {
 
 void AudioManager::onStart(const char* path) {
     Logger::getInstance().infof("[AudioMgr] Playback started: %s", path);
+    // Store start time for duration calculation
+    getInstance().playback_start_ms_ = millis();
 }
 
 void AudioManager::onStop(const char* path, PlayerState state) {
@@ -277,7 +279,9 @@ void AudioManager::onStop(const char* path, PlayerState state) {
 }
 
 void AudioManager::onEnd(const char* path) {
-    Logger::getInstance().infof("[AudioMgr] Playback ended: %s", path);
+    uint32_t playback_end_ms = millis();
+    uint32_t playback_duration_ms = playback_end_ms - getInstance().playback_start_ms_;
+    Logger::getInstance().infof("[AudioMgr] Playback ended: %s (duration: %u ms)", path, playback_duration_ms);
 }
 
 void AudioManager::onError(const char* path, const char* detail) {

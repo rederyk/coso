@@ -91,4 +91,5 @@ private:
     MetadataCallback metadata_callback_;
     StateChangeCallback state_callback_;
     PlayerState last_state_;
+    uint32_t playback_start_ms_;
 };

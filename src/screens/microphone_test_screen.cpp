@@ -310,7 +310,7 @@ bool recordAudioToFile(const RecordingStorageInfo& storage,
         .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1,
         .dma_buf_count = 4,
         .dma_buf_len = 512,
-        .use_apll = false
+        .use_apll = true
     };
 
     const i2s_pin_config_t pin_config = {
@@ -339,8 +339,8 @@ bool recordAudioToFile(const RecordingStorageInfo& storage,
 
     // Buffer for audio data (mono frames)
     constexpr size_t kSamplesPerChunk = 2048;
-    constexpr float kTargetPeak = 30000.0f;
-    constexpr float kMaxGainFactor = 12.0f;
+    constexpr float kTargetPeak = 32000.0f;
+    constexpr float kMaxGainFactor = 20.0f;
     uint8_t* buffer = static_cast<uint8_t*>(malloc(kSamplesPerChunk * sizeof(int16_t)));
     if (!buffer) {
         Logger::getInstance().error("Failed to allocate audio buffer");
@@ -443,7 +443,12 @@ bool recordAudioToFile(const RecordingStorageInfo& storage,
     uint32_t candidate_rate = recorded_samples > 0
                                   ? static_cast<uint32_t>((recorded_samples * 1000ull) / recording_duration_ms)
                                   : 0;
+    // Always store 16000 Hz in WAV header for codec compatibility
+    // APLL ensures recording is accurate, but playback needs standard rate
     uint32_t measured_sample_rate = configured_sample_rate;
+
+    // Calculate expected duration at stored rate
+    uint32_t expected_duration_ms = recorded_samples > 0 ? (recorded_samples * 1000) / measured_sample_rate : 0;
 
     Logger::getInstance().infof("Recording complete: %u bytes, %llu samples in %ums (~%u Hz) stored as %u Hz",
                                 total_bytes,
@@ -451,6 +456,11 @@ bool recordAudioToFile(const RecordingStorageInfo& storage,
                                 recording_duration_ms,
                                 candidate_rate,
                                 measured_sample_rate);
+    Logger::getInstance().infof("Recording timing: actual %u ms, expected at %u Hz: %u ms (diff: %d ms)",
+                                recording_duration_ms,
+                                measured_sample_rate,
+                                expected_duration_ms,
+                                static_cast<int>(recording_duration_ms) - static_cast<int>(expected_duration_ms));
 
     // Update WAV header with actual data size
     if (total_bytes > 0) {

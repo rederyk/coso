@@ -28,17 +28,20 @@ bool CodecES8311::init(int sample_rate,
         return false;
     }
 
-    if (use_mclk_pin && mclk_frequency_hz == 0) {
-        LOG_ERROR("MCLK frequency must be provided when using dedicated MCLK pin");
-        es8311_delete(es_handle);
-        return false;
+    // For accurate timing, use MCLK pin for sample rates <= 48000 Hz
+    bool actual_use_mclk = use_mclk_pin || (sample_rate <= 48000);
+    uint32_t actual_mclk_freq = mclk_frequency_hz;
+    if (actual_use_mclk && mclk_frequency_hz == 0) {
+        // Calculate MCLK as 256 * sample_rate for standard operation
+        actual_mclk_freq = sample_rate * 256;
+        LOG_INFO("Using calculated MCLK: %u Hz for sample rate %d Hz", actual_mclk_freq, sample_rate);
     }
 
     const es8311_clock_config_t es_clk = {
         .mclk_inverted = false,
         .sclk_inverted = false,
-        .mclk_from_mclk_pin = use_mclk_pin,
-        .mclk_frequency = use_mclk_pin ? static_cast<int>(mclk_frequency_hz) : 0,
+        .mclk_from_mclk_pin = actual_use_mclk,
+        .mclk_frequency = actual_use_mclk ? static_cast<int>(actual_mclk_freq) : 0,
         .sample_frequency = sample_rate};
 
     if (es8311_init(es_handle, &es_clk, ES8311_RESOLUTION_16, ES8311_RESOLUTION_16) != ESP_OK) {
@@ -50,6 +53,9 @@ bool CodecES8311::init(int sample_rate,
     handle_ = es_handle;
     set_volume(default_volume_percent);
     es8311_microphone_config(handle_, enable_microphone ? true : false);
+    if (enable_microphone) {
+        set_mic_gain(12); // 12dB boost for better mic sensitivity
+    }
 
     LOG_INFO("ES8311 pronto.");
     return true;
@@ -84,5 +90,14 @@ void CodecES8311::set_volume(int vol_pct) {
         int hw_vol = map_user_volume_to_hw(vol_pct);
         es8311_voice_volume_set(handle_, hw_vol, NULL);
         LOG_INFO("Volume set to %d%% (hw %d%%)", vol_pct, hw_vol);
+    }
+}
+
+void CodecES8311::set_mic_gain(int gain_db) {
+    if (gain_db < 0) gain_db = 0;
+    if (gain_db > 24) gain_db = 24; // ES8311 supports 0-24dB
+    if (handle_) {
+        es8311_microphone_gain_set(handle_, static_cast<es8311_mic_gain_t>(gain_db));
+        LOG_INFO("Microphone gain set to %d dB", gain_db);
     }
 }

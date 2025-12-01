@@ -23,6 +23,7 @@ public:
               uint32_t mclk_frequency_hz = 0);
 
     void set_volume(int vol_pct);
+    void set_mic_gain(int gain_db);
     int current_volume() const { return current_volume_percent_; }
 
 private:
