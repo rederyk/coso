@@ -44,6 +44,7 @@
 #include "screens/microphone_test_screen.h"
 #include "screens/voice_assistant_settings_screen.h"
 #include "core/audio_manager.h"
+#include "core/microphone_manager.h"
 // #include "core/voice_assistant.h"  // Temporarily disabled due to include issues
 #include "ui/ui_symbols.h"
 #include "utils/logger.h"
@@ -333,6 +334,15 @@ void setup() {
     AudioManager& audio_manager = AudioManager::getInstance();
     audio_manager.begin();
     logger.info("[Audio] Audio manager ready");
+
+    // Initialize Microphone Manager
+    logger.info("[MicMgr] Initializing microphone manager");
+    MicrophoneManager& mic_manager = MicrophoneManager::getInstance();
+    if (mic_manager.begin()) {
+        logger.info("[MicMgr] Microphone manager ready");
+    } else {
+        logger.warn("[MicMgr] Microphone manager initialization failed");
+    }
 
     // Initialize Voice Assistant (if enabled in settings)
     // TODO: Enable after fixing include issues
