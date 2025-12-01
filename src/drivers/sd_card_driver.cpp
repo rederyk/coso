@@ -27,6 +27,20 @@ void configure_pullups() {
 }
 } // namespace
 
+SdCardDriver::SdCardDriver() {
+    sd_mutex_ = xSemaphoreCreateMutex();
+    if (!sd_mutex_) {
+        Logger::getInstance().error("[SD] Failed to create SD mutex");
+    }
+}
+
+SdCardDriver::~SdCardDriver() {
+    if (sd_mutex_) {
+        vSemaphoreDelete(sd_mutex_);
+        sd_mutex_ = nullptr;
+    }
+}
+
 SdCardDriver& SdCardDriver::getInstance() {
     static SdCardDriver instance;
     return instance;
@@ -248,4 +262,34 @@ bool SdCardDriver::deleteRecursive(const char* path) {
         success = SD_MMC.remove(path);
     }
     return success;
+}
+
+// SD mutex operations for thread safety
+bool SdCardDriver::acquireSdMutex(TickType_t timeout_ms) {
+    if (!sd_mutex_) {
+        Logger::getInstance().error("[SD] SD mutex not initialized");
+        return false;
+    }
+    TickType_t ticks = (timeout_ms == portMAX_DELAY) ? portMAX_DELAY : pdMS_TO_TICKS(timeout_ms);
+    return xSemaphoreTake(sd_mutex_, ticks) == pdTRUE;
+}
+
+bool SdCardDriver::acquireSdMutexPriority(TickType_t timeout_ms) {
+    if (!sd_mutex_) {
+        Logger::getInstance().error("[SD] SD mutex not initialized");
+        return false;
+    }
+    // For priority access (timeshift), try to acquire immediately
+    TickType_t ticks = (timeout_ms == 0) ? 0 : pdMS_TO_TICKS(timeout_ms);
+    BaseType_t result = xSemaphoreTake(sd_mutex_, ticks);
+    if (result != pdTRUE) {
+        Logger::getInstance().debug("[SD] Priority mutex acquisition failed (contended)");
+    }
+    return result == pdTRUE;
+}
+
+void SdCardDriver::releaseSdMutex() {
+    if (sd_mutex_) {
+        xSemaphoreGive(sd_mutex_);
+    }
 }

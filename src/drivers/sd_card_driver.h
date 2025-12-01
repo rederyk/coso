@@ -3,6 +3,8 @@
 #include <cstdint>
 #include <string>
 #include <vector>
+#include <freertos/FreeRTOS.h>
+#include <freertos/semphr.h>
 
 struct SdCardEntry {
     std::string name;
@@ -27,13 +29,20 @@ public:
 
     std::vector<SdCardEntry> listDirectory(const char* path, size_t max_entries = 32);
 
+    // SD mutex operations for thread safety
+    bool acquireSdMutex(TickType_t timeout_ms = portMAX_DELAY);
+    bool acquireSdMutexPriority(TickType_t timeout_ms = 0); // For timeshift priority
+    void releaseSdMutex();
+
 private:
-    SdCardDriver() = default;
+    SdCardDriver();
+    ~SdCardDriver();
     void updateCardTypeString();
     bool ensureMounted();
     bool deleteRecursive(const char* path);
     std::string buildChildPath(const char* parent, const char* child) const;
 
+    SemaphoreHandle_t sd_mutex_ = nullptr;
     bool pins_configured_ = false;
     bool mounted_ = false;
     uint64_t total_bytes_ = 0;

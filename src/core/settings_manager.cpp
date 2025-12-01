@@ -569,10 +569,19 @@ bool SettingsManager::backupToSD() {
         return false;
     }
 
+    // Acquire SD mutex (normal priority - can wait up to 5s for timeshift to finish)
+    if (!sd.acquireSdMutex(5000)) { // Wait up to 5 seconds for SD access
+        Logger::getInstance().error("[Settings] SD access blocked by timeshift (giving priority to timeshift)");
+        return false;
+    }
+
+    bool success = false;
+
     // Create /config directory if needed
     if (!SD_MMC.exists("/config")) {
         if (!SD_MMC.mkdir("/config")) {
             Logger::getInstance().error("[Settings] Failed to create /config directory");
+            sd.releaseSdMutex();
             return false;
         }
     }
@@ -581,6 +590,7 @@ bool SettingsManager::backupToSD() {
     File backup = SD_MMC.open("/config/settings_backup.json", FILE_WRITE);
     if (!backup) {
         Logger::getInstance().error("[Settings] Failed to open backup file for writing");
+        sd.releaseSdMutex();
         return false;
     }
 
@@ -592,6 +602,7 @@ bool SettingsManager::backupToSD() {
     File src = LittleFS.open("/settings.json", FILE_READ);
     if (!src) {
         Logger::getInstance().error("[Settings] Failed to open settings file for reading");
+        sd.releaseSdMutex();
         return false;
     }
 
@@ -599,6 +610,7 @@ bool SettingsManager::backupToSD() {
     if (!backup) {
         src.close();
         Logger::getInstance().error("[Settings] Failed to open backup file for writing");
+        sd.releaseSdMutex();
         return false;
     }
 
@@ -611,6 +623,7 @@ bool SettingsManager::backupToSD() {
 
     src.close();
     backup.close();
+    success = true;
 
     // Update backup timestamp
     char timestamp[32];
@@ -618,8 +631,9 @@ bool SettingsManager::backupToSD() {
     current_.lastBackupTime = timestamp;
     persistSnapshot();
 
+    sd.releaseSdMutex();
     Logger::getInstance().info("[Settings] Backup created successfully");
-    return true;
+    return success;
 }
 
 bool SettingsManager::restoreFromSD() {
@@ -635,16 +649,26 @@ bool SettingsManager::restoreFromSD() {
         return false;
     }
 
+    // Acquire SD mutex (normal priority - can wait up to 5s for timeshift to finish)
+    if (!sd.acquireSdMutex(5000)) { // Wait up to 5 seconds for SD access
+        Logger::getInstance().error("[Settings] SD access blocked by timeshift (giving priority to timeshift)");
+        return false;
+    }
+
     // Check if backup exists
     if (!SD_MMC.exists("/config/settings_backup.json")) {
         Logger::getInstance().warn("[Settings] No backup file found");
+        sd.releaseSdMutex();
         return false;
     }
+
+    bool success = false;
 
     // Copy backup from SD to LittleFS
     File backup = SD_MMC.open("/config/settings_backup.json", FILE_READ);
     if (!backup) {
         Logger::getInstance().error("[Settings] Failed to open backup file for reading");
+        sd.releaseSdMutex();
         return false;
     }
 
@@ -652,6 +676,7 @@ bool SettingsManager::restoreFromSD() {
     if (!dest) {
         backup.close();
         Logger::getInstance().error("[Settings] Failed to open settings file for writing");
+        sd.releaseSdMutex();
         return false;
     }
 
@@ -664,12 +689,14 @@ bool SettingsManager::restoreFromSD() {
 
     backup.close();
     dest.close();
+    success = true;
 
     // Reload settings from storage
     StorageManager::getInstance().loadSettings(current_);
 
+    sd.releaseSdMutex();
     Logger::getInstance().info("[Settings] Settings restored from backup");
-    return true;
+    return success;
 }
 
 bool SettingsManager::hasBackup() const {

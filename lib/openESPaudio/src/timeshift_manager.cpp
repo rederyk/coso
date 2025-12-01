@@ -622,6 +622,12 @@ bool TimeshiftManager::migrate_chunk_psram_to_sd(ChunkInfo &chunk)
         return false;
     }
 
+    SdCardDriver& sd = SdCardDriver::getInstance();
+    if (!sd.acquireSdMutex(2000)) { // Wait up to 2 seconds for SD access
+        LOG_ERROR("Migration SD access blocked for chunk %u", chunk.id);
+        return false;
+    }
+
     if (!SD_MMC.exists("/timeshift"))
     {
         SD_MMC.mkdir("/timeshift");
@@ -633,6 +639,7 @@ bool TimeshiftManager::migrate_chunk_psram_to_sd(ChunkInfo &chunk)
     if (!file)
     {
         LOG_ERROR("Migration: cannot open %s for chunk %u", chunk.filename.c_str(), chunk.id);
+        sd.releaseSdMutex();
         return false;
     }
 
@@ -642,10 +649,12 @@ bool TimeshiftManager::migrate_chunk_psram_to_sd(ChunkInfo &chunk)
     {
         LOG_ERROR("Migration: write mismatch for chunk %u (expected %u, wrote %u)", chunk.id, chunk.length, written);
         SD_MMC.remove(chunk.filename.c_str());
+        sd.releaseSdMutex();
         return false;
     }
 
     LOG_DEBUG("Migration: chunk %u copied to SD (%u KB)", chunk.id, chunk.length / 1024);
+    sd.releaseSdMutex();
     return true;
 }
 
@@ -1549,10 +1558,19 @@ bool TimeshiftManager::flush_recording_chunk_async()
 
 bool TimeshiftManager::write_chunk_to_sd(ChunkInfo &chunk, const uint8_t *src)
 {
+    // Acquire SD mutex with priority (timeshift gets immediate access)
+    SdCardDriver& sd = SdCardDriver::getInstance();
+    if (!sd.acquireSdMutexPriority(0)) { // No wait for timeshift priority
+        LOG_ERROR("Timeshift SD write blocked by contention - giving priority to other operations");
+        return false;
+    }
+
+    bool success = false;
     File file = SD_MMC.open(chunk.filename.c_str(), FILE_WRITE);
     if (!file)
     {
         LOG_ERROR("Failed to open chunk file for write: %s", chunk.filename.c_str());
+        sd.releaseSdMutex();
         return false;
     }
 
@@ -1563,11 +1581,14 @@ bool TimeshiftManager::write_chunk_to_sd(ChunkInfo &chunk, const uint8_t *src)
     {
         LOG_ERROR("Chunk write mismatch: expected %u, wrote %u", chunk.length, (unsigned)written);
         SD_MMC.remove(chunk.filename.c_str());
-        return false;
+        success = false;
+    } else {
+        LOG_DEBUG("Wrote chunk %u: %u KB to %s", chunk.id, chunk.length / 1024, chunk.filename.c_str());
+        success = true;
     }
 
-    LOG_DEBUG("Wrote chunk %u: %u KB to %s", chunk.id, chunk.length / 1024, chunk.filename.c_str());
-    return true;
+    sd.releaseSdMutex();
+    return success;
 }
 
 bool TimeshiftManager::write_chunk_to_psram(ChunkInfo &chunk, const uint8_t *src)
@@ -1593,15 +1614,23 @@ bool TimeshiftManager::validate_chunk(ChunkInfo &chunk)
     if (chunk_on_sd)
     {
         // SD mode: check file exists and size matches
+        SdCardDriver& sd = SdCardDriver::getInstance();
+        if (!sd.acquireSdMutex(1000)) { // Wait up to 1 second for SD access
+            LOG_ERROR("Validation SD access blocked for chunk %u", chunk.id);
+            return false;
+        }
+
         File file = SD_MMC.open(chunk.filename.c_str(), FILE_READ);
         if (!file)
         {
             LOG_ERROR("Validation failed: cannot open %s", chunk.filename.c_str());
+            sd.releaseSdMutex();
             return false;
         }
 
         size_t file_size = file.size();
         file.close();
+        sd.releaseSdMutex();
 
         if (file_size != chunk.length)
         {
@@ -1807,6 +1836,13 @@ void TimeshiftManager::promote_chunk_to_ready(ChunkInfo chunk)
 {
     if (storage_mode_ == StorageMode::SD_CARD)
     {
+        // Acquire SD mutex for file operations
+        SdCardDriver& sd = SdCardDriver::getInstance();
+        if (!sd.acquireSdMutex(2000)) { // Wait up to 2 seconds for SD access
+            LOG_ERROR("SD access blocked during chunk promotion for chunk %u", chunk.id);
+            return;
+        }
+
         // Rename file from pending to ready
         std::string ready_filename = "/timeshift/ready_" + std::to_string(chunk.id) + ".bin";
 
@@ -1821,9 +1857,11 @@ void TimeshiftManager::promote_chunk_to_ready(ChunkInfo chunk)
         {
             LOG_ERROR("Failed to rename chunk %u from pending to ready", chunk.id);
             SD_MMC.remove(chunk.filename.c_str());
+            sd.releaseSdMutex();
             return;
         }
         chunk.filename = ready_filename;
+        sd.releaseSdMutex();
     }
 
     // Mark as READY (for both SD and PSRAM modes)
@@ -2400,6 +2438,13 @@ bool TimeshiftManager::preload_next_chunk(uint32_t current_abs_chunk_id)
     // Pre-carichiamo il successivo a [128KB-256KB].
     if (storage_mode_ == StorageMode::SD_CARD)
     {
+        // Acquire SD mutex for reading (normal priority - can wait)
+        SdCardDriver& sd = SdCardDriver::getInstance();
+        if (!sd.acquireSdMutex(500)) { // Wait up to 500ms for SD access
+            LOG_DEBUG("Preload SD access blocked by contention, skipping this cycle");
+            return false;
+        }
+
         File file = SD_MMC.open(next_chunk.filename.c_str(), FILE_READ);
         if (file)
         {
@@ -2410,6 +2455,7 @@ bool TimeshiftManager::preload_next_chunk(uint32_t current_abs_chunk_id)
             if (read != next_chunk.length)
             {
                 LOG_ERROR("Preload read mismatch: expected %u, got %u", next_chunk.length, read);
+                sd.releaseSdMutex();
                 return false;
             }
         }
@@ -2421,8 +2467,11 @@ bool TimeshiftManager::preload_next_chunk(uint32_t current_abs_chunk_id)
         else
         {
             LOG_ERROR("Preload failed: cannot open %s", next_chunk.filename.c_str());
+            sd.releaseSdMutex();
             return false;
         }
+
+        sd.releaseSdMutex();
     }
     else
     {
@@ -2534,6 +2583,13 @@ bool TimeshiftManager::load_chunk_to_playback(uint32_t abs_chunk_id)
     // Load chunk data based on storage mode
     if (storage_mode_ == StorageMode::SD_CARD)
     {
+        // Acquire SD mutex for reading
+        SdCardDriver& sd = SdCardDriver::getInstance();
+        if (!sd.acquireSdMutex(1000)) { // Wait up to 1 second for SD access
+            LOG_ERROR("SD access blocked for chunk %u playback (contended)", abs_chunk_id);
+            return false;
+        }
+
         // Open chunk file
         File file = SD_MMC.open(chunk.filename.c_str(), FILE_READ);
         if (file)
@@ -2545,6 +2601,7 @@ bool TimeshiftManager::load_chunk_to_playback(uint32_t abs_chunk_id)
             if (read != chunk.length)
             {
                 LOG_ERROR("Chunk read mismatch: expected %u, got %u", chunk.length, read);
+                sd.releaseSdMutex();
                 return false;
             }
         }
@@ -2556,8 +2613,11 @@ bool TimeshiftManager::load_chunk_to_playback(uint32_t abs_chunk_id)
         else
         {
             LOG_ERROR("Failed to open chunk for playback: %s", chunk.filename.c_str());
+            sd.releaseSdMutex();
             return false;
         }
+
+        sd.releaseSdMutex();
     }
     else
     {
