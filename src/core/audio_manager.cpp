@@ -9,7 +9,7 @@ AudioManager& AudioManager::getInstance() {
 
 AudioManager::AudioManager()
     : current_timeshift_(nullptr),
-      preferred_storage_mode_(StorageMode::SD_CARD),
+      preferred_storage_mode_(StorageMode::PSRAM_ONLY),  // Changed from SD_CARD to PSRAM_ONLY to avoid SD write errors
       progress_callback_(nullptr),
       metadata_callback_(nullptr),
       state_callback_(nullptr),
