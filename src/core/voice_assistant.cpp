@@ -36,6 +36,9 @@ constexpr const char* GPT_ENDPOINT = "https://api.openai.com/v1/chat/completions
 // Recording config - unlimited duration (controlled by button press/release)
 constexpr uint32_t RECORDING_DURATION_SECONDS = 0;
 
+// Assistant recordings directory (separate from test recordings)
+constexpr const char* ASSISTANT_RECORDINGS_DIR = "/assistant_recordings";
+
 } // namespace
 
 VoiceAssistant& VoiceAssistant::getInstance() {
@@ -189,6 +192,7 @@ void VoiceAssistant::recordingTask(void* param) {
     config.channels = 1;
     config.enable_agc = true;
     config.level_callback = nullptr;  // No UI updates needed for voice assistant
+    config.custom_directory = ASSISTANT_RECORDINGS_DIR;  // Use dedicated assistant recordings directory
 
     // Start recording using MicrophoneManager
     auto handle = MicrophoneManager::getInstance().startRecording(

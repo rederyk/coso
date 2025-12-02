@@ -58,7 +58,7 @@ enum class RecordingStorage {
 struct RecordingStorageInfo {
     RecordingStorage storage = RecordingStorage::LITTLEFS;
     fs::FS* fs = nullptr;
-    const char* directory = kRecordingsDir;
+    std::string directory = kRecordingsDir;
     const char* playback_prefix = "";
     const char* label = "LittleFS";
 };
@@ -66,7 +66,7 @@ struct RecordingStorageInfo {
 /**
  * @brief Determine available storage for recordings
  */
-RecordingStorageInfo getRecordingStorageInfo() {
+RecordingStorageInfo getRecordingStorageInfo(const char* custom_directory = nullptr) {
     RecordingStorageInfo info;
     if (SD_MMC.cardType() != CARD_NONE) {
         info.storage = RecordingStorage::SD_CARD;
@@ -78,6 +78,10 @@ RecordingStorageInfo getRecordingStorageInfo() {
         info.fs = &LittleFS;
         info.playback_prefix = "";
         info.label = "LittleFS";
+    }
+    // Use custom directory if provided
+    if (custom_directory && custom_directory[0] != '\0') {
+        info.directory = custom_directory;
     }
     return info;
 }
@@ -91,12 +95,12 @@ bool ensureRecordingDirectory(const RecordingStorageInfo& info) {
         return false;
     }
 
-    if (info.fs->exists(info.directory)) {
+    if (info.fs->exists(info.directory.c_str())) {
         return true;
     }
 
-    if (!info.fs->mkdir(info.directory)) {
-        Logger::getInstance().errorf("[MicMgr] Failed to create %s on %s", info.directory, info.label);
+    if (!info.fs->mkdir(info.directory.c_str())) {
+        Logger::getInstance().errorf("[MicMgr] Failed to create %s on %s", info.directory.c_str(), info.label);
         return false;
     }
     return true;
@@ -155,7 +159,7 @@ uint32_t findNextRecordingIndex(const RecordingStorageInfo& storage) {
     uint32_t max_index = 0;
     bool found_any = false;
 
-    File dir = storage.fs->open(storage.directory);
+    File dir = storage.fs->open(storage.directory.c_str());
     if (dir && dir.isDirectory()) {
         File entry = dir.openNextFile();
         while (entry) {
@@ -184,14 +188,12 @@ uint32_t findNextRecordingIndex(const RecordingStorageInfo& storage) {
  */
 std::string generateRecordingFilename(const RecordingStorageInfo& storage) {
     uint32_t next_index = findNextRecordingIndex(storage);
-    std::string directory = (storage.directory && storage.directory[0] != '\0')
-                                ? storage.directory
-                                : kRecordingsDir;
+    std::string directory = storage.directory;
     if (!directory.empty() && directory.back() == '/') {
         directory.pop_back();
     }
 
-    char filename[48];
+    char filename[64];
     snprintf(filename, sizeof(filename), "%s/test_%06u.wav", directory.c_str(), next_index);
     return filename;
 }
@@ -374,7 +376,7 @@ void MicrophoneManager::recordingTaskImpl(void* param) {
     }
 
     // Get storage info and generate filename
-    auto storage = getRecordingStorageInfo();
+    auto storage = getRecordingStorageInfo(config.custom_directory);
     if (!storage.fs || !ensureRecordingDirectory(storage)) {
         Logger::getInstance().error("[MicMgr] Unable to access recording storage");
         ctx->result.success = false;
