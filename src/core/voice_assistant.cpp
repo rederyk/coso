@@ -193,6 +193,7 @@ void VoiceAssistant::recordingTask(void* param) {
     config.enable_agc = true;
     config.level_callback = nullptr;  // No UI updates needed for voice assistant
     config.custom_directory = ASSISTANT_RECORDINGS_DIR;  // Use dedicated assistant recordings directory
+    config.filename_prefix = "assistant";  // Use "assistant" prefix for filenames
 
     // Start recording using MicrophoneManager
     auto handle = MicrophoneManager::getInstance().startRecording(

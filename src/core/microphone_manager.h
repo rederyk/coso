@@ -44,6 +44,7 @@ public:
         bool enable_agc = true;         // Auto Gain Control enabled by default
         std::function<void(uint16_t)> level_callback = nullptr; // Real-time level updates (0-100%)
         const char* custom_directory = nullptr; // Optional custom directory (default: /test_recordings)
+        const char* filename_prefix = nullptr;  // Optional filename prefix (default: "test")
     };
 
     /**

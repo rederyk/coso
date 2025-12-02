@@ -160,31 +160,31 @@ lv_obj_t* create_button(lv_obj_t* parent, const char* text, lv_color_t bg_color)
     return btn;
 }
 
-bool parseRecordingIndex(const std::string& path, uint32_t& out_index) {
-    if (path.empty()) {
+bool parseRecordingIndex(const std::string& path, const std::string& prefix, uint32_t& out_index) {
+    if (path.empty() || prefix.empty()) {
         return false;
     }
 
     size_t slash = path.find_last_of('/');
     size_t name_start = (slash == std::string::npos) ? 0 : slash + 1;
-    constexpr const char* kPrefix = "test_";
+    std::string expected_prefix = prefix + "_";
     constexpr const char* kSuffix = ".wav";
 
-    if (path.size() < name_start + strlen(kPrefix) + strlen(kSuffix)) {
+    if (path.size() < name_start + expected_prefix.length() + strlen(kSuffix)) {
         return false;
     }
 
-    if (path.compare(name_start, strlen(kPrefix), kPrefix) != 0) {
+    if (path.compare(name_start, expected_prefix.length(), expected_prefix) != 0) {
         return false;
     }
 
     size_t suffix_pos = path.rfind(kSuffix);
-    if (suffix_pos == std::string::npos || suffix_pos <= name_start + strlen(kPrefix)) {
+    if (suffix_pos == std::string::npos || suffix_pos <= name_start + expected_prefix.length()) {
         return false;
     }
 
-    std::string number_str = path.substr(name_start + strlen(kPrefix),
-                                         suffix_pos - (name_start + strlen(kPrefix)));
+    std::string number_str = path.substr(name_start + expected_prefix.length(),
+                                         suffix_pos - (name_start + expected_prefix.length()));
     if (number_str.empty()) {
         return false;
     }
@@ -213,7 +213,8 @@ uint32_t findNextRecordingIndex(const RecordingStorageInfo& storage) {
         while (entry) {
             if (!entry.isDirectory()) {
                 uint32_t idx = 0;
-                if (parseRecordingIndex(entry.name(), idx)) {
+                // Use "test" as the prefix for test screen recordings
+                if (parseRecordingIndex(entry.name(), "test", idx)) {
                     if (!found_any || idx > max_index) {
                         max_index = idx;
                         found_any = true;

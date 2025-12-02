@@ -59,6 +59,7 @@ struct RecordingStorageInfo {
     RecordingStorage storage = RecordingStorage::LITTLEFS;
     fs::FS* fs = nullptr;
     std::string directory = kRecordingsDir;
+    std::string filename_prefix = "test";
     const char* playback_prefix = "";
     const char* label = "LittleFS";
 };
@@ -66,7 +67,7 @@ struct RecordingStorageInfo {
 /**
  * @brief Determine available storage for recordings
  */
-RecordingStorageInfo getRecordingStorageInfo(const char* custom_directory = nullptr) {
+RecordingStorageInfo getRecordingStorageInfo(const char* custom_directory = nullptr, const char* custom_prefix = nullptr) {
     RecordingStorageInfo info;
     if (SD_MMC.cardType() != CARD_NONE) {
         info.storage = RecordingStorage::SD_CARD;
@@ -82,6 +83,10 @@ RecordingStorageInfo getRecordingStorageInfo(const char* custom_directory = null
     // Use custom directory if provided
     if (custom_directory && custom_directory[0] != '\0') {
         info.directory = custom_directory;
+    }
+    // Use custom filename prefix if provided
+    if (custom_prefix && custom_prefix[0] != '\0') {
+        info.filename_prefix = custom_prefix;
     }
     return info;
 }
@@ -107,33 +112,33 @@ bool ensureRecordingDirectory(const RecordingStorageInfo& info) {
 }
 
 /**
- * @brief Parse recording index from filename (e.g., "test_000042.wav" -> 42)
+ * @brief Parse recording index from filename (e.g., "test_000042.wav" -> 42 or "assistant_000005.wav" -> 5)
  */
-bool parseRecordingIndex(const std::string& path, uint32_t& out_index) {
-    if (path.empty()) {
+bool parseRecordingIndex(const std::string& path, const std::string& prefix, uint32_t& out_index) {
+    if (path.empty() || prefix.empty()) {
         return false;
     }
 
     size_t slash = path.find_last_of('/');
     size_t name_start = (slash == std::string::npos) ? 0 : slash + 1;
-    constexpr const char* kPrefix = "test_";
+    std::string expected_prefix = prefix + "_";
     constexpr const char* kSuffix = ".wav";
 
-    if (path.size() < name_start + strlen(kPrefix) + strlen(kSuffix)) {
+    if (path.size() < name_start + expected_prefix.length() + strlen(kSuffix)) {
         return false;
     }
 
-    if (path.compare(name_start, strlen(kPrefix), kPrefix) != 0) {
+    if (path.compare(name_start, expected_prefix.length(), expected_prefix) != 0) {
         return false;
     }
 
     size_t suffix_pos = path.rfind(kSuffix);
-    if (suffix_pos == std::string::npos || suffix_pos <= name_start + strlen(kPrefix)) {
+    if (suffix_pos == std::string::npos || suffix_pos <= name_start + expected_prefix.length()) {
         return false;
     }
 
-    std::string number_str = path.substr(name_start + strlen(kPrefix),
-                                         suffix_pos - (name_start + strlen(kPrefix)));
+    std::string number_str = path.substr(name_start + expected_prefix.length(),
+                                         suffix_pos - (name_start + expected_prefix.length()));
     if (number_str.empty()) {
         return false;
     }
@@ -165,7 +170,7 @@ uint32_t findNextRecordingIndex(const RecordingStorageInfo& storage) {
         while (entry) {
             if (!entry.isDirectory()) {
                 uint32_t idx = 0;
-                if (parseRecordingIndex(entry.name(), idx)) {
+                if (parseRecordingIndex(entry.name(), storage.filename_prefix, idx)) {
                     if (!found_any || idx > max_index) {
                         max_index = idx;
                         found_any = true;
@@ -194,7 +199,8 @@ std::string generateRecordingFilename(const RecordingStorageInfo& storage) {
     }
 
     char filename[64];
-    snprintf(filename, sizeof(filename), "%s/test_%06u.wav", directory.c_str(), next_index);
+    snprintf(filename, sizeof(filename), "%s/%s_%06u.wav",
+             directory.c_str(), storage.filename_prefix.c_str(), next_index);
     return filename;
 }
 
@@ -376,7 +382,7 @@ void MicrophoneManager::recordingTaskImpl(void* param) {
     }
 
     // Get storage info and generate filename
-    auto storage = getRecordingStorageInfo(config.custom_directory);
+    auto storage = getRecordingStorageInfo(config.custom_directory, config.filename_prefix);
     if (!storage.fs || !ensureRecordingDirectory(storage)) {
         Logger::getInstance().error("[MicMgr] Unable to access recording storage");
         ctx->result.success = false;
