@@ -2,6 +2,7 @@
 #include "ui/ui_symbols.h"
 #include "utils/logger.h"
 #include "utils/color_utils.h"
+#include "utils/lvgl_mutex.h"
 #include "core/voice_assistant.h"
 #include "core/audio_manager.h"
 #include "core/microphone_manager.h"
@@ -249,7 +250,16 @@ void MicrophoneTestScreen::recordingTask(void* param) {
     config.channels = 1;
     config.enable_agc = true;
     config.level_callback = [screen](uint16_t level) {
-        screen->updateMicLevelIndicator(level);
+        // Check if screen is still valid before accessing UI
+        if (!screen->screen_valid.load()) {
+            return;
+        }
+
+        // Lock LVGL mutex before accessing UI elements
+        if (lvgl_mutex_lock(pdMS_TO_TICKS(10))) {
+            screen->updateMicLevelIndicator(level);
+            lvgl_mutex_unlock();
+        }
     };
 
     // Start recording using MicrophoneManager
@@ -260,14 +270,19 @@ void MicrophoneTestScreen::recordingTask(void* param) {
 
     if (!handle) {
         Logger::getInstance().error("[MicTest] Failed to start recording");
-        if (screen->record_status_label) {
-            lv_label_set_text(screen->record_status_label, "Errore avvio registrazione");
+
+        // Lock LVGL mutex before accessing UI
+        if (screen->screen_valid.load() && lvgl_mutex_lock(pdMS_TO_TICKS(100))) {
+            if (screen->record_status_label) {
+                lv_label_set_text(screen->record_status_label, "Errore avvio registrazione");
+            }
+            screen->is_recording = false;
+            screen->stop_recording_requested.store(false);
+            screen->recording_task_handle = nullptr;
+            screen->applyThemeStyles(SettingsManager::getInstance().getSnapshot());
+            screen->updateMicLevelIndicator(0);
+            lvgl_mutex_unlock();
         }
-        screen->is_recording = false;
-        screen->stop_recording_requested.store(false);
-        screen->recording_task_handle = nullptr;
-        screen->applyThemeStyles(SettingsManager::getInstance().getSnapshot());
-        screen->updateMicLevelIndicator(0);
         vTaskDelete(nullptr);
         return;
     }
@@ -278,32 +293,44 @@ void MicrophoneTestScreen::recordingTask(void* param) {
     bool cancelled = screen->stop_recording_requested.load();
     screen->stop_recording_requested.store(false);
 
-    if (result.success) {
-        screen->current_playback_file = result.file_path;
-        if (screen->playback_status_label) {
-            std::string status = "Selected: " + playbackDisplayName(screen->current_playback_file);
-            lv_label_set_text(screen->playback_status_label, status.c_str());
-        }
-        Logger::getInstance().infof("[MicTest] Recording saved: %s (%u bytes)",
-                                    result.file_path.c_str(),
-                                    result.file_size_bytes);
+    // Check if screen is still valid before accessing UI elements
+    if (!screen->screen_valid.load()) {
+        Logger::getInstance().warn("[MicTest] Screen destroyed during recording, skipping UI update");
+        vTaskDelete(nullptr);
+        return;
     }
 
-    if (screen->record_status_label) {
-        if (!result.success) {
-            lv_label_set_text(screen->record_status_label, "Recording failed!");
-        } else if (cancelled) {
-            lv_label_set_text(screen->record_status_label, "Recording stopped");
-        } else {
-            lv_label_set_text(screen->record_status_label, "Recording saved!");
+    // Lock LVGL mutex before accessing UI
+    if (lvgl_mutex_lock(pdMS_TO_TICKS(100))) {
+        if (result.success) {
+            screen->current_playback_file = result.file_path;
+            if (screen->playback_status_label) {
+                std::string status = "Selected: " + playbackDisplayName(screen->current_playback_file);
+                lv_label_set_text(screen->playback_status_label, status.c_str());
+            }
+            Logger::getInstance().infof("[MicTest] Recording saved: %s (%u bytes)",
+                                        result.file_path.c_str(),
+                                        result.file_size_bytes);
         }
-    }
 
-    screen->is_recording = false;
-    screen->updateMicLevelIndicator(0);
-    screen->recording_task_handle = nullptr;
-    screen->applyThemeStyles(SettingsManager::getInstance().getSnapshot());
-    screen->refreshAudioFilesList();
+        if (screen->record_status_label) {
+            if (!result.success) {
+                lv_label_set_text(screen->record_status_label, "Recording failed!");
+            } else if (cancelled) {
+                lv_label_set_text(screen->record_status_label, "Recording stopped");
+            } else {
+                lv_label_set_text(screen->record_status_label, "Recording saved!");
+            }
+        }
+
+        screen->is_recording = false;
+        screen->updateMicLevelIndicator(0);
+        screen->recording_task_handle = nullptr;
+        screen->applyThemeStyles(SettingsManager::getInstance().getSnapshot());
+        screen->refreshAudioFilesList();
+
+        lvgl_mutex_unlock();
+    }
 
     Logger::getInstance().infof("[MicTest] Recording task completed, success: %d (cancelled=%d)",
                                 result.success, cancelled);
@@ -311,6 +338,22 @@ void MicrophoneTestScreen::recordingTask(void* param) {
 }
 
 MicrophoneTestScreen::~MicrophoneTestScreen() {
+    // Invalidate screen to prevent callbacks from accessing destroyed object
+    screen_valid.store(false);
+
+    // Stop any ongoing recording
+    if (is_recording) {
+        stop_recording_requested.store(true);
+    }
+
+    // Wait for recording task to complete if it's running
+    if (recording_task_handle) {
+        // Give the task some time to finish
+        for (int i = 0; i < 50 && recording_task_handle; ++i) {
+            vTaskDelay(pdMS_TO_TICKS(10));
+        }
+    }
+
     if (settings_listener_id != 0) {
         SettingsManager::getInstance().removeListener(settings_listener_id);
         settings_listener_id = 0;
@@ -510,6 +553,11 @@ void MicrophoneTestScreen::applyThemeStyles(const SettingsSnapshot& snapshot) {
 }
 
 void MicrophoneTestScreen::updateMicLevelIndicator(uint16_t level) {
+    // Check if screen is still valid before accessing UI elements
+    if (!screen_valid.load()) {
+        return;
+    }
+
     uint16_t value = std::min<uint16_t>(level, 100);
     if (mic_level_arc) {
         lv_arc_set_value(mic_level_arc, value);

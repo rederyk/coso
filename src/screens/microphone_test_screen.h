@@ -50,5 +50,6 @@ protected:
     TaskHandle_t recording_task_handle = nullptr;
     std::string current_playback_file;
     std::atomic<bool> stop_recording_requested{false};
+    std::atomic<bool> screen_valid{true};  // Flag to indicate if screen is still valid
     MicrophoneManager::RecordingHandle recording_handle = nullptr;
 };
