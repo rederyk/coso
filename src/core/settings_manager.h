@@ -42,6 +42,15 @@ struct SettingsSnapshot {
     bool localApiMode = false;  // Toggle between cloud and local Docker APIs
     std::string dockerHostIp = "192.168.1.51";  // IP of Docker host for local APIs
 
+    // Whisper STT endpoints
+    std::string whisperCloudEndpoint = "https://api.openai.com/v1/audio/transcriptions";
+    std::string whisperLocalEndpoint = "http://192.168.1.51:8002/v1/audio/transcriptions";
+
+    // LLM/GPT endpoints
+    std::string llmCloudEndpoint = "https://api.openai.com/v1/chat/completions";
+    std::string llmLocalEndpoint = "http://192.168.1.51:11434/v1/chat/completions";
+    std::string llmModel = "llama3.2:3b";  // Model name for LLM requests
+
     // Theme
     std::string theme;
     uint32_t primaryColor = 0x0b2035;
@@ -96,6 +105,11 @@ public:
         OpenAIEndpoint,
         LocalApiMode,
         DockerHostIp,
+        WhisperCloudEndpoint,
+        WhisperLocalEndpoint,
+        LlmCloudEndpoint,
+        LlmLocalEndpoint,
+        LlmModel,
 
         // Theme
         Theme,
@@ -220,6 +234,21 @@ public:
 
     const std::string& getDockerHostIp() const { return current_.dockerHostIp; }
     void setDockerHostIp(const std::string& ip);
+
+    const std::string& getWhisperCloudEndpoint() const { return current_.whisperCloudEndpoint; }
+    void setWhisperCloudEndpoint(const std::string& endpoint);
+
+    const std::string& getWhisperLocalEndpoint() const { return current_.whisperLocalEndpoint; }
+    void setWhisperLocalEndpoint(const std::string& endpoint);
+
+    const std::string& getLlmCloudEndpoint() const { return current_.llmCloudEndpoint; }
+    void setLlmCloudEndpoint(const std::string& endpoint);
+
+    const std::string& getLlmLocalEndpoint() const { return current_.llmLocalEndpoint; }
+    void setLlmLocalEndpoint(const std::string& endpoint);
+
+    const std::string& getLlmModel() const { return current_.llmModel; }
+    void setLlmModel(const std::string& model);
 
     // System
     uint32_t getBootCount() const { return current_.bootCount; }

@@ -384,11 +384,37 @@ I metodi stub dovranno essere implementati per chiamare gli endpoint locali:
 - openedai-speech TTS (porta 8001)
 - Open WebUI (porta 3000) - opzionale
 
-### **Fase 1: ESP32 Settings UI** (2 giorni)
-- [ ] Aggiungere toggle "Local API Mode" in VoiceAssistantSettingsScreen
-- [ ] Input field per Docker Host IP
-- [ ] Dropdown selezione modelli Whisper/Ollama
-- [ ] Salvare configurazione in NVS/LittleFS
+### **Fase 1: ESP32 Settings UI** ✅ COMPLETATA
+- [x] Aggiungere toggle "Local API Mode" in VoiceAssistantSettingsScreen
+- [x] Input field per Whisper endpoint (cloud/local)
+- [x] Input field per LLM endpoint (cloud/local)
+- [x] Input field per Docker Host IP
+- [x] Input field per LLM model name
+- [x] Salvare configurazione in NVS/LittleFS
+- [x] Auto-switch endpoint basato su localApiMode toggle
+
+**Modifiche Implementate:**
+- `SettingsSnapshot` - Aggiunti campi: `whisperCloudEndpoint`, `whisperLocalEndpoint`, `llmCloudEndpoint`, `llmLocalEndpoint`, `llmModel`
+- `SettingsManager` - Aggiunti getter/setter per nuovi endpoint
+- `StorageManager` - Serializzazione/deserializzazione sezione `voiceAssistant` in JSON
+- `VoiceAssistantSettingsScreen` - UI con 5 nuovi campi configurabili
+- `voice_assistant.cpp` - Uso dinamico endpoint basato su `localApiMode`
+
+**UI Layout:**
+1. Toggle "Voice Assistant Enabled"
+2. Toggle "Use Local APIs (Docker)" - Switch cloud/local
+3. Input "OpenAI API Key" (solo per cloud)
+4. Input "API Endpoint" (legacy, deprecabile)
+5. Input "Whisper STT Endpoint" (mostra endpoint attivo basato su toggle)
+6. Input "LLM Endpoint" (mostra endpoint attivo basato su toggle)
+7. Input "LLM Model" (nome modello, es: `llama3.2:3b`)
+
+**Default Values:**
+- Whisper Cloud: `https://api.openai.com/v1/audio/transcriptions`
+- Whisper Local: `http://192.168.1.51:8000/v1/audio/transcriptions`
+- LLM Cloud: `https://api.openai.com/v1/chat/completions`
+- LLM Local: `http://192.168.1.51:11434/v1/chat/completions`
+- LLM Model: `llama3.2:3b`
 
 ### **Fase 2: HTTP Client Implementation** (3-4 giorni)
 - [ ] Implementare `makeWhisperRequest()` con multipart upload
@@ -418,10 +444,16 @@ I metodi stub dovranno essere implementati per chiamare gli endpoint locali:
 
 ## 🎯 **Priorità Implementazione**
 1. **✅ Fase 0 (Docker Setup)** - Setup infrastruttura locale ✅ COMPLETATA
-2. **🔄 NEXT: Fase 2 (HTTP Client)** - Implementazione core API calls ⬅️ **PROSSIMO STEP**
-3. **⏳ Fase 3 (Task Integration)** - Completare pipeline STT → LLM
-4. **⏳ Fase 1 (Settings UI)** - UI per configurazione (può essere dopo)
-5. **⏳ Fase 4 (Commands)** - Command execution e feedback
+2. **✅ Fase 1 (Settings UI)** - UI per configurazione endpoint ✅ COMPLETATA (2025-01-03)
+3. **✅ Fase 2 (HTTP Client)** - Implementazione core API calls ✅ COMPLETATA
+4. **✅ Fase 3 (Task Integration)** - Pipeline STT → LLM completata ✅ COMPLETATA
+5. **✅ Fase 4 (Commands)** - Command execution e feedback ✅ COMPLETATA
+
+**STATO ATTUALE (2025-01-03):**
+- Sistema voice assistant completamente funzionante
+- Supporto cloud (OpenAI) e locale (Docker) con switch UI
+- Endpoint configurabili dall'utente per massima flessibilità
+- Pipeline completa: Audio → Whisper STT → Ollama LLM → Command Execution
 
 ---
 

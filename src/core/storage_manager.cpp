@@ -44,6 +44,19 @@ void fillJsonFromSnapshot(const SettingsSnapshot& snapshot, JsonDocument& doc) {
     audio["volume"] = snapshot.audioVolume;
     audio["enabled"] = snapshot.audioEnabled;
 
+    // Voice Assistant
+    JsonObject voiceAssistant = doc["voiceAssistant"].to<JsonObject>();
+    voiceAssistant["enabled"] = snapshot.voiceAssistantEnabled;
+    voiceAssistant["openAiApiKey"] = snapshot.openAiApiKey;
+    voiceAssistant["openAiEndpoint"] = snapshot.openAiEndpoint;
+    voiceAssistant["localApiMode"] = snapshot.localApiMode;
+    voiceAssistant["dockerHostIp"] = snapshot.dockerHostIp;
+    voiceAssistant["whisperCloudEndpoint"] = snapshot.whisperCloudEndpoint;
+    voiceAssistant["whisperLocalEndpoint"] = snapshot.whisperLocalEndpoint;
+    voiceAssistant["llmCloudEndpoint"] = snapshot.llmCloudEndpoint;
+    voiceAssistant["llmLocalEndpoint"] = snapshot.llmLocalEndpoint;
+    voiceAssistant["llmModel"] = snapshot.llmModel;
+
     // Theme palette
     JsonObject palette = doc["palette"].to<JsonObject>();
     palette["primary"] = snapshot.primaryColor;
@@ -91,6 +104,18 @@ void fillSnapshotFromJson(SettingsSnapshot& snapshot, const JsonDocument& doc) {
     // Audio
     snapshot.audioVolume = doc["audio"]["volume"] | snapshot.audioVolume;
     snapshot.audioEnabled = doc["audio"]["enabled"] | snapshot.audioEnabled;
+
+    // Voice Assistant
+    snapshot.voiceAssistantEnabled = doc["voiceAssistant"]["enabled"] | snapshot.voiceAssistantEnabled;
+    snapshot.openAiApiKey = doc["voiceAssistant"]["openAiApiKey"] | snapshot.openAiApiKey;
+    snapshot.openAiEndpoint = doc["voiceAssistant"]["openAiEndpoint"] | snapshot.openAiEndpoint;
+    snapshot.localApiMode = doc["voiceAssistant"]["localApiMode"] | snapshot.localApiMode;
+    snapshot.dockerHostIp = doc["voiceAssistant"]["dockerHostIp"] | snapshot.dockerHostIp;
+    snapshot.whisperCloudEndpoint = doc["voiceAssistant"]["whisperCloudEndpoint"] | snapshot.whisperCloudEndpoint;
+    snapshot.whisperLocalEndpoint = doc["voiceAssistant"]["whisperLocalEndpoint"] | snapshot.whisperLocalEndpoint;
+    snapshot.llmCloudEndpoint = doc["voiceAssistant"]["llmCloudEndpoint"] | snapshot.llmCloudEndpoint;
+    snapshot.llmLocalEndpoint = doc["voiceAssistant"]["llmLocalEndpoint"] | snapshot.llmLocalEndpoint;
+    snapshot.llmModel = doc["voiceAssistant"]["llmModel"] | snapshot.llmModel;
 
     // Theme palette
     snapshot.primaryColor = doc["palette"]["primary"] | snapshot.primaryColor;

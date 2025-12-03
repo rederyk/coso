@@ -755,6 +755,51 @@ void SettingsManager::setDockerHostIp(const std::string& ip) {
     notify(SettingKey::DockerHostIp);
 }
 
+void SettingsManager::setWhisperCloudEndpoint(const std::string& endpoint) {
+    if (!initialized_ || endpoint == current_.whisperCloudEndpoint) {
+        return;
+    }
+    current_.whisperCloudEndpoint = endpoint;
+    persistSnapshot();
+    notify(SettingKey::WhisperCloudEndpoint);
+}
+
+void SettingsManager::setWhisperLocalEndpoint(const std::string& endpoint) {
+    if (!initialized_ || endpoint == current_.whisperLocalEndpoint) {
+        return;
+    }
+    current_.whisperLocalEndpoint = endpoint;
+    persistSnapshot();
+    notify(SettingKey::WhisperLocalEndpoint);
+}
+
+void SettingsManager::setLlmCloudEndpoint(const std::string& endpoint) {
+    if (!initialized_ || endpoint == current_.llmCloudEndpoint) {
+        return;
+    }
+    current_.llmCloudEndpoint = endpoint;
+    persistSnapshot();
+    notify(SettingKey::LlmCloudEndpoint);
+}
+
+void SettingsManager::setLlmLocalEndpoint(const std::string& endpoint) {
+    if (!initialized_ || endpoint == current_.llmLocalEndpoint) {
+        return;
+    }
+    current_.llmLocalEndpoint = endpoint;
+    persistSnapshot();
+    notify(SettingKey::LlmLocalEndpoint);
+}
+
+void SettingsManager::setLlmModel(const std::string& model) {
+    if (!initialized_ || model == current_.llmModel) {
+        return;
+    }
+    current_.llmModel = model;
+    persistSnapshot();
+    notify(SettingKey::LlmModel);
+}
+
 void SettingsManager::notify(SettingKey key) {
     for (const auto& entry : callbacks_) {
         if (entry.fn) {

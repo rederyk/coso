@@ -406,12 +406,12 @@ bool VoiceAssistant::makeWhisperRequest(const AudioBuffer* audio, std::string& t
     const SettingsSnapshot& settings = SettingsManager::getInstance().getSnapshot();
 
     if (settings.localApiMode) {
-        // Local Docker mode: http://<docker_ip>:8000/v1/audio/transcriptions
-        whisper_url = "http://" + settings.dockerHostIp + ":8000/v1/audio/transcriptions";
+        // Local mode: use configured local Whisper endpoint
+        whisper_url = settings.whisperLocalEndpoint;
         LOG_I("Using LOCAL Whisper API at: %s", whisper_url.c_str());
     } else {
-        // Cloud mode: use configured endpoint
-        whisper_url = settings.openAiEndpoint + "/audio/transcriptions";
+        // Cloud mode: use configured cloud Whisper endpoint
+        whisper_url = settings.whisperCloudEndpoint;
         LOG_I("Using CLOUD Whisper API at: %s", whisper_url.c_str());
     }
 
@@ -431,45 +431,31 @@ bool VoiceAssistant::makeWhisperRequest(const AudioBuffer* audio, std::string& t
 
     size_t total_length = header_part.length() + file_size + model_part.length() + footer_part.length();
 
-    // Buffer for response
-    std::string response_buffer;
-    response_buffer.reserve(1024);
-
-    // HTTP client event handler
-    auto http_event_handler = [](esp_http_client_event_t *evt) -> esp_err_t {
-        std::string* response = static_cast<std::string*>(evt->user_data);
-        switch(evt->event_id) {
-            case HTTP_EVENT_ON_DATA:
-                if (response && evt->data_len > 0) {
-                    response->append((char*)evt->data, evt->data_len);
-                }
-                break;
-            default:
-                break;
-        }
-        return ESP_OK;
-    };
-
     // Configure HTTP client
+    LOG_I("Configuring HTTP client for URL: %s", whisper_url.c_str());
+    LOG_I("Total content length: %u bytes", total_length);
+
     esp_http_client_config_t config = {};
     config.url = whisper_url.c_str();
     config.method = HTTP_METHOD_POST;
-    config.event_handler = http_event_handler;
-    config.user_data = &response_buffer;
     config.timeout_ms = 30000;  // 30 second timeout
     config.buffer_size = 4096;
     config.buffer_size_tx = 4096;
 
+    LOG_I("Initializing HTTP client...");
     esp_http_client_handle_t client = esp_http_client_init(&config);
     if (!client) {
         LOG_E("Failed to initialize HTTP client");
         heap_caps_free(file_data);
         return false;
     }
+    LOG_I("HTTP client initialized successfully");
 
     // Set headers
     std::string content_type = std::string("multipart/form-data; boundary=") + boundary;
     esp_http_client_set_header(client, "Content-Type", content_type.c_str());
+    esp_http_client_set_header(client, "User-Agent", "ESP32-VoiceAssistant/1.0");
+    LOG_I("HTTP headers set: Content-Type=%s", content_type.c_str());
 
     // Optional: Add API key if using OpenAI cloud (local Whisper doesn't need it)
     if (!settings.localApiMode && !settings.openAiApiKey.empty()) {
@@ -479,18 +465,23 @@ bool VoiceAssistant::makeWhisperRequest(const AudioBuffer* audio, std::string& t
     }
 
     // Open connection
+    LOG_I("Opening HTTP connection to %s...", whisper_url.c_str());
     esp_err_t err = esp_http_client_open(client, total_length);
     if (err != ESP_OK) {
-        LOG_E("Failed to open HTTP connection: %s", esp_err_to_name(err));
+        LOG_E("Failed to open HTTP connection: %s (0x%x)", esp_err_to_name(err), err);
+        LOG_E("WiFi status: %d", WiFi.status());
+        LOG_E("Check if server is reachable and port is correct");
         esp_http_client_cleanup(client);
         heap_caps_free(file_data);
         return false;
     }
+    LOG_I("HTTP connection opened successfully");
 
     // Write multipart body in chunks
     int written = 0;
 
     // Write header part
+    LOG_I("Writing multipart header (%u bytes)...", header_part.length());
     written = esp_http_client_write(client, header_part.c_str(), header_part.length());
     if (written < 0) {
         LOG_E("Failed to write header part");
@@ -499,8 +490,10 @@ bool VoiceAssistant::makeWhisperRequest(const AudioBuffer* audio, std::string& t
         heap_caps_free(file_data);
         return false;
     }
+    LOG_I("Header written successfully");
 
     // Write file data in chunks
+    LOG_I("Writing audio file data (%u bytes)...", file_size);
     const size_t chunk_size = 4096;
     size_t offset = 0;
     while (offset < file_size) {
@@ -515,6 +508,7 @@ bool VoiceAssistant::makeWhisperRequest(const AudioBuffer* audio, std::string& t
         }
         offset += written;
     }
+    LOG_I("Audio file data written successfully (%u bytes)", offset);
 
     // Write model part
     written = esp_http_client_write(client, model_part.c_str(), model_part.length());
@@ -540,10 +534,21 @@ bool VoiceAssistant::makeWhisperRequest(const AudioBuffer* audio, std::string& t
     heap_caps_free(file_data);
 
     // Fetch response
+    LOG_I("Fetching HTTP response headers...");
     int content_length = esp_http_client_fetch_headers(client);
     int status_code = esp_http_client_get_status_code(client);
 
+    // Read response body manually
+    std::string response_buffer;
+    response_buffer.reserve(1024);
+    char read_buf[512];
+    int read_len = 0;
+    while ((read_len = esp_http_client_read(client, read_buf, sizeof(read_buf))) > 0) {
+        response_buffer.append(read_buf, read_len);
+    }
+
     LOG_I("HTTP Status: %d, Content-Length: %d", status_code, content_length);
+    LOG_I("Response buffer size: %u bytes", response_buffer.length());
 
     esp_http_client_close(client);
     esp_http_client_cleanup(client);
@@ -589,13 +594,13 @@ bool VoiceAssistant::makeGPTRequest(const std::string& prompt, std::string& resp
     const SettingsSnapshot& settings = SettingsManager::getInstance().getSnapshot();
 
     if (settings.localApiMode) {
-        // Local Docker mode: http://<docker_ip>:11434/v1/chat/completions (Ollama)
-        gpt_url = "http://" + settings.dockerHostIp + ":11434/v1/chat/completions";
-        LOG_I("Using LOCAL Ollama LLM at: %s", gpt_url.c_str());
+        // Local mode: use configured local LLM endpoint
+        gpt_url = settings.llmLocalEndpoint;
+        LOG_I("Using LOCAL LLM at: %s", gpt_url.c_str());
     } else {
-        // Cloud mode: use configured endpoint
-        gpt_url = settings.openAiEndpoint + "/chat/completions";
-        LOG_I("Using CLOUD GPT API at: %s", gpt_url.c_str());
+        // Cloud mode: use configured cloud LLM endpoint
+        gpt_url = settings.llmCloudEndpoint;
+        LOG_I("Using CLOUD LLM API at: %s", gpt_url.c_str());
     }
 
     // Build JSON request body using cJSON
@@ -605,8 +610,8 @@ bool VoiceAssistant::makeGPTRequest(const std::string& prompt, std::string& resp
         return false;
     }
 
-    // Add model field
-    cJSON_AddStringToObject(root, "model", "llama3.2:3b");  // Default model for Ollama
+    // Add model field (from settings)
+    cJSON_AddStringToObject(root, "model", settings.llmModel.c_str());
 
     // Build messages array
     cJSON* messages = cJSON_CreateArray();
