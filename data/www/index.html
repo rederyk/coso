@@ -151,6 +151,102 @@
     .toggle-row input {
       accent-color: var(--primary-deep);
     }
+    .panel-heading {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 18px;
+    }
+    .settings-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 14px;
+    }
+    .setting-card {
+      background: rgba(255, 255, 255, 0.03);
+      border-radius: 16px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      min-height: 160px;
+    }
+    .card-title {
+      font-size: 12px;
+      letter-spacing: 0.6px;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .setting-card select {
+      width: 100%;
+      border-radius: 10px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      padding: 12px 14px;
+      background: rgba(255, 255, 255, 0.03);
+      color: var(--text);
+      font-size: 16px;
+      outline: none;
+      transition: border-color 0.2s ease;
+      appearance: none;
+    }
+    .setting-card select:focus {
+      border-color: rgba(126, 231, 192, 0.7);
+    }
+    .helper-text {
+      font-size: 12px;
+      color: var(--muted);
+      margin: 0;
+    }
+    .card-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .setting-card button.secondary {
+      background: rgba(255, 255, 255, 0.09);
+      color: var(--text);
+      box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .setting-card button.secondary:hover {
+      transform: translateY(-1px);
+    }
+    .active-endpoint {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .active-endpoint strong {
+      font-size: 13px;
+      color: var(--text);
+      max-width: 65%;
+      text-align: right;
+      word-break: break-all;
+    }
+    .prompt-card {
+      grid-column: 1 / -1;
+      min-height: auto;
+      margin-top: 18px;
+    }
+    .prompt-card pre {
+      margin: 0;
+      padding: 12px;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      font-size: 13px;
+      line-height: 1.4;
+      max-height: 220px;
+      overflow: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
     button {
       border: none;
       border-radius: 12px;
@@ -221,6 +317,90 @@
         </label>
       </div>
     </section>
+    <section class="panel voice-settings">
+      <div class="panel-heading">
+        <div>
+          <p class="eyebrow">Voice Assistant</p>
+          <h2>Configurazione push-to-talk</h2>
+        </div>
+        <button id="save-settings" class="primary">Salva impostazioni</button>
+      </div>
+      <div class="settings-grid">
+        <article class="setting-card">
+          <div class="card-title">Stato e modalità</div>
+          <label class="toggle-row">
+            <input type="checkbox" id="voice-enabled">
+            Voice Assistant abilitato
+          </label>
+          <label class="toggle-row">
+            <input type="checkbox" id="local-api-mode">
+            Usa API locali (Docker/Ollama)
+          </label>
+          <p class="helper-text">Switch tra le API cloud OpenAI e i servizi locali Whisper/Ollama.</p>
+        </article>
+        <article class="setting-card">
+          <div class="card-title">Credenziali e host</div>
+          <div class="input-group">
+            <span>OpenAI API Key</span>
+            <input id="openai-key" type="text" placeholder="sk-...">
+          </div>
+          <div class="input-group">
+            <span>OpenAI Endpoint</span>
+            <input id="openai-endpoint" type="text" placeholder="https://api.openai.com/v1">
+          </div>
+          <div class="input-group">
+            <span>Docker host IP</span>
+            <input id="docker-host" type="text" placeholder="192.168.1.51">
+          </div>
+        </article>
+        <article class="setting-card">
+          <div class="card-title">Whisper STT endpoint</div>
+          <div class="input-group">
+            <span>Cloud</span>
+            <input id="whisper-cloud" type="text" placeholder="https://api.openai.com/v1/audio/transcriptions">
+          </div>
+          <div class="input-group">
+            <span>Locale (Docker)</span>
+            <input id="whisper-local" type="text" placeholder="http://192.168.1.51:8002/v1/audio/transcriptions">
+          </div>
+          <div class="active-endpoint">
+            <span>Endpoint attivo</span>
+            <strong id="active-whisper-endpoint">N/D</strong>
+          </div>
+        </article>
+        <article class="setting-card">
+          <div class="card-title">LLM endpoint</div>
+          <div class="input-group">
+            <span>Cloud</span>
+            <input id="llm-cloud" type="text" placeholder="https://api.openai.com/v1/chat/completions">
+          </div>
+          <div class="input-group">
+            <span>Locale (Docker/Ollama)</span>
+            <input id="llm-local" type="text" placeholder="http://192.168.1.51:11434/v1/chat/completions">
+          </div>
+          <div class="active-endpoint">
+            <span>Endpoint attivo</span>
+            <strong id="active-llm-endpoint">N/D</strong>
+          </div>
+        </article>
+        <article class="setting-card">
+          <div class="card-title">Modello LLM</div>
+          <div class="input-group">
+            <span>Seleziona modello</span>
+            <select id="llm-model"></select>
+          </div>
+          <div class="card-actions">
+            <button id="refresh-models" class="secondary">Aggiorna modelli</button>
+          </div>
+          <p class="helper-text">Lista dinamica da Ollama in locale, oppure preset compatibili con OpenAI nel cloud.</p>
+        </article>
+      </div>
+      <article class="setting-card prompt-card">
+        <div class="card-title">Prompt della voce</div>
+        <p class="helper-text">Il prompt system JSON resta coerente con i campi Docker/Ollama gestiti dal backend.</p>
+        <pre id="system-prompt">Caricamento in corso…</pre>
+      </article>
+    </section>
   </main>
   <script>
     const statusEl = document.getElementById('status');
@@ -230,6 +410,22 @@
     const micBtn = document.getElementById('mic-btn');
     const autoSendCheckbox = document.getElementById('auto-send');
     let recording = false;
+    const voiceEnabledToggle = document.getElementById('voice-enabled');
+    const localApiToggle = document.getElementById('local-api-mode');
+    const openAiKeyInput = document.getElementById('openai-key');
+    const openAiEndpointInput = document.getElementById('openai-endpoint');
+    const dockerHostInput = document.getElementById('docker-host');
+    const whisperCloudInput = document.getElementById('whisper-cloud');
+    const whisperLocalInput = document.getElementById('whisper-local');
+    const llmCloudInput = document.getElementById('llm-cloud');
+    const llmLocalInput = document.getElementById('llm-local');
+    const llmModelSelect = document.getElementById('llm-model');
+    const activeWhisperEl = document.getElementById('active-whisper-endpoint');
+    const activeLlmEl = document.getElementById('active-llm-endpoint');
+    const saveSettingsBtn = document.getElementById('save-settings');
+    const refreshModelsBtn = document.getElementById('refresh-models');
+    const systemPromptEl = document.getElementById('system-prompt');
+    let pendingModelSelection = '';
 
     function setStatus(text, state = 'idle') {
       statusEl.textContent = text;
@@ -311,6 +507,117 @@
       return true;
     }
 
+    function updateActiveEndpoints() {
+      const whisperValue = (localApiToggle.checked ? whisperLocalInput.value : whisperCloudInput.value).trim() || 'N/D';
+      const llmValue = (localApiToggle.checked ? llmLocalInput.value : llmCloudInput.value).trim() || 'N/D';
+      activeWhisperEl.textContent = whisperValue;
+      activeLlmEl.textContent = llmValue;
+    }
+
+    function populateModelSelect(models = [], activeModel = '') {
+      llmModelSelect.innerHTML = '';
+      const normalized = Array.isArray(models) ? models : [];
+      normalized.forEach((model) => {
+        const option = document.createElement('option');
+        option.value = model;
+        option.textContent = model;
+        llmModelSelect.appendChild(option);
+      });
+      const preferred = activeModel || pendingModelSelection;
+      if (preferred && normalized.includes(preferred)) {
+        llmModelSelect.value = preferred;
+      } else if (normalized.length) {
+        llmModelSelect.value = normalized[0];
+      }
+    }
+
+    async function refreshModels(showStatus = true) {
+      if (refreshModelsBtn.disabled) {
+        return;
+      }
+      const originalLabel = refreshModelsBtn.textContent;
+      refreshModelsBtn.disabled = true;
+      refreshModelsBtn.textContent = 'Aggiorna…';
+      try {
+        const response = await fetch('/api/assistant/models');
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.message || 'Impossibile aggiornare i modelli');
+        }
+        const models = Array.isArray(data.models) ? data.models : [];
+        pendingModelSelection = data.activeModel || pendingModelSelection;
+        populateModelSelect(models, data.activeModel);
+        if (showStatus) {
+          setStatus('Lista modelli aggiornata');
+        }
+      } catch (err) {
+        setStatus(err.message, 'error');
+      } finally {
+        refreshModelsBtn.disabled = false;
+        refreshModelsBtn.textContent = originalLabel;
+      }
+    }
+
+    async function loadVoiceSettings() {
+      try {
+        const response = await fetch('/api/assistant/settings');
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.message || 'Impossibile caricare le impostazioni');
+        }
+        voiceEnabledToggle.checked = Boolean(data.voiceAssistantEnabled);
+        localApiToggle.checked = Boolean(data.localApiMode);
+        openAiKeyInput.value = data.openAiApiKey || '';
+        openAiEndpointInput.value = data.openAiEndpoint || '';
+        dockerHostInput.value = data.dockerHostIp || '';
+        whisperCloudInput.value = data.whisperCloudEndpoint || '';
+        whisperLocalInput.value = data.whisperLocalEndpoint || '';
+        llmCloudInput.value = data.llmCloudEndpoint || '';
+        llmLocalInput.value = data.llmLocalEndpoint || '';
+        pendingModelSelection = data.llmModel || '';
+        systemPromptEl.textContent = data.systemPrompt || '';
+        updateActiveEndpoints();
+        setStatus('Impostazioni caricate');
+        await refreshModels(false);
+      } catch (err) {
+        setStatus(err.message, 'error');
+      }
+    }
+
+    async function saveVoiceSettings() {
+      saveSettingsBtn.disabled = true;
+      setStatus('Salvataggio impostazioni…', 'busy');
+      const payload = {
+        voiceAssistantEnabled: voiceEnabledToggle.checked,
+        localApiMode: localApiToggle.checked,
+        openAiApiKey: openAiKeyInput.value.trim(),
+        openAiEndpoint: openAiEndpointInput.value.trim(),
+        dockerHostIp: dockerHostInput.value.trim(),
+        whisperCloudEndpoint: whisperCloudInput.value.trim(),
+        whisperLocalEndpoint: whisperLocalInput.value.trim(),
+        llmCloudEndpoint: llmCloudInput.value.trim(),
+        llmLocalEndpoint: llmLocalInput.value.trim(),
+        llmModel: llmModelSelect.value
+      };
+      try {
+        const response = await fetch('/api/assistant/settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.message || 'Salvataggio non riuscito');
+        }
+        setStatus('Impostazioni salvate');
+        await loadVoiceSettings();
+      } catch (err) {
+        setStatus(err.message, 'error');
+      } finally {
+        saveSettingsBtn.disabled = false;
+      }
+    }
+
     async function toggleRecording() {
       if (!recording) {
         try {
@@ -373,9 +680,19 @@
       }
     });
     micBtn.addEventListener('click', toggleRecording);
+    [whisperCloudInput, whisperLocalInput, llmCloudInput, llmLocalInput].forEach((input) => {
+      input.addEventListener('input', updateActiveEndpoints);
+    });
+    localApiToggle.addEventListener('change', () => {
+      updateActiveEndpoints();
+      refreshModels(false);
+    });
+    saveSettingsBtn.addEventListener('click', saveVoiceSettings);
+    refreshModelsBtn.addEventListener('click', () => refreshModels());
 
     setStatus('Pronto');
     appendMessage('assistant', 'Ciao! Scrivimi o usa il microfono per dirmi cosa fare.', 'Comando: nessuno');
+    loadVoiceSettings();
   </script>
 </body>
 </html>

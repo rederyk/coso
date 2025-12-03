@@ -5,6 +5,7 @@
 #include <WiFi.h>
 #include <esp_heap_caps.h>
 #include <cstring>
+#include <vector>
 
 #include "core/command_center.h"
 #include "core/settings_manager.h"
@@ -86,6 +87,9 @@ void WebServerManager::registerRoutes() {
     server_->on("/api/assistant/chat", HTTP_POST, [this]() { handleAssistantChat(); });
     server_->on("/api/assistant/audio/start", HTTP_POST, [this]() { handleAssistantAudioStart(); });
     server_->on("/api/assistant/audio/stop", HTTP_POST, [this]() { handleAssistantAudioStop(); });
+    server_->on("/api/assistant/settings", HTTP_GET, [this]() { handleAssistantSettingsGet(); });
+    server_->on("/api/assistant/settings", HTTP_POST, [this]() { handleAssistantSettingsPost(); });
+    server_->on("/api/assistant/models", HTTP_GET, [this]() { handleAssistantModels(); });
     server_->on("/api/health", HTTP_GET, [this]() { handleApiHealth(); });
     server_->onNotFound([this]() { handleNotFound(); });
 
@@ -267,6 +271,130 @@ void WebServerManager::handleAssistantAudioStop() {
     String payload;
     serializeJson(doc, payload);
     sendJson(200, payload);
+}
+
+void WebServerManager::handleAssistantSettingsGet() {
+    SettingsManager& settings = SettingsManager::getInstance();
+    const SettingsSnapshot& snapshot = settings.getSnapshot();
+
+    StaticJsonDocument<2048> doc;
+    doc["voiceAssistantEnabled"] = snapshot.voiceAssistantEnabled;
+    doc["localApiMode"] = snapshot.localApiMode;
+    doc["openAiApiKey"] = snapshot.openAiApiKey;
+    doc["openAiEndpoint"] = snapshot.openAiEndpoint;
+    doc["dockerHostIp"] = snapshot.dockerHostIp;
+    doc["whisperCloudEndpoint"] = snapshot.whisperCloudEndpoint;
+    doc["whisperLocalEndpoint"] = snapshot.whisperLocalEndpoint;
+    doc["llmCloudEndpoint"] = snapshot.llmCloudEndpoint;
+    doc["llmLocalEndpoint"] = snapshot.llmLocalEndpoint;
+    doc["llmModel"] = snapshot.llmModel;
+    doc["activeWhisperEndpoint"] =
+        snapshot.localApiMode ? snapshot.whisperLocalEndpoint : snapshot.whisperCloudEndpoint;
+    doc["activeLlmEndpoint"] =
+        snapshot.localApiMode ? snapshot.llmLocalEndpoint : snapshot.llmCloudEndpoint;
+    doc["systemPrompt"] = VOICE_ASSISTANT_SYSTEM_PROMPT;
+
+    String response;
+    serializeJson(doc, response);
+    sendJson(200, response);
+}
+
+void WebServerManager::handleAssistantSettingsPost() {
+    String body = server_->arg("plain");
+    if (body.isEmpty()) {
+        sendJson(400, "{\"status\":\"error\",\"message\":\"Empty body\"}");
+        return;
+    }
+
+    StaticJsonDocument<1024> doc;
+    auto err = deserializeJson(doc, body);
+    if (err) {
+        sendJson(400, "{\"status\":\"error\",\"message\":\"Invalid JSON\"}");
+        return;
+    }
+
+    SettingsManager& settings = SettingsManager::getInstance();
+
+    if (doc.containsKey("voiceAssistantEnabled")) {
+        settings.setVoiceAssistantEnabled(doc["voiceAssistantEnabled"] | false);
+    }
+    if (doc.containsKey("localApiMode")) {
+        settings.setLocalApiMode(doc["localApiMode"] | false);
+    }
+
+    JsonVariant api_key = doc["openAiApiKey"];
+    if (api_key && !api_key.isNull()) {
+        settings.setOpenAiApiKey(api_key.as<const char*>());
+    }
+    JsonVariant api_endpoint = doc["openAiEndpoint"];
+    if (api_endpoint && !api_endpoint.isNull()) {
+        settings.setOpenAiEndpoint(api_endpoint.as<const char*>());
+    }
+    JsonVariant docker_ip = doc["dockerHostIp"];
+    if (docker_ip && !docker_ip.isNull()) {
+        settings.setDockerHostIp(docker_ip.as<const char*>());
+    }
+
+    JsonVariant whisper_cloud = doc["whisperCloudEndpoint"];
+    if (whisper_cloud && !whisper_cloud.isNull()) {
+        settings.setWhisperCloudEndpoint(whisper_cloud.as<const char*>());
+    }
+    JsonVariant whisper_local = doc["whisperLocalEndpoint"];
+    if (whisper_local && !whisper_local.isNull()) {
+        settings.setWhisperLocalEndpoint(whisper_local.as<const char*>());
+    }
+
+    JsonVariant llm_cloud = doc["llmCloudEndpoint"];
+    if (llm_cloud && !llm_cloud.isNull()) {
+        settings.setLlmCloudEndpoint(llm_cloud.as<const char*>());
+    }
+    JsonVariant llm_local = doc["llmLocalEndpoint"];
+    if (llm_local && !llm_local.isNull()) {
+        settings.setLlmLocalEndpoint(llm_local.as<const char*>());
+    }
+
+    JsonVariant llm_model = doc["llmModel"];
+    if (llm_model && !llm_model.isNull()) {
+        settings.setLlmModel(llm_model.as<const char*>());
+    }
+
+    sendJson(200, "{\"status\":\"success\",\"message\":\"Impostazioni aggiornate\"}");
+}
+
+void WebServerManager::handleAssistantModels() {
+    SettingsManager& settings = SettingsManager::getInstance();
+    const SettingsSnapshot& snapshot = settings.getSnapshot();
+
+    StaticJsonDocument<2048> doc;
+    JsonArray models = doc.createNestedArray("models");
+    doc["activeModel"] = snapshot.llmModel;
+    doc["mode"] = snapshot.localApiMode ? "local" : "cloud";
+
+    if (snapshot.localApiMode) {
+        std::vector<std::string> available;
+        if (!VoiceAssistant::getInstance().fetchOllamaModels(snapshot.llmLocalEndpoint, available)) {
+            sendJson(502, "{\"status\":\"error\",\"message\":\"Impossibile recuperare i modelli locali\"}");
+            return;
+        }
+        for (const auto& model : available) {
+            models.add(model);
+        }
+    } else {
+        constexpr const char* CLOUD_PRESETS[] = {
+            "gpt-4",
+            "gpt-4-turbo",
+            "gpt-4o",
+            "gpt-4o-mini",
+            "gpt-3.5-turbo"
+        };
+        for (const char* model : CLOUD_PRESETS) {
+            models.add(model);
+        }
+    }
+
+    String response;
+    serializeJson(doc, response);
+    sendJson(200, response);
 }
 
 void WebServerManager::handleApiHealth() {
