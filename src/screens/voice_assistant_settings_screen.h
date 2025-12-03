@@ -27,7 +27,11 @@ private:
     static void handleWhisperEndpointInput(lv_event_t* e);
     static void handleLlmEndpointInput(lv_event_t* e);
     static void handleLlmModelInput(lv_event_t* e);
+    static void handleLlmModelDropdown(lv_event_t* e);
+    static void handleRefreshModels(lv_event_t* e);
     static void handleTextAreaFocused(lv_event_t* e);
+
+    void refreshAvailableModels();
 
     lv_obj_t* title_label = nullptr;
     lv_obj_t* trigger_card = nullptr;
@@ -48,6 +52,8 @@ private:
     lv_obj_t* whisper_endpoint_input = nullptr;
     lv_obj_t* llm_endpoint_input = nullptr;
     lv_obj_t* llm_model_input = nullptr;
+    lv_obj_t* llm_model_dropdown = nullptr;
+    lv_obj_t* refresh_models_btn = nullptr;
 
     lv_obj_t* api_key_hint = nullptr;
     lv_obj_t* endpoint_hint = nullptr;
@@ -57,4 +63,5 @@ private:
 
     uint32_t settings_listener_id = 0;
     bool updating_from_manager = false;
+    std::vector<std::string> available_models_;
 };

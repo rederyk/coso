@@ -808,6 +808,134 @@ bool VoiceAssistant::parseGPTCommand(const std::string& response, VoiceCommand& 
     return true;
 }
 
+// Ollama API helpers
+bool VoiceAssistant::fetchOllamaModels(const std::string& base_url, std::vector<std::string>& models) {
+    LOG_I("Fetching available models from Ollama API");
+
+    models.clear();
+
+    // Check if we have WiFi connection
+    if (WiFi.status() != WL_CONNECTED) {
+        LOG_E("WiFi not connected");
+        return false;
+    }
+
+    // Parse base URL to extract host and build /api/tags endpoint
+    // Expected format: http://192.168.1.51:11434/v1/chat/completions
+    // We need: http://192.168.1.51:11434/api/tags
+    std::string ollama_tags_url = base_url;
+
+    // Remove trailing /v1/chat/completions or similar paths
+    size_t v1_pos = ollama_tags_url.find("/v1/");
+    if (v1_pos != std::string::npos) {
+        ollama_tags_url = ollama_tags_url.substr(0, v1_pos);
+    }
+
+    // Ensure no trailing slash
+    if (!ollama_tags_url.empty() && ollama_tags_url.back() == '/') {
+        ollama_tags_url.pop_back();
+    }
+
+    // Append /api/tags
+    ollama_tags_url += "/api/tags";
+
+    LOG_I("Ollama tags endpoint: %s", ollama_tags_url.c_str());
+
+    // Buffer for response
+    std::string response_buffer;
+    response_buffer.reserve(4096);
+
+    // HTTP client event handler
+    auto http_event_handler = [](esp_http_client_event_t *evt) -> esp_err_t {
+        std::string* response = static_cast<std::string*>(evt->user_data);
+        switch(evt->event_id) {
+            case HTTP_EVENT_ON_DATA:
+                if (response && evt->data_len > 0) {
+                    response->append((char*)evt->data, evt->data_len);
+                }
+                break;
+            default:
+                break;
+        }
+        return ESP_OK;
+    };
+
+    // Configure HTTP client
+    esp_http_client_config_t config = {};
+    config.url = ollama_tags_url.c_str();
+    config.method = HTTP_METHOD_GET;
+    config.event_handler = http_event_handler;
+    config.user_data = &response_buffer;
+    config.timeout_ms = 10000;  // 10 second timeout
+    config.buffer_size = 4096;
+
+    esp_http_client_handle_t client = esp_http_client_init(&config);
+    if (!client) {
+        LOG_E("Failed to initialize HTTP client");
+        return false;
+    }
+
+    // Perform request
+    esp_err_t err = esp_http_client_perform(client);
+    if (err != ESP_OK) {
+        LOG_E("HTTP request failed: %s", esp_err_to_name(err));
+        esp_http_client_cleanup(client);
+        return false;
+    }
+
+    int status_code = esp_http_client_get_status_code(client);
+    LOG_I("HTTP Status: %d", status_code);
+
+    esp_http_client_cleanup(client);
+
+    if (status_code != 200) {
+        LOG_E("Ollama API returned error status: %d", status_code);
+        LOG_E("Response: %s", response_buffer.c_str());
+        return false;
+    }
+
+    LOG_I("Ollama response: %s", response_buffer.c_str());
+
+    // Parse JSON response
+    // Ollama format: {"models": [{"name": "llama3.2:3b", ...}, {"name": "mistral:7b", ...}]}
+    cJSON* root = cJSON_Parse(response_buffer.c_str());
+    if (!root) {
+        LOG_E("Failed to parse Ollama response JSON");
+        return false;
+    }
+
+    cJSON* models_array = cJSON_GetObjectItem(root, "models");
+    if (!models_array || !cJSON_IsArray(models_array)) {
+        LOG_E("Invalid response format (missing 'models' array)");
+        cJSON_Delete(root);
+        return false;
+    }
+
+    int model_count = cJSON_GetArraySize(models_array);
+    LOG_I("Found %d models", model_count);
+
+    for (int i = 0; i < model_count; i++) {
+        cJSON* model_item = cJSON_GetArrayItem(models_array, i);
+        if (!model_item) continue;
+
+        cJSON* name = cJSON_GetObjectItem(model_item, "name");
+        if (name && cJSON_IsString(name)) {
+            models.push_back(name->valuestring);
+            LOG_I("  - %s", name->valuestring);
+        }
+    }
+
+    cJSON_Delete(root);
+
+    if (models.empty()) {
+        LOG_W("No models found in Ollama API response");
+        return false;
+    }
+
+    LOG_I("Successfully fetched %d models from Ollama", models.size());
+    return true;
+}
+
 // Queue helpers
 bool VoiceAssistant::sendAudioBuffer(AudioBuffer* buffer) {
     if (!audioQueue_) return false;

@@ -5,6 +5,7 @@
 #include "core/voice_assistant.h"
 #include "core/app_manager.h"
 #include "core/keyboard_manager.h"
+#include <algorithm>
 
 // Forward declaration to avoid include issues
 class VoiceAssistant;
@@ -153,16 +154,36 @@ void VoiceAssistantSettingsScreen::build(lv_obj_t* parent) {
     lv_obj_set_style_text_font(llm_hint, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(llm_hint, lv_color_hex(0xa0a0a0), 0);
 
-    // LLM Model card
+    // LLM Model card with dropdown and refresh button
     llm_model_card = create_fixed_card(root, "LLM Model");
-    llm_model_input = lv_textarea_create(llm_model_card);
-    lv_textarea_set_placeholder_text(llm_model_input, "llama3.2:3b");
-    lv_textarea_set_one_line(llm_model_input, true);
-    lv_obj_set_width(llm_model_input, lv_pct(100));
-    lv_obj_add_event_cb(llm_model_input, handleTextAreaFocused, LV_EVENT_FOCUSED, this);
-    lv_obj_add_event_cb(llm_model_input, handleLlmModelInput, LV_EVENT_READY, this);
+    lv_obj_set_height(llm_model_card, 110); // Increased height for dropdown and button
+
+    // Horizontal container for dropdown and refresh button
+    lv_obj_t* model_controls = lv_obj_create(llm_model_card);
+    lv_obj_remove_style_all(model_controls);
+    lv_obj_set_width(model_controls, lv_pct(100));
+    lv_obj_set_height(model_controls, LV_SIZE_CONTENT);
+    lv_obj_set_layout(model_controls, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(model_controls, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(model_controls, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_column(model_controls, 8, 0);
+
+    // Dropdown for model selection
+    llm_model_dropdown = lv_dropdown_create(model_controls);
+    lv_obj_set_flex_grow(llm_model_dropdown, 1); // Take remaining space
+    lv_dropdown_set_options(llm_model_dropdown, "Loading...");
+    lv_obj_add_event_cb(llm_model_dropdown, handleLlmModelDropdown, LV_EVENT_VALUE_CHANGED, this);
+
+    // Refresh button
+    refresh_models_btn = lv_btn_create(model_controls);
+    lv_obj_set_size(refresh_models_btn, 50, 40);
+    lv_obj_t* refresh_label = lv_label_create(refresh_models_btn);
+    lv_label_set_text(refresh_label, LV_SYMBOL_REFRESH);
+    lv_obj_center(refresh_label);
+    lv_obj_add_event_cb(refresh_models_btn, handleRefreshModels, LV_EVENT_CLICKED, this);
+
     llm_model_hint = lv_label_create(llm_model_card);
-    lv_label_set_text(llm_model_hint, "Model name for LLM requests");
+    lv_label_set_text(llm_model_hint, "Select model or refresh list");
     lv_obj_set_style_text_font(llm_model_hint, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(llm_model_hint, lv_color_hex(0xa0a0a0), 0);
 
@@ -195,6 +216,12 @@ void VoiceAssistantSettingsScreen::onShow() {
     }
 
     applySnapshot(SettingsManager::getInstance().getSnapshot());
+
+    // Refresh available models from Ollama API (only if in local mode)
+    const SettingsSnapshot& snapshot = SettingsManager::getInstance().getSnapshot();
+    if (snapshot.localApiMode) {
+        refreshAvailableModels();
+    }
 }
 
 void VoiceAssistantSettingsScreen::onHide() {
@@ -234,6 +261,15 @@ void VoiceAssistantSettingsScreen::applySnapshot(const SettingsSnapshot& snapsho
     }
     if (llm_model_input) {
         lv_textarea_set_text(llm_model_input, snapshot.llmModel.c_str());
+    }
+
+    // Update dropdown selection if the model changed
+    if (llm_model_dropdown && !available_models_.empty()) {
+        auto it = std::find(available_models_.begin(), available_models_.end(), snapshot.llmModel);
+        if (it != available_models_.end()) {
+            uint16_t idx = std::distance(available_models_.begin(), it);
+            lv_dropdown_set_selected(llm_model_dropdown, idx);
+        }
     }
 
     applyThemeStyles(snapshot);
@@ -382,6 +418,9 @@ void VoiceAssistantSettingsScreen::handleLocalModeSwitch(lv_event_t* e) {
 
     // Update endpoint displays to show appropriate values
     screen->applySnapshot(SettingsManager::getInstance().getSnapshot());
+
+    // Refresh available models when switching modes
+    screen->refreshAvailableModels();
 }
 
 void VoiceAssistantSettingsScreen::handleWhisperEndpointInput(lv_event_t* e) {
@@ -410,6 +449,8 @@ void VoiceAssistantSettingsScreen::handleLlmEndpointInput(lv_event_t* e) {
         const SettingsSnapshot& snapshot = SettingsManager::getInstance().getSnapshot();
         if (snapshot.localApiMode) {
             SettingsManager::getInstance().setLlmLocalEndpoint(text);
+            // Refresh available models when endpoint changes
+            screen->refreshAvailableModels();
         } else {
             SettingsManager::getInstance().setLlmCloudEndpoint(text);
         }
@@ -424,6 +465,90 @@ void VoiceAssistantSettingsScreen::handleLlmModelInput(lv_event_t* e) {
     const char* text = lv_textarea_get_text(textarea);
     if (text) {
         SettingsManager::getInstance().setLlmModel(text);
+    }
+}
+
+void VoiceAssistantSettingsScreen::handleLlmModelDropdown(lv_event_t* e) {
+    auto* screen = static_cast<VoiceAssistantSettingsScreen*>(lv_event_get_user_data(e));
+    if (!screen || screen->updating_from_manager) return;
+
+    lv_obj_t* dropdown = lv_event_get_target(e);
+    uint16_t selected_idx = lv_dropdown_get_selected(dropdown);
+
+    if (selected_idx < screen->available_models_.size()) {
+        const std::string& selected_model = screen->available_models_[selected_idx];
+        SettingsManager::getInstance().setLlmModel(selected_model);
+        Logger::getInstance().infof(LV_SYMBOL_AUDIO " LLM model changed to: %s", selected_model.c_str());
+    }
+}
+
+void VoiceAssistantSettingsScreen::handleRefreshModels(lv_event_t* e) {
+    auto* screen = static_cast<VoiceAssistantSettingsScreen*>(lv_event_get_user_data(e));
+    if (!screen) return;
+
+    Logger::getInstance().info(LV_SYMBOL_AUDIO " Refreshing available models...");
+    screen->refreshAvailableModels();
+}
+
+void VoiceAssistantSettingsScreen::refreshAvailableModels() {
+    if (!llm_model_dropdown) return;
+
+    const SettingsSnapshot& snapshot = SettingsManager::getInstance().getSnapshot();
+
+    // Only fetch models when in local mode
+    if (!snapshot.localApiMode) {
+        // In cloud mode, just show a text input or predefined list
+        lv_dropdown_set_options(llm_model_dropdown, "gpt-4\ngpt-3.5-turbo\ngpt-4-turbo");
+        available_models_.clear();
+        available_models_.push_back("gpt-4");
+        available_models_.push_back("gpt-3.5-turbo");
+        available_models_.push_back("gpt-4-turbo");
+        return;
+    }
+
+    // Update hint to show loading
+    if (llm_model_hint) {
+        lv_label_set_text(llm_model_hint, "Loading models from Ollama...");
+    }
+
+    // Fetch models from Ollama API
+    std::vector<std::string> models;
+    bool success = VoiceAssistant::getInstance().fetchOllamaModels(snapshot.llmLocalEndpoint, models);
+
+    if (success && !models.empty()) {
+        available_models_ = models;
+
+        // Build dropdown options string (newline-separated)
+        std::string options;
+        for (size_t i = 0; i < models.size(); i++) {
+            if (i > 0) options += "\n";
+            options += models[i];
+        }
+
+        lv_dropdown_set_options(llm_model_dropdown, options.c_str());
+
+        // Select current model if it exists in the list
+        auto it = std::find(models.begin(), models.end(), snapshot.llmModel);
+        if (it != models.end()) {
+            uint16_t idx = std::distance(models.begin(), it);
+            lv_dropdown_set_selected(llm_model_dropdown, idx);
+        }
+
+        if (llm_model_hint) {
+            lv_label_set_text_fmt(llm_model_hint, "Found %d models", models.size());
+        }
+
+        Logger::getInstance().infof(LV_SYMBOL_AUDIO " Loaded %d models from Ollama", models.size());
+    } else {
+        // Failed to fetch models
+        lv_dropdown_set_options(llm_model_dropdown, "Error: No models found");
+        available_models_.clear();
+
+        if (llm_model_hint) {
+            lv_label_set_text(llm_model_hint, "Failed to load models. Check connection.");
+        }
+
+        Logger::getInstance().warn(LV_SYMBOL_AUDIO " Failed to fetch models from Ollama");
     }
 }
 

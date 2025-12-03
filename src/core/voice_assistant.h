@@ -73,6 +73,9 @@ public:
     /** Get the last recorded file path (for external use) */
     std::string getLastRecordedFile() const { return last_recorded_file_; }
 
+    /** Fetch available models from Ollama API */
+    bool fetchOllamaModels(const std::string& base_url, std::vector<std::string>& models);
+
 private:
     VoiceAssistant();
     ~VoiceAssistant();
