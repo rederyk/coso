@@ -4,16 +4,19 @@
 #include <LittleFS.h>
 #include <WiFi.h>
 #include <esp_heap_caps.h>
+#include <cstring>
 
 #include "core/command_center.h"
 #include "core/settings_manager.h"
 #include "core/task_config.h"
 #include "drivers/sd_card_driver.h"
 #include "utils/logger.h"
+#include "core/voice_assistant.h"
 
 namespace {
-constexpr const char* DEFAULT_ROOT = "/www/commands.html";
+constexpr const char* DEFAULT_ROOT = "/www/index.html";
 constexpr uint32_t SERVER_LOOP_DELAY_MS = 10;
+constexpr uint32_t ASSISTANT_RESPONSE_TIMEOUT_MS = 20000;
 }  // namespace
 
 WebServerManager& WebServerManager::getInstance() {
@@ -80,6 +83,9 @@ void WebServerManager::registerRoutes() {
     server_->on("/commands", HTTP_GET, [this]() { handleRoot(); });
     server_->on("/api/commands", HTTP_GET, [this]() { handleApiCommands(); });
     server_->on("/api/commands/execute", HTTP_POST, [this]() { handleApiExecute(); });
+    server_->on("/api/assistant/chat", HTTP_POST, [this]() { handleAssistantChat(); });
+    server_->on("/api/assistant/audio/start", HTTP_POST, [this]() { handleAssistantAudioStart(); });
+    server_->on("/api/assistant/audio/stop", HTTP_POST, [this]() { handleAssistantAudioStop(); });
     server_->on("/api/health", HTTP_GET, [this]() { handleApiHealth(); });
     server_->onNotFound([this]() { handleNotFound(); });
 
@@ -128,7 +134,7 @@ void WebServerManager::sendJson(int code, const String& payload) {
 
 void WebServerManager::handleRoot() {
     if (!serveFile(DEFAULT_ROOT)) {
-        server_->send(404, "text/plain", "commands.html not found");
+        server_->send(404, "text/plain", "index.html not found");
     }
 }
 
@@ -186,6 +192,81 @@ void WebServerManager::handleApiExecute() {
     String response;
     serializeJson(out, response);
     sendJson(result.success ? 200 : 400, response);
+}
+
+static void appendCommandToDoc(StaticJsonDocument<512>& doc, const VoiceAssistant::VoiceCommand& response) {
+    doc["status"] = "success";
+    doc["command"] = response.command.c_str();
+    JsonArray args = doc.createNestedArray("args");
+    for (const auto& arg : response.args) {
+        args.add(arg.c_str());
+    }
+    doc["text"] = response.text.c_str();
+    if (!response.transcription.empty()) {
+        doc["transcription"] = response.transcription.c_str();
+    }
+}
+
+void WebServerManager::handleAssistantChat() {
+    String body = server_->arg("plain");
+    if (body.isEmpty()) {
+        sendJson(400, "{\"status\":\"error\",\"message\":\"Empty body\"}");
+        return;
+    }
+
+    StaticJsonDocument<256> request_doc;
+    auto err = deserializeJson(request_doc, body);
+    if (err) {
+        sendJson(400, "{\"status\":\"error\",\"message\":\"Invalid JSON\"}");
+        return;
+    }
+
+    const char* message = request_doc["message"] | "";
+    if (!message || strlen(message) == 0) {
+        sendJson(400, "{\"status\":\"error\",\"message\":\"Missing message\"}");
+        return;
+    }
+
+    VoiceAssistant& assistant = VoiceAssistant::getInstance();
+    if (!assistant.sendTextMessage(message)) {
+        sendJson(503, "{\"status\":\"error\",\"message\":\"Voice assistant unavailable\"}");
+        return;
+    }
+
+    VoiceAssistant::VoiceCommand response;
+    if (!assistant.getLastResponse(response, ASSISTANT_RESPONSE_TIMEOUT_MS)) {
+        sendJson(504, "{\"status\":\"error\",\"message\":\"No response from assistant\"}");
+        return;
+    }
+
+    StaticJsonDocument<512> doc;
+    appendCommandToDoc(doc, response);
+    String payload;
+    serializeJson(doc, payload);
+    sendJson(200, payload);
+}
+
+void WebServerManager::handleAssistantAudioStart() {
+    VoiceAssistant& assistant = VoiceAssistant::getInstance();
+    assistant.startRecording();
+    sendJson(200, "{\"status\":\"success\",\"message\":\"Recording started\"}");
+}
+
+void WebServerManager::handleAssistantAudioStop() {
+    VoiceAssistant& assistant = VoiceAssistant::getInstance();
+    assistant.stopRecordingAndProcess();
+
+    VoiceAssistant::VoiceCommand response;
+    if (!assistant.getLastResponse(response, ASSISTANT_RESPONSE_TIMEOUT_MS)) {
+        sendJson(504, "{\"status\":\"error\",\"message\":\"No response from assistant\"}");
+        return;
+    }
+
+    StaticJsonDocument<512> doc;
+    appendCommandToDoc(doc, response);
+    String payload;
+    serializeJson(doc, payload);
+    sendJson(200, payload);
 }
 
 void WebServerManager::handleApiHealth() {

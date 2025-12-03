@@ -300,19 +300,24 @@ void VoiceAssistant::aiProcessingTask(void* param) {
 
                     // Parse command from LLM response
                     VoiceCommand cmd;
+                    cmd.transcription = *transcription;
                     if (va->parseGPTCommand(llm_response, cmd)) {
-                        LOG_I("Command parsed successfully: %s", cmd.command.c_str());
+                        LOG_I("Command parsed successfully: %s (text: %s)", cmd.command.c_str(), cmd.text.c_str());
 
-                        // Execute command via CommandCenter
-                        CommandResult result = CommandCenter::getInstance().executeCommand(cmd.command, cmd.args);
+                        // Execute command via CommandCenter only if command is not "none"
+                        if (cmd.command != "none" && cmd.command != "unknown" && !cmd.command.empty()) {
+                            CommandResult result = CommandCenter::getInstance().executeCommand(cmd.command, cmd.args);
 
-                        if (result.success) {
-                            LOG_I("Command executed successfully: %s", result.message.c_str());
+                            if (result.success) {
+                                LOG_I("Command executed successfully: %s", result.message.c_str());
+                            } else {
+                                LOG_E("Command execution failed: %s", result.message.c_str());
+                            }
                         } else {
-                            LOG_E("Command execution failed: %s", result.message.c_str());
+                            LOG_I("No command to execute (conversational response only)");
                         }
 
-                        // Optionally: Send result to voice command queue for external consumption
+                        // Send result to voice command queue for external consumption (screen/web)
                         VoiceCommand* cmd_copy = new VoiceCommand(cmd);
                         if (xQueueSend(va->voiceCommandQueue_, &cmd_copy, pdMS_TO_TICKS(100)) != pdPASS) {
                             LOG_W("Voice command queue full");
@@ -625,10 +630,14 @@ bool VoiceAssistant::makeGPTRequest(const std::string& prompt, std::string& resp
     cJSON* system_msg = cJSON_CreateObject();
     cJSON_AddStringToObject(system_msg, "role", "system");
     cJSON_AddStringToObject(system_msg, "content",
-        "You are a voice assistant that converts natural language commands to JSON. "
-        "Respond ONLY with valid JSON in this format: {\"command\": \"<command_name>\", \"args\": [\"<arg1>\", \"<arg2>\"]}. "
+        "You are a helpful voice assistant for an ESP32-S3 device. "
+        "Respond ONLY with valid JSON in this format: {\"command\": \"<command_name>\", \"args\": [\"<arg1>\", \"<arg2>\"], \"text\": \"<your conversational response>\"}. "
         "Available commands: volume_up, volume_down, brightness_up, brightness_down, led_brightness, radio_play, wifi_switch. "
-        "If the user request doesn't match any command, respond with: {\"command\": \"unknown\", \"args\": []}");
+        "If the user request matches a command, include it in 'command' field with arguments. "
+        "If no command matches, use 'command': 'none'. "
+        "ALWAYS include 'text' field with a friendly conversational response in the user's language. "
+        "Example 1: {\"command\": \"volume_up\", \"args\": [\"10\"], \"text\": \"Ho aumentato il volume\"} "
+        "Example 2: {\"command\": \"none\", \"args\": [], \"text\": \"Ciao! Come posso aiutarti?\"}");
     cJSON_AddItemToArray(messages, system_msg);
 
     // User message: The transcribed text
@@ -771,7 +780,7 @@ bool VoiceAssistant::makeGPTRequest(const std::string& prompt, std::string& resp
 bool VoiceAssistant::parseGPTCommand(const std::string& response, VoiceCommand& cmd) {
     LOG_I("Parsing command from LLM response");
 
-    // Parse JSON: {"command": "volume_up", "args": ["arg1", "arg2"]}
+    // Parse JSON: {"command": "volume_up", "args": ["arg1", "arg2"], "text": "Ho aumentato il volume"}
     cJSON* root = cJSON_Parse(response.c_str());
     if (!root) {
         LOG_E("Failed to parse command JSON");
@@ -802,9 +811,18 @@ bool VoiceAssistant::parseGPTCommand(const std::string& response, VoiceCommand& 
         }
     }
 
+    // Extract text field (conversational response)
+    cJSON* text = cJSON_GetObjectItem(root, "text");
+    if (text && cJSON_IsString(text)) {
+        cmd.text = text->valuestring;
+    } else {
+        cmd.text = "";  // Empty if not provided
+    }
+
     cJSON_Delete(root);
 
-    LOG_I("Parsed command: %s (args count: %d)", cmd.command.c_str(), cmd.args.size());
+    LOG_I("Parsed command: %s (args count: %d, text: %s)",
+          cmd.command.c_str(), cmd.args.size(), cmd.text.c_str());
     return true;
 }
 
@@ -961,5 +979,48 @@ bool VoiceAssistant::receiveTranscribedText(std::string& text) {
 
 bool VoiceAssistant::sendCommand(VoiceCommand* cmd) {
     // TODO: Implement command send
+    return false;
+}
+
+// Public API for chat interface
+bool VoiceAssistant::sendTextMessage(const std::string& text) {
+    if (!initialized_) {
+        LOG_E("VoiceAssistant not initialized");
+        return false;
+    }
+
+    if (text.empty()) {
+        LOG_E("Empty text message");
+        return false;
+    }
+
+    LOG_I("Sending text message to LLM: %s", text.c_str());
+
+    // Send text directly to transcription queue (bypass STT)
+    std::string* text_copy = new std::string(text);
+    if (xQueueSend(transcriptionQueue_, &text_copy, pdMS_TO_TICKS(1000)) != pdPASS) {
+        LOG_W("Transcription queue full, discarding text");
+        delete text_copy;
+        return false;
+    }
+
+    return true;
+}
+
+bool VoiceAssistant::getLastResponse(VoiceCommand& response, uint32_t timeout_ms) {
+    if (!initialized_) {
+        LOG_E("VoiceAssistant not initialized");
+        return false;
+    }
+
+    VoiceCommand* cmd = nullptr;
+    if (xQueueReceive(voiceCommandQueue_, &cmd, pdMS_TO_TICKS(timeout_ms)) == pdPASS) {
+        if (cmd) {
+            response = *cmd;
+            delete cmd;
+            return true;
+        }
+    }
+
     return false;
 }

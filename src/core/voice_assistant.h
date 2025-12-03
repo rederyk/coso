@@ -19,8 +19,14 @@ public:
     struct VoiceCommand {
         std::string command;
         std::vector<std::string> args;
+        std::string text;           // Conversational response text from LLM
+        std::string transcription;  // Original user speech transcription
         VoiceCommand() = default;
-        VoiceCommand(std::string cmd, std::vector<std::string> a) : command(std::move(cmd)), args(std::move(a)) {}
+        VoiceCommand(std::string cmd, std::vector<std::string> a, std::string txt = "", std::string speech = "")
+            : command(std::move(cmd)),
+              args(std::move(a)),
+              text(std::move(txt)),
+              transcription(std::move(speech)) {}
     };
 
     /** Audio buffer structure */
@@ -67,6 +73,12 @@ public:
 
     /** Stop recording and process the captured audio (called when button is released) */
     void stopRecordingAndProcess();
+
+    /** Send text message directly to LLM (for chat interface, bypasses STT) */
+    bool sendTextMessage(const std::string& text);
+
+    /** Get the last LLM response (blocking call with timeout) */
+    bool getLastResponse(VoiceCommand& response, uint32_t timeout_ms = 5000);
 
     QueueHandle_t getCommandQueue() const { return voiceCommandQueue_; }
 

@@ -27,6 +27,9 @@ private:
     void handleRoot();
     void handleApiCommands();
     void handleApiExecute();
+    void handleAssistantChat();
+    void handleAssistantAudioStart();
+    void handleAssistantAudioStop();
     void handleApiHealth();
     void handleNotFound();
 

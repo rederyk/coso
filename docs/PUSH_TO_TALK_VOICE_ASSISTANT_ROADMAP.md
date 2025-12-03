@@ -392,13 +392,20 @@ I metodi stub dovranno essere implementati per chiamare gli endpoint locali:
 - [x] Input field per LLM model name
 - [x] Salvare configurazione in NVS/LittleFS
 - [x] Auto-switch endpoint basato su localApiMode toggle
+- [x] **NUOVO (2025-01-03):** Dropdown dinamico per selezione modelli Ollama
+- [x] **NUOVO (2025-01-03):** Funzione fetchOllamaModels() per recupero modelli disponibili
+- [x] **NUOVO (2025-01-03):** Pulsante refresh per aggiornare lista modelli
+- [x] **NUOVO (2025-01-03):** Auto-refresh modelli quando cambia endpoint o modalità
 
 **Modifiche Implementate:**
 - `SettingsSnapshot` - Aggiunti campi: `whisperCloudEndpoint`, `whisperLocalEndpoint`, `llmCloudEndpoint`, `llmLocalEndpoint`, `llmModel`
 - `SettingsManager` - Aggiunti getter/setter per nuovi endpoint
 - `StorageManager` - Serializzazione/deserializzazione sezione `voiceAssistant` in JSON
-- `VoiceAssistantSettingsScreen` - UI con 5 nuovi campi configurabili
+- `VoiceAssistantSettingsScreen` - UI con 5 nuovi campi configurabili + **dropdown modelli dinamico**
 - `voice_assistant.cpp` - Uso dinamico endpoint basato su `localApiMode`
+- **`VoiceAssistant::fetchOllamaModels()`** - Nuovo metodo per interrogare API `/api/tags` di Ollama
+- **Dropdown UI** - Sostituisce text input per LLM model, popola automaticamente da API Ollama
+- **Auto-refresh** - Lista modelli si aggiorna quando cambia endpoint LLM o si attiva local mode
 
 **UI Layout:**
 1. Toggle "Voice Assistant Enabled"
@@ -407,7 +414,9 @@ I metodi stub dovranno essere implementati per chiamare gli endpoint locali:
 4. Input "API Endpoint" (legacy, deprecabile)
 5. Input "Whisper STT Endpoint" (mostra endpoint attivo basato su toggle)
 6. Input "LLM Endpoint" (mostra endpoint attivo basato su toggle)
-7. Input "LLM Model" (nome modello, es: `llama3.2:3b`)
+7. **Dropdown "LLM Model"** con pulsante refresh (sostituisce text input)
+   - In local mode: popola da Ollama API `/api/tags`
+   - In cloud mode: lista predefinita (gpt-4, gpt-3.5-turbo, gpt-4-turbo)
 
 **Default Values:**
 - Whisper Cloud: `https://api.openai.com/v1/audio/transcriptions`
@@ -415,6 +424,19 @@ I metodi stub dovranno essere implementati per chiamare gli endpoint locali:
 - LLM Cloud: `https://api.openai.com/v1/chat/completions`
 - LLM Local: `http://192.168.1.51:11434/v1/chat/completions`
 - LLM Model: `llama3.2:3b`
+
+### 📺 Voice Assistant Settings (come nello screen)
+- La card principale include il bottone verde `Hold to Talk` che diventa rosso quando tieni premuto il microfono; le callback `handleTriggerPressed/Released` invocano `VoiceAssistant::startRecording()` e `stopRecordingAndProcess()`.
+- Sotto ci sono due interruttori in stile LVGL: `Voice Assistant Enabled` attiva/disattiva il servizio e `Use Local APIs (Docker)` seleziona fra modalità cloud e locale.
+- Gli input sono impilati uno per card con placeholder espliciti (`API Key`, `Endpoint`, `Whisper STT` ecc.) e suggerimenti per ricordare quale endpoint è attivo.
+- La card `LLM Model` mostra ora una dropdown + bottone refresh che replica il look nella schermata: scelta dinamica dai tag di Ollama, aggiornamento automatico quando cambi endpoint.
+- Il log della screen (es. `[VoiceAssistant] VoiceAssistant not initialized`) appare quando non hai ancora aperto questa schermata perché è in `onShow()` che chiami `VoiceAssistant::begin()`; aprila per inizializzare l’assistente e accedere ai tasti.
+
+### ⚠️ Risoluzione: modello LLM locale mancante
+- Se il log riporta `[VoiceAssistant] LLM API returned error status: 404` con `model 'llama3.2:3b' not found`, significa che il container Ollama non ha quel modello.
+- Apri il terminale del container (es. `docker exec -it esp32-llm bash`) e `ollama pull llama3.2:3b` oppure scegli un modello già presente (mistral:7b, gemma2:2b) dal dropdown della Voce.
+- Dopo il pull aggiorna la dropdown (`refresh models`) e salva: la card del dropdown mostra i modelli rilevati da `/api/tags`, replicando la lista che vedi nello screen.
+- Se preferisci usare un altro modello per test immediato, modifica `SettingsSnapshot::llmModel` direttamente dalla schermata o dall’API; la dropdown mantiene la selezione funzionante.
 
 ### **Fase 2: HTTP Client Implementation** (3-4 giorni)
 - [ ] Implementare `makeWhisperRequest()` con multipart upload
@@ -616,3 +638,328 @@ bool result = parseGPTCommand(json, cmd);
 - ✅ Error handling per tutti i failure case
 - ✅ Memory leak-free (verificato con heap monitoring)
 - ✅ Test manuali end-to-end superati
+
+---
+
+## 🎯 **PROSSIMI PASSI CONSIGLIATI** (Aggiornato 2025-01-03)
+
+### **Stato Corrente Sistema**
+✅ **Funzionalità Core Completate:**
+- Voice recording con push-to-talk
+- Whisper STT integration (locale e cloud)
+- Ollama LLM integration con selezione modelli dinamica
+- Command parsing e execution
+- Settings UI completa con configurazione endpoint flessibile
+
+⚠️ **Limitazioni Identificate:**
+1. Comando "status" non esiste in CommandCenter → Error "Command not found"
+2. Nessun server MCP integrato per comandi avanzati
+3. Nessun feedback TTS (Text-to-Speech) dopo esecuzione comando
+4. Lista comandi disponibili hardcoded nel system prompt LLM
+
+---
+
+### **Priorità 1: Migliorare Command System** 🔥
+
+#### **1.1 Aggiungere Comando "status"**
+Il log mostra che l'LLM riconosce correttamente il comando ma non esiste in CommandCenter.
+
+**Implementazione:**
+```cpp
+// In CommandCenter::registerBuiltInCommands()
+registerCommand("status", [](const std::vector<std::string>& args) -> CommandResult {
+    std::string status_msg = "System OK\n";
+    status_msg += "WiFi: " + String(WiFi.isConnected() ? "Connected" : "Disconnected") + "\n";
+    status_msg += "Free Heap: " + String(ESP.getFreeHeap() / 1024) + "KB\n";
+    status_msg += "Uptime: " + String(millis() / 1000 / 60) + " min\n";
+    return CommandResult{true, status_msg};
+});
+```
+
+#### **1.2 Generare Prompt System Dinamico**
+Invece di hardcodare i comandi disponibili, interroga CommandCenter:
+
+**Modifica in `makeGPTRequest()`:**
+```cpp
+// Costruire lista comandi da CommandCenter
+std::string available_commands;
+auto cmd_list = CommandCenter::getInstance().listCommands();
+for (const auto& cmd : cmd_list) {
+    available_commands += cmd + ", ";
+}
+
+// System prompt dinamico
+std::string system_prompt =
+    "You are a voice assistant. Convert commands to JSON.\n"
+    "Available commands: " + available_commands + "\n"
+    "Format: {\"command\": \"<cmd>\", \"args\": []}";
+```
+
+**Benefici:**
+- LLM sempre aggiornato con comandi reali
+- Nessun comando "phantom" suggerito
+- Facilita estensibilità futura
+
+---
+
+### **Priorità 2: Integrare MCP Server** 🚀
+
+#### **2.1 Cos'è MCP (Model Context Protocol)?**
+MCP è un protocollo standard per permettere agli LLM di interagire con tool/servizi esterni.
+
+**Casi d'uso per ESP32:**
+- **Home automation**: Controllare dispositivi smart (Hue, Shelly, etc.)
+- **Sensor reading**: Leggere dati da sensori locali
+- **Calendar/reminder**: Integrare Google Calendar
+- **Web search**: Ricerche web per domande knowledge-based
+- **File management**: Gestire file su SD card
+
+#### **2.2 MCP Server Consigliati per ESP32**
+
+**Opzione A: MCP Server Docker Locale** ⭐ CONSIGLIATO
+```yaml
+# docker-compose.yml - aggiungere servizio
+mcp-server:
+  image: your-org/esp32-mcp-server:latest
+  ports:
+    - "8100:8100"
+  environment:
+    - ESP32_DEVICE_IP=192.168.1.10
+  volumes:
+    - ./mcp_tools:/app/tools
+```
+
+**Tool examples:**
+- `get_temperature()` - Legge sensore temperatura ESP32
+- `control_relay(pin, state)` - Controlla relay GPIO
+- `read_sd_file(path)` - Legge file da SD
+- `search_web(query)` - Ricerca web (via Brave/DuckDuckGo)
+
+**Integrazione ESP32:**
+```cpp
+// In makeGPTRequest(), aggiungere campo "tools"
+cJSON_AddItemToObject(root, "tools", buildMCPTools());
+
+// Parser response con tool_calls
+if (response contiene "tool_calls") {
+    executeMCPTool(tool_name, tool_args);
+    // Re-call LLM con result
+}
+```
+
+**Opzione B: MCP Server Integrato su ESP32** (Avanzato)
+Implementare un micro MCP server direttamente su ESP32:
+- Webserver HTTP su porta 8080
+- Endpoint `/tools` - lista tool disponibili
+- Endpoint `/execute` - esegue tool con args
+
+**Pro:**
+- Nessuna dipendenza Docker
+- Ultra-bassa latenza
+- Controllo totale
+
+**Contro:**
+- Più memoria utilizzata
+- Limitazione a tool semplici (no web search, etc.)
+
+---
+
+### **Priorità 3: Aggiungere TTS Feedback** 🔊
+
+Attualmente il sistema esegue comandi ma non dà feedback vocale.
+
+#### **3.1 Implementazione TTS Pipeline**
+
+**Container Docker (già nella roadmap):**
+```yaml
+tts:
+  image: ghcr.io/matatonic/openedai-speech:latest
+  ports:
+    - "8001:8000"
+  environment:
+    - TTS_BACKEND=piper  # veloce
+```
+
+**Modifica `aiProcessingTask()`:**
+```cpp
+// Dopo comando eseguito con successo
+if (result.success) {
+    std::string tts_text = "Command executed: " + cmd.command;
+    playTTSResponse(tts_text);  // Nuovo metodo
+}
+```
+
+**Implementazione `playTTSResponse()`:**
+```cpp
+bool VoiceAssistant::playTTSResponse(const std::string& text) {
+    // 1. POST http://192.168.1.51:8001/v1/audio/speech
+    //    Body: {"input": text, "voice": "alloy", "model": "tts-1"}
+    // 2. Ricevi MP3/WAV stream
+    // 3. Play via AudioManager/ES8311 output
+    // 4. Return success
+}
+```
+
+**Benefici:**
+- Conferma vocale comandi eseguiti
+- UX migliore per utente (feedback chiaro)
+- Debugging facilitato (sentire cosa riconosce)
+
+---
+
+### **Priorità 4: Ottimizzazioni Performance** ⚡
+
+#### **4.1 Reduce Latency End-to-End**
+
+**Target attuale:** ~5-6 secondi (recording → execution)
+**Target obiettivo:** <3 secondi
+
+**Bottleneck identificati:**
+1. **Whisper STT:** ~2.5s (base model)
+   - **Fix:** Switch a `tiny` model (500ms, -20% accuracy)
+   - **Fix:** Streaming STT (WhisperLiveKit) - latenza <200ms
+
+2. **Ollama LLM:** ~2.5s (llama3.2:3b)
+   - **Fix:** Switch a modello più piccolo (phi3:mini, 1.3B params)
+   - **Fix:** Warm-up prompt all'avvio (prima inferenza lenta)
+   - **Fix:** GPU inference (se disponibile)
+
+3. **Network overhead:** ~0.5s
+   - **Fix:** Connessione WiFi stabile (verificare RSSI)
+   - **Fix:** HTTP keep-alive per riuso connessioni
+
+#### **4.2 Memory Optimization**
+
+**Heap monitoring:**
+```cpp
+// In voice_assistant.cpp - dopo ogni fase
+LOG_I("Free heap: %u bytes", ESP.getFreeHeap());
+LOG_I("PSRAM free: %u bytes", ESP.getFreePsram());
+```
+
+**Leak prevention:**
+- Verificare delete di tutti i buffer audio
+- cJSON_Delete() dopo ogni parsing
+- esp_http_client_cleanup() dopo ogni request
+
+---
+
+### **Priorità 5: Error Handling & Resilienza** 🛡️
+
+#### **5.1 Gestione Offline/Fallback**
+
+**Scenario:** Docker host offline o LLM crash
+
+**Implementazione:**
+```cpp
+// In makeGPTRequest() - aggiungere fallback
+if (http_status != 200 && settings.localApiMode) {
+    LOG_W("Local LLM failed, trying cloud fallback...");
+    // Retry con endpoint cloud se API key presente
+}
+```
+
+**Alternative:**
+- Comandi hardcoded per fallback (es: "increase volume" → regex matching)
+- Cache ultimo modello inferenza per offline basic commands
+
+#### **5.2 Retry Logic Intelligente**
+
+```cpp
+int retry_count = 0;
+const int MAX_RETRIES = 3;
+int backoff_ms = 1000; // exponential backoff
+
+while (retry_count < MAX_RETRIES) {
+    if (makeWhisperRequest(...)) break;
+
+    LOG_W("Retry %d/%d after %dms", retry_count, MAX_RETRIES, backoff_ms);
+    vTaskDelay(pdMS_TO_TICKS(backoff_ms));
+    backoff_ms *= 2; // 1s, 2s, 4s
+    retry_count++;
+}
+```
+
+---
+
+### **Priorità 6: Testing & Validation** ✅
+
+#### **6.1 Unit Tests (se PlatformIO supports)**
+```cpp
+// test_voice_assistant.cpp
+TEST_CASE("fetchOllamaModels returns valid list", "[voice]") {
+    std::vector<std::string> models;
+    bool result = VoiceAssistant::getInstance().fetchOllamaModels(
+        "http://192.168.1.51:11434", models
+    );
+    REQUIRE(result == true);
+    REQUIRE(models.size() > 0);
+}
+```
+
+#### **6.2 Integration Tests**
+**Test scenarios:**
+1. ✅ Recording → STT → Text transcription
+2. ✅ Text → LLM → JSON command
+3. ✅ JSON → CommandCenter → Execution
+4. ⏳ Fallback when Docker offline
+5. ⏳ API key validation for cloud mode
+6. ⏳ Memory leak after 100 commands
+
+---
+
+## 📊 **ROADMAP AGGIORNATA - Timeline Consigliata**
+
+### **Sprint 1: Command System (1-2 giorni)** 🔥 ALTA PRIORITÀ
+- [ ] Aggiungere comando `status` in CommandCenter
+- [ ] Generare prompt system dinamico da `listCommands()`
+- [ ] Test end-to-end con nuovi comandi
+
+### **Sprint 2: TTS Feedback (2-3 giorni)** 🔊 ALTA PRIORITÀ
+- [ ] Setup container openedai-speech (già in docker-compose)
+- [ ] Implementare `playTTSResponse()` per audio output
+- [ ] Integrare in `aiProcessingTask()` dopo comando eseguito
+- [ ] Test con vari messaggi (success, error, unknown)
+
+### **Sprint 3: MCP Integration (3-5 giorni)** 🚀 MEDIA PRIORITÀ
+- [ ] Scegliere MCP server (Docker locale o ESP32 integrato)
+- [ ] Implementare tool execution pipeline
+- [ ] Aggiungere tool di esempio (temperature sensor, GPIO control)
+- [ ] Modificare LLM request per supportare tool_calls
+
+### **Sprint 4: Performance Optimization (2-3 giorni)** ⚡ MEDIA PRIORITÀ
+- [ ] Benchmark latency end-to-end
+- [ ] Switch a Whisper tiny model per STT
+- [ ] Warm-up LLM all'avvio
+- [ ] HTTP keep-alive e connection pooling
+
+### **Sprint 5: Error Handling (1-2 giorni)** 🛡️ BASSA PRIORITÀ
+- [ ] Retry logic con exponential backoff
+- [ ] Fallback cloud quando local API offline
+- [ ] Heap monitoring e leak detection
+
+### **Sprint 6: Testing & Polish (2 giorni)** ✅ CONTINUO
+- [ ] Unit tests per core functions
+- [ ] Integration tests end-to-end
+- [ ] Documentazione utente finale
+- [ ] Video demo completo
+
+---
+
+## 🎯 **RACCOMANDAZIONE FINALE**
+
+**Prossimo task consigliato: Sprint 1 (Command System)**
+
+**Motivazione:**
+1. Quick win (1-2 giorni implementazione)
+2. Risolve bug corrente ("status" command not found)
+3. Foundation per MCP integration futura
+4. Migliora UX immediately (comandi sempre aggiornati)
+
+**Implementazione suggerita:**
+1. Aggiungi comando `status` in CommandCenter (15 min)
+2. Modifica `makeGPTRequest()` per prompt dinamico (30 min)
+3. Test con comandi esistenti + status (15 min)
+4. Commit e deploy su device (15 min)
+
+**Dopo Sprint 1, procedere con Sprint 2 (TTS) per massimo impatto UX.**

@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ESP32 Voice Assistant</title>
+  <style>
+    :root {
+      --bg: #05060d;
+      --panel: rgba(15, 21, 40, 0.92);
+      --panel-glow: rgba(120, 198, 255, 0.18);
+      --primary: #7ee7c0;
+      --primary-deep: #53d9ab;
+      --text: #f7fbff;
+      --muted: #9fb0c6;
+      --danger: #ff7b7b;
+      font-family: "Inter", "Space Grotesk", system-ui, -apple-system, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: radial-gradient(circle at 20% -10%, rgba(126, 231, 192, 0.3), transparent 45%),
+                  radial-gradient(circle at 80% 0%, rgba(83, 217, 171, 0.25), transparent 40%),
+                  linear-gradient(180deg, #05060d, #0a0c17 60%, #05060d);
+      color: var(--text);
+      padding: 24px;
+      display: flex;
+      justify-content: center;
+    }
+    main {
+      max-width: 960px;
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    h1 {
+      margin: 0;
+      font-size: 2rem;
+      letter-spacing: 0.5px;
+    }
+    .eyebrow {
+      margin: 0;
+      text-transform: uppercase;
+      font-size: 12px;
+      letter-spacing: 1.2px;
+      color: var(--muted);
+    }
+    #status {
+      font-size: 14px;
+      color: var(--muted);
+      min-width: 180px;
+      text-align: right;
+    }
+    .panel {
+      background: var(--panel);
+      border-radius: 18px;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      padding: 20px;
+      box-shadow: 0 20px 45px rgba(0, 0, 0, 0.35);
+      backdrop-filter: blur(20px);
+    }
+    .chat {
+      min-height: 360px;
+      max-height: 60vh;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      padding-right: 4px;
+    }
+    .message {
+      max-width: 85%;
+      padding: 14px 16px;
+      border-radius: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      font-size: 15px;
+    }
+    .message.user {
+      align-self: flex-end;
+      background: linear-gradient(135deg, rgba(126, 231, 192, 0.18), rgba(83, 217, 171, 0.18));
+      border: 1px solid rgba(126, 231, 192, 0.3);
+    }
+    .message.assistant {
+      align-self: flex-start;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+    }
+    .message.error {
+      border-color: var(--danger);
+      color: var(--danger);
+    }
+    .meta {
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .controls {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .input-group {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .input-group span {
+      font-size: 12px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+    }
+    input[type="text"] {
+      width: 100%;
+      border-radius: 10px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      padding: 12px 14px;
+      background: rgba(255, 255, 255, 0.03);
+      color: var(--text);
+      font-size: 16px;
+      outline: none;
+      transition: border-color 0.2s ease;
+    }
+    input[type="text"]:focus {
+      border-color: rgba(126, 231, 192, 0.7);
+    }
+    .actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      color: var(--muted);
+      margin-top: 6px;
+    }
+    .toggle-row input {
+      accent-color: var(--primary-deep);
+    }
+    button {
+      border: none;
+      border-radius: 12px;
+      padding: 10px 18px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 0.15s ease, box-shadow 0.2s ease;
+      background: linear-gradient(135deg, #62b4ff, #53f3c3);
+      color: #05060d;
+      box-shadow: 0 10px 30px rgba(83, 217, 171, 0.2);
+    }
+    button:hover { transform: translateY(-1px); }
+    button:active { transform: translateY(0); box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2); }
+    button.primary:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+    .microphone {
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--text);
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+    }
+    .microphone.recording {
+      background: #ff6b6b;
+      color: #fff;
+      box-shadow: 0 8px 30px rgba(255, 107, 107, 0.35);
+    }
+    @media (max-width: 640px) {
+      body {
+        padding: 12px;
+      }
+      .actions {
+        flex-direction: column;
+        align-items: stretch;
+      }
+      button {
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <p class="eyebrow">ESP32 Voice Assistant</p>
+        <h1>Chat & Microphone</h1>
+      </div>
+      <div id="status" aria-live="polite">Loading...</div>
+    </header>
+    <section class="panel">
+      <div id="chat" class="chat" role="log" aria-live="polite"></div>
+    </section>
+    <section class="panel controls">
+      <div class="input-group">
+        <span>Conversa con l'assistente</span>
+        <input id="chat-input" type="text" placeholder="Scrivi un comando o una domanda" autocomplete="off">
+      </div>
+      <div class="actions">
+        <button id="send-btn" class="primary">Invia</button>
+        <button id="mic-btn" class="microphone" aria-pressed="false">🎙️ Usa il microfono</button>
+      </div>
+      <div class="toggle-row">
+        <label>
+          <input type="checkbox" id="auto-send" checked>
+          Auto-invia trascrizione
+        </label>
+      </div>
+    </section>
+  </main>
+  <script>
+    const statusEl = document.getElementById('status');
+    const chatEl = document.getElementById('chat');
+    const chatInput = document.getElementById('chat-input');
+    const sendBtn = document.getElementById('send-btn');
+    const micBtn = document.getElementById('mic-btn');
+    const autoSendCheckbox = document.getElementById('auto-send');
+    let recording = false;
+
+    function setStatus(text, state = 'idle') {
+      statusEl.textContent = text;
+      statusEl.style.color = state === 'error' ? 'var(--danger)' : state === 'busy' ? 'var(--primary)' : 'var(--muted)';
+    }
+
+    function appendMessage(role, text, meta = '') {
+      const bubble = document.createElement('div');
+      bubble.classList.add('message', role);
+      const content = document.createElement('span');
+      content.textContent = text;
+      bubble.appendChild(content);
+      if (meta) {
+        const metaEl = document.createElement('span');
+        metaEl.classList.add('meta');
+        metaEl.textContent = meta;
+        bubble.appendChild(metaEl);
+      }
+      chatEl.appendChild(bubble);
+      chatEl.scrollTop = chatEl.scrollHeight;
+    }
+
+    function buildMeta(response) {
+      const parts = [];
+      if (response.command) {
+        parts.push(`Comando: ${response.command}`);
+      }
+      if (Array.isArray(response.args) && response.args.length) {
+        parts.push(`Argomenti: ${response.args.join(', ')}`);
+      }
+      return parts.join(' · ');
+    }
+
+    async function postJson(url, payload) {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.message || 'Errore del server');
+      }
+      return data;
+    }
+
+    async function sendChatMessage() {
+      const text = chatInput.value.trim();
+      if (!text || recording) {
+        return;
+      }
+      chatInput.value = '';
+      appendMessage('user', text);
+      setStatus('Invio in corso…', 'busy');
+      sendBtn.disabled = true;
+      try {
+        const response = await postJson('/api/assistant/chat', { message: text });
+        const answer = response.text || response.message || 'Nessuna risposta';
+        appendMessage('assistant', answer, buildMeta(response));
+        setStatus('Risposta ricevuta');
+      } catch (err) {
+        appendMessage('assistant', err.message, 'error');
+        setStatus(err.message, 'error');
+      } finally {
+        sendBtn.disabled = false;
+      }
+    }
+
+    function handleTranscription(transcription) {
+      if (!transcription) {
+        return false;
+      }
+      if (autoSendCheckbox.checked) {
+        appendMessage('user', transcription);
+      } else {
+        chatInput.value = transcription;
+        setStatus('Trascrizione pronta', 'idle');
+      }
+      return true;
+    }
+
+    async function toggleRecording() {
+      if (!recording) {
+        try {
+          setStatus('In ascolto… premi di nuovo per interrompere', 'busy');
+          micBtn.classList.add('recording');
+          micBtn.textContent = '❚❚ Ferma registrazione';
+          micBtn.setAttribute('aria-pressed', 'true');
+          recording = true;
+          sendBtn.disabled = true;
+          const startRes = await fetch('/api/assistant/audio/start', { method: 'POST' });
+          const startPayload = await startRes.json();
+          if (!startRes.ok) {
+            throw new Error(startPayload.message || 'Impossibile avviare la registrazione');
+          }
+        } catch (err) {
+          setStatus('Impossibile avviare il microfono', 'error');
+          micBtn.classList.remove('recording');
+          micBtn.textContent = '🎙️ Usa il microfono';
+          micBtn.setAttribute('aria-pressed', 'false');
+          recording = false;
+          sendBtn.disabled = false;
+        }
+        return;
+      }
+
+      // stop recording and await response
+      setStatus('Elaborazione audio…', 'busy');
+      micBtn.classList.remove('recording');
+      micBtn.textContent = '🎙️ Usa il microfono';
+      micBtn.setAttribute('aria-pressed', 'false');
+      recording = false;
+      try {
+        const res = await fetch('/api/assistant/audio/stop', { method: 'POST' });
+        const payload = await res.json();
+        if (!res.ok) {
+          throw new Error(payload.message || 'Errore durante la trascrizione');
+        }
+        const transcription = payload.transcription || '';
+        const hasTranscription = handleTranscription(transcription);
+        const answer = payload.text || payload.message || 'Nessuna risposta ricevuta';
+        appendMessage('assistant', answer, buildMeta(payload));
+        if (!hasTranscription) {
+          setStatus('Trascrizione non disponibile', 'error');
+        } else {
+          setStatus(autoSendCheckbox.checked ? 'Comando vocalizzato inviato' : 'Trascrizione pronta');
+        }
+      } catch (err) {
+        appendMessage('assistant', err.message, 'error');
+        setStatus(err.message, 'error');
+      } finally {
+        sendBtn.disabled = false;
+      }
+    }
+
+    sendBtn.addEventListener('click', sendChatMessage);
+    chatInput.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' && !event.shiftKey) {
+        event.preventDefault();
+        sendChatMessage();
+      }
+    });
+    micBtn.addEventListener('click', toggleRecording);
+
+    setStatus('Pronto');
+    appendMessage('assistant', 'Ciao! Scrivimi o usa il microfono per dirmi cosa fare.', 'Comando: nessuno');
+  </script>
+</body>
+</html>
