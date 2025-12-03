@@ -39,6 +39,8 @@ struct SettingsSnapshot {
     std::string openAiApiKey;
     std::string openAiEndpoint = "https://api.openai.com/v1";
     bool voiceAssistantEnabled = false;
+    bool localApiMode = false;  // Toggle between cloud and local Docker APIs
+    std::string dockerHostIp = "192.168.1.51";  // IP of Docker host for local APIs
 
     // Theme
     std::string theme;
@@ -92,6 +94,8 @@ public:
         VoiceAssistantEnabled,
         OpenAIApiKey,
         OpenAIEndpoint,
+        LocalApiMode,
+        DockerHostIp,
 
         // Theme
         Theme,
@@ -210,6 +214,12 @@ public:
 
     bool getVoiceAssistantEnabled() const { return current_.voiceAssistantEnabled; }
     void setVoiceAssistantEnabled(bool enabled);
+
+    bool getLocalApiMode() const { return current_.localApiMode; }
+    void setLocalApiMode(bool enabled);
+
+    const std::string& getDockerHostIp() const { return current_.dockerHostIp; }
+    void setDockerHostIp(const std::string& ip);
 
     // System
     uint32_t getBootCount() const { return current_.bootCount; }

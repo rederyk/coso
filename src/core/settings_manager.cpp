@@ -737,6 +737,24 @@ void SettingsManager::setVoiceAssistantEnabled(bool enabled) {
     notify(SettingKey::VoiceAssistantEnabled);
 }
 
+void SettingsManager::setLocalApiMode(bool enabled) {
+    if (!initialized_ || enabled == current_.localApiMode) {
+        return;
+    }
+    current_.localApiMode = enabled;
+    persistSnapshot();
+    notify(SettingKey::LocalApiMode);
+}
+
+void SettingsManager::setDockerHostIp(const std::string& ip) {
+    if (!initialized_ || ip == current_.dockerHostIp) {
+        return;
+    }
+    current_.dockerHostIp = ip;
+    persistSnapshot();
+    notify(SettingKey::DockerHostIp);
+}
+
 void SettingsManager::notify(SettingKey key) {
     for (const auto& entry : callbacks_) {
         if (entry.fn) {
