@@ -5,6 +5,7 @@
 #include "core/command_center.h"
 #include "core/conversation_buffer.h"
 #include "core/ble_hid_manager.h"
+#include "core/web_data_manager.h"
 #include "peripheral/gpio_manager.h"
 #include "utils/logger.h"
 #include <esp_http_client.h>
@@ -1325,7 +1326,7 @@ std::string VoiceAssistant::getSystemPrompt() const {
     }
 
     // Add Lua scripting capabilities
-    prompt += "\n\nInoltre puoi utilizzare script Lua per operazioni complesse combinando GPIO, BLE, audio e altre funzioni. ";
+    prompt += "\n\nInoltre puoi utilizzare script Lua per operazioni complesse combinando GPIO, BLE, audio, web data e altre funzioni. ";
     prompt += "Per eseguire uno script Lua, usa il comando 'lua_script' con lo script come argomento. ";
     prompt += "API Lua disponibili:\n";
     prompt += "- GPIO: gpio.write(pin, value), gpio.read(pin), gpio.toggle(pin)\n";
@@ -1333,9 +1334,12 @@ std::string VoiceAssistant::getSystemPrompt() const {
     prompt += "- Audio: audio.volume_up(), audio.volume_down()\n";
     prompt += "- Display: display.brightness_up(), display.brightness_down()\n";
     prompt += "- LED: led.set_brightness(percentage)\n";
+    prompt += "- WebData: webData.fetch_once(url, filename), webData.fetch_scheduled(url, filename, minutes), webData.read_data(filename), webData.list_files()\n";
     prompt += "- Sistema: system.ping(), system.uptime(), system.heap(), system.sd_status(), system.status()\n";
     prompt += "- Timing: delay(ms)\n";
     prompt += "Esempi:\n";
+    prompt += "- Scarica dati meteo: {\"command\": \"lua_script\", \"args\": [\"webData.fetch_once('https://api.open-meteo.com/v1/forecast?latitude=45.4642&longitude=9.1900&current_weather=true', 'weather.json')\"], \"text\": \"Dati meteo scaricati\"}\n";
+    prompt += "- Leggi dati salvati: {\"command\": \"lua_script\", \"args\": [\"local data = webData.read_data('weather.json'); println('Dati:', data)\"], \"text\": \"Dati letti\"}\n";
     prompt += "- LED lampeggiante: {\"command\": \"lua_script\", \"args\": [\"gpio.write(23, true); delay(1000); gpio.write(23, false)\"], \"text\": \"LED lampeggiato\"}\n";
     prompt += "- Scrivi testo BLE: {\"command\": \"lua_script\", \"args\": [\"ble.type('AA:BB:CC:DD:EE:FF', 'Ciao mondo!')\"], \"text\": \"Testo inviato via BLE\"}\n";
     prompt += "- Sequenza complessa: {\"command\": \"lua_script\", \"args\": [\"gpio.write(23, true); ble.type('AA:BB:CC:DD:EE:FF', 'LED acceso'); delay(2000); gpio.write(23, false); audio.volume_up()\"], \"text\": \"Sequenza completata\"}";
@@ -1453,6 +1457,22 @@ void VoiceAssistant::LuaSandbox::setupSandbox() {
                 return esp32_system_status()
             end
         }
+
+        -- WebData API
+        webData = {
+            fetch_once = function(url, filename)
+                return esp32_webdata_fetch_once(url, filename)
+            end,
+            fetch_scheduled = function(url, filename, minutes)
+                return esp32_webdata_fetch_scheduled(url, filename, minutes)
+            end,
+            read_data = function(filename)
+                return esp32_webdata_read_data(filename)
+            end,
+            list_files = function()
+                return esp32_webdata_list_files()
+            end
+        }
     )");
 
     // Register C functions
@@ -1484,6 +1504,12 @@ void VoiceAssistant::LuaSandbox::setupSandbox() {
     lua_register(L, "esp32_heap", lua_heap);
     lua_register(L, "esp32_sd_status", lua_sd_status);
     lua_register(L, "esp32_system_status", lua_system_status);
+
+    // WebData functions
+    lua_register(L, "esp32_webdata_fetch_once", lua_webdata_fetch_once);
+    lua_register(L, "esp32_webdata_fetch_scheduled", lua_webdata_fetch_scheduled);
+    lua_register(L, "esp32_webdata_read_data", lua_webdata_read_data);
+    lua_register(L, "esp32_webdata_list_files", lua_webdata_list_files);
 
     // Utility functions
     lua_register(L, "println", lua_println);
@@ -1857,4 +1883,66 @@ int VoiceAssistant::LuaSandbox::lua_println(lua_State* L) {
     Serial.println(message.c_str());
 
     return 0;  // No return values
+}
+
+// WebData functions
+int VoiceAssistant::LuaSandbox::lua_webdata_fetch_once(lua_State* L) {
+    const char* url = luaL_checkstring(L, 1);
+    const char* filename = luaL_checkstring(L, 2);
+
+    auto& webData = WebDataManager::getInstance();
+    WebDataManager::RequestResult result = webData.fetchOnce(url, filename);
+
+    lua_pushboolean(L, result.success);
+    if (!result.success) {
+        lua_pushstring(L, result.error_message.c_str());
+        return 2;
+    }
+    return 1;
+}
+
+int VoiceAssistant::LuaSandbox::lua_webdata_fetch_scheduled(lua_State* L) {
+    const char* url = luaL_checkstring(L, 1);
+    const char* filename = luaL_checkstring(L, 2);
+    int minutes = luaL_checkinteger(L, 3);
+
+    auto& webData = WebDataManager::getInstance();
+    bool success = webData.fetchScheduled(url, filename, static_cast<uint32_t>(minutes));
+
+    lua_pushboolean(L, success);
+    if (!success) {
+        lua_pushstring(L, "Failed to schedule download");
+        return 2;
+    }
+    return 1;
+}
+
+int VoiceAssistant::LuaSandbox::lua_webdata_read_data(lua_State* L) {
+    const char* filename = luaL_checkstring(L, 1);
+
+    auto& webData = WebDataManager::getInstance();
+    std::string data = webData.readData(filename);
+
+    if (data.empty()) {
+        lua_pushnil(L);
+        lua_pushstring(L, "File not found or empty");
+        return 2;
+    }
+
+    lua_pushstring(L, data.c_str());
+    return 1;
+}
+
+int VoiceAssistant::LuaSandbox::lua_webdata_list_files(lua_State* L) {
+    auto& webData = WebDataManager::getInstance();
+    std::vector<std::string> files = webData.listFiles();
+
+    lua_newtable(L);
+    for (size_t i = 0; i < files.size(); ++i) {
+        lua_pushinteger(L, i + 1);  // Lua arrays are 1-indexed
+        lua_pushstring(L, files[i].c_str());
+        lua_settable(L, -3);
+    }
+
+    return 1;
 }

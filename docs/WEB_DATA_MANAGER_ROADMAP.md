@@ -15,70 +15,80 @@ Implementare un WebDataManager programmabile per ESP32-S3 che permetta di scaric
 ### Fase 1: Core Infrastructure (1-2 sessioni)
 **Obiettivo**: Creare l'infrastruttura base del WebDataManager
 
-#### Task 1.1: Creare WebDataManager Class
-- [ ] Creare `include/core/web_data_manager.h`
-- [ ] Implementare `src/core/web_data_manager.cpp`
-- [ ] Aggiungere metodi base: `fetchOnce()`, `readData()`, `listFiles()`
-- [ ] Integrare con StorageManager per caching su LittleFS
+#### Task 1.1: Creare WebDataManager Class ✅ COMPLETATO
+- [x] Creare `include/core/web_data_manager.h`
+- [x] Implementare `src/core/web_data_manager.cpp`
+- [x] Aggiungere metodi base: `fetchOnce()`, `readData()`, `listFiles()`
+- [x] Integrare con StorageManager per caching su LittleFS
 
-#### Task 1.2: HTTP Client Implementation
-- [ ] Implementare HTTP GET requests con WiFiClientSecure
-- [ ] Gestire HTTPS con certificati
-- [ ] Timeout e retry logic
-- [ ] Error handling e logging
+#### Task 1.2: HTTP Client Implementation ✅ COMPLETATO
+- [x] Implementare HTTP GET requests con WiFiClientSecure
+- [x] Gestire HTTPS con certificati (setInsecure per development)
+- [x] Timeout e retry logic
+- [x] Error handling e logging
 
-#### Task 1.3: Integrazione Sistema
-- [ ] Registrare WebDataManager nel main.cpp
-- [ ] Aggiungere dipendenze in platformio.ini
-- [ ] Test build senza errori
+#### Task 1.3: Integrazione Sistema ✅ COMPLETATO
+- [x] Registrare WebDataManager nel main.cpp
+- [x] Aggiungere dipendenze in platformio.ini (HTTPClient, WiFiClientSecure)
+- [x] Test build senza errori ✅
 
 ### Fase 2: Security & Scheduling (1-2 sessioni)
 **Obiettivo**: Aggiungere controlli sicurezza e schedulazione
 
-#### Task 2.1: Domain Whitelist System
-- [ ] Implementare whitelist domini configurabili
-- [ ] Validazione URL prima delle richieste
-- [ ] Configurazione tramite settings.json
+#### Task 2.1: Domain Whitelist System ✅ COMPLETATO
+- [x] Implementare whitelist domini configurabili via settings.json
+- [x] Validazione URL prima delle richieste
+- [x] Configurazione tramite settings.json con `loadAllowedDomainsFromSettings()`
+- [x] Persistence impostazioni su reboot
 
-#### Task 2.2: Rate Limiting & Size Limits
-- [ ] Max richieste per ora per dominio
-- [ ] Max dimensione file cachati (es. 50KB)
-- [ ] Automatic cleanup vecchi file
+#### Task 2.2: Rate Limiting & Size Limits ✅ COMPLETATO
+- [x] Max richieste per ora per dominio (10 default)
+- [x] Max dimensione file cachati configurabile (50KB default)
+- [x] Automatic cleanup vecchi file con `cleanupOldFiles()`
+- [x] Enhanced logging per rate limiting
 
-#### Task 2.3: Scheduled Downloads
-- [ ] Sistema di schedulazione con FreeRTOS timers
-- [ ] Metodo `fetchScheduled()` con intervalli configurabili
-- [ ] Persistence schedule state su reboot
+#### Task 2.3: Scheduled Downloads ✅ COMPLETATO
+- [x] Sistema di schedulazione con LVGL timers
+- [x] Metodo `fetchScheduled()` con intervalli configurabili
+- [x] Persistence schedule state su reboot con JSON su LittleFS
+- [x] Improved error handling nei timer callbacks
 
 ### Fase 3: Lua Integration (1 sessione)
 **Obiettivo**: Esporre API ai script Lua del voice assistant
 
-#### Task 3.1: Lua Bindings
-- [ ] Aggiungere funzioni Lua nel LuaSandbox:
-  - `webData_fetch_once(url, filename)`
-  - `webData_fetch_scheduled(url, filename, minutes)`
-  - `webData_read_data(filename)`
-  - `webData_list_files()`
-- [ ] Registrare funzioni in `setupSandbox()`
+#### Task 3.1: Lua Bindings ✅ COMPLETATO
+- [x] Aggiungere funzioni Lua nel LuaSandbox:
+  - `webData.fetch_once(url, filename)` - Download dati una tantum
+  - `webData.fetch_scheduled(url, filename, minutes)` - Schedulare download periodici
+  - `webData.read_data(filename)` - Lettura dati dal file system
+  - `webData.list_files()` - Lista file cachati
+- [x] Registrare funzioni C native nel setupSandbox Lua
+- [x] Implementare bridge thread-safe con WebDataManager singleton
+- [x] Gestire errori appropriati e valori di ritorno Lua
 
-#### Task 3.2: Lua API Testing
-- [ ] Test script Lua semplice per download dati
-- [ ] Verifica lettura dati cachati
-- [ ] Test error handling in Lua
+#### Task 3.2: Lua API Testing ✅ COMPLETATO
+- [x] Test integrato nel sistema voice assistant
+- [x] Verifica accessibilità API tramite comandi vocali
+- [x] Test error handling per URL non validi e file assenti
+- [x] Aggiornamento system prompt con esempi pratici di webData API
 
-### Fase 4: Weather Widget (1 sessione)
+### Fase 4: Weather Widget (1 sessione) ✅ COMPLETATO
 **Obiettivo**: Creare widget meteo che usa WebDataManager
 
-#### Task 4.1: Weather Widget Implementation
-- [ ] Creare `src/widgets/weather_widget.h` e `.cpp`
-- [ ] Implementare parsing JSON meteo semplice
-- [ ] Display temperatura, condizioni, umidità
-- [ ] Gestire stati: loading, error, no data
+#### Task 4.1: Weather Widget Implementation ✅ COMPLETATO
+- [x] Creare `src/widgets/weather_widget.h` e `.cpp`
+- [x] Implementare parsing JSON meteo semplice con cJSON
+- [x] Display temperatura, condizioni meteo, icone emoji
+- [x] Gestire stati: loading, error, no data con messaggi appropriati
+- [x] Refresh automatico ogni 30 minuti
+- [x] Utilizzo WebDataManager per download da Open-Meteo API
+- [x] Weather codes Open-Meteo supportati (0-99)
 
-#### Task 4.2: Dashboard Integration
-- [ ] Aggiungere WeatherWidget al DashboardScreen
-- [ ] Layout responsive con altri widget
-- [ ] Tema e styling consistente
+#### Task 4.2: Dashboard Integration ✅ COMPLETATO
+- [x] Aggiungere WeatherWidget al DashboardScreen
+- [x] Layout responsive con altri widget (system, clock)
+- [x] Tema e styling consistente con background blue
+- [x] Aggiornamento roadmap API in headers
 
 ### Fase 5: Testing & Refinement (1-2 sessioni)
 **Obiettivo**: Testing completo e ottimizzazioni
@@ -156,10 +166,10 @@ local files = webData.list_files()
 ```
 
 ## Sessioni Suggeste
-1. **Sessione 1**: Task 1.1 + 1.2 (Core WebDataManager)
-2. **Sessione 2**: Task 1.3 + 2.1 (Integrazione + Sicurezza base)
-3. **Sessione 3**: Task 2.2 + 2.3 + 3.1 (Scheduling + Lua API)
-4. **Sessione 4**: Task 3.2 + 4.1 + 4.2 (Testing Lua + Weather Widget)
+1. **Sessione 1**: Task 1.1 + 1.2 (Core WebDataManager) ✅ COMPLETATO
+2. **Sessione 2**: Task 1.3 + 2.1 + 2.2 + 2.3 (Security & Scheduling Enhancement) ✅ COMPLETATO
+3. **Sessione 3**: Task 3.1 + 3.2 (Lua Integration completa)
+4. **Sessione 4**: Task 4.1 + 4.2 (Weather Widget) ✅ COMPLETATO
 5. **Sessione 5**: Task 5.1 + 5.2 + 5.3 (Testing completo + Docs)
 
 ## Rischi e Mitigazioni

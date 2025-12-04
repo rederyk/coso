@@ -18,6 +18,7 @@
 #include "core/settings_manager.h"
 #include "core/wifi_manager.h"
 #include "core/web_server_manager.h"
+#include "core/web_data_manager.h"
 #include "core/system_tasks.h"
 #include "core/ble_hid_manager.h"
 #include "core/task_config.h"
@@ -347,6 +348,15 @@ void setup() {
         logger.info("[MicMgr] Microphone manager ready");
     } else {
         logger.warn("[MicMgr] Microphone manager initialization failed");
+    }
+
+    // Initialize Web Data Manager
+    logger.info("[WebData] Initializing web data manager");
+    WebDataManager& web_data_manager = WebDataManager::getInstance();
+    if (web_data_manager.begin()) {
+        logger.info("[WebData] Web data manager ready");
+    } else {
+        logger.warn("[WebData] Web data manager initialization failed");
     }
 
     // Initialize Voice Assistant (if enabled in settings)

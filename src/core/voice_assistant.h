@@ -138,6 +138,10 @@ public:
         static int lua_heap(lua_State* L);
         static int lua_sd_status(lua_State* L);
         static int lua_system_status(lua_State* L);
+        static int lua_webdata_fetch_once(lua_State* L);
+        static int lua_webdata_fetch_scheduled(lua_State* L);
+        static int lua_webdata_read_data(lua_State* L);
+        static int lua_webdata_list_files(lua_State* L);
         static int lua_println(lua_State* L);
     };
 

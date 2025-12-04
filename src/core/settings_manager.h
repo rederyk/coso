@@ -72,6 +72,12 @@ struct SettingsSnapshot {
     bool autoTimeSync = true;
     uint32_t timeSyncIntervalHours = 1;
 
+    // Web Data Manager
+    std::vector<std::string> webDataAllowedDomains;
+    size_t webDataMaxFileSizeKb = 50;
+    uint32_t webDataMaxRequestsPerHour = 10;
+    uint32_t webDataRequestTimeoutMs = 10000;
+
     // System
     std::string version;
     uint32_t bootCount = 0;
@@ -292,6 +298,19 @@ public:
 
     uint32_t getTimeSyncIntervalHours() const { return current_.timeSyncIntervalHours; }
     void setTimeSyncIntervalHours(uint32_t hours);
+
+    // Web Data Manager
+    const std::vector<std::string>& getWebDataAllowedDomains() const { return current_.webDataAllowedDomains; }
+    void setWebDataAllowedDomains(const std::vector<std::string>& domains);
+
+    size_t getWebDataMaxFileSizeKb() const { return current_.webDataMaxFileSizeKb; }
+    void setWebDataMaxFileSizeKb(size_t sizeKb);
+
+    uint32_t getWebDataMaxRequestsPerHour() const { return current_.webDataMaxRequestsPerHour; }
+    void setWebDataMaxRequestsPerHour(uint32_t maxRequests);
+
+    uint32_t getWebDataRequestTimeoutMs() const { return current_.webDataRequestTimeoutMs; }
+    void setWebDataRequestTimeoutMs(uint32_t timeoutMs);
 
     // System
     uint32_t getBootCount() const { return current_.bootCount; }

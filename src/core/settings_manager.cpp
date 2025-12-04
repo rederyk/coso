@@ -354,6 +354,12 @@ void SettingsManager::loadDefaults() {
     current_.dockIconRadius = DEFAULT_DOCK_ICON_RADIUS;
     current_.borderRadius = DEFAULT_BORDER_RADIUS;
 
+    // Web Data Manager
+    current_.webDataAllowedDomains = {"api.open-meteo.com", "newsapi.org", "httpbin.org"};
+    current_.webDataMaxFileSizeKb = 50;
+    current_.webDataMaxRequestsPerHour = 10;
+    current_.webDataRequestTimeoutMs = 10000;
+
     // System
     current_.version = DEFAULT_VERSION;
     current_.bootCount = 0;
@@ -863,6 +869,40 @@ void SettingsManager::setTimeSyncIntervalHours(uint32_t hours) {
     current_.timeSyncIntervalHours = hours;
     persistSnapshot();
     notify(SettingKey::TimeSyncIntervalHours);
+}
+
+// Web Data Manager setters
+void SettingsManager::setWebDataAllowedDomains(const std::vector<std::string>& domains) {
+    if (!initialized_ || domains == current_.webDataAllowedDomains) {
+        return;
+    }
+    current_.webDataAllowedDomains = domains;
+    persistSnapshot();
+    // Note: No specific SettingKey for web data manager settings yet
+}
+
+void SettingsManager::setWebDataMaxFileSizeKb(size_t sizeKb) {
+    if (!initialized_ || sizeKb == current_.webDataMaxFileSizeKb) {
+        return;
+    }
+    current_.webDataMaxFileSizeKb = sizeKb;
+    persistSnapshot();
+}
+
+void SettingsManager::setWebDataMaxRequestsPerHour(uint32_t maxRequests) {
+    if (!initialized_ || maxRequests == current_.webDataMaxRequestsPerHour) {
+        return;
+    }
+    current_.webDataMaxRequestsPerHour = maxRequests;
+    persistSnapshot();
+}
+
+void SettingsManager::setWebDataRequestTimeoutMs(uint32_t timeoutMs) {
+    if (!initialized_ || timeoutMs == current_.webDataRequestTimeoutMs) {
+        return;
+    }
+    current_.webDataRequestTimeoutMs = timeoutMs;
+    persistSnapshot();
 }
 
 void SettingsManager::notify(SettingKey key) {
