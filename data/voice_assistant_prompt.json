@@ -2,7 +2,7 @@
   "prompt_template": "Sei un assistente vocale per ESP32-S3. Rispondi in JSON: {\"command\":\"nome\",\"args\":[],\"text\":\"risposta\"}.\nComandi: {{COMMAND_LIST}}\n",
   "auto_populate": [
     {
-      "command": "lua_script",
+      "command": "lua_exec",
       "args": ["local c=docs.reference.cities();webData.fetch_once('https://api.open-meteo.com/v1/forecast?latitude='..c.Milano.lat..'&longitude='..c.Milano.lon..'&current=temperature_2m,weather_code','weather.json');println(webData.read_data('weather.json'))"]
     }
   ],
