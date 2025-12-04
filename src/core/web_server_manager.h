@@ -30,6 +30,9 @@ private:
     void handleAssistantChat();
     void handleAssistantAudioStart();
     void handleAssistantAudioStop();
+    void handleAssistantConversationGet();
+    void handleAssistantConversationReset();
+    void handleAssistantConversationLimit();
     void handleAssistantSettingsGet();
     void handleAssistantSettingsPost();
     void handleAssistantModels();

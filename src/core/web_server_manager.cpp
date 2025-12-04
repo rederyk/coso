@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "core/command_center.h"
+#include "core/conversation_buffer.h"
 #include "core/settings_manager.h"
 #include "core/task_config.h"
 #include "drivers/sd_card_driver.h"
@@ -87,6 +88,9 @@ void WebServerManager::registerRoutes() {
     server_->on("/api/assistant/chat", HTTP_POST, [this]() { handleAssistantChat(); });
     server_->on("/api/assistant/audio/start", HTTP_POST, [this]() { handleAssistantAudioStart(); });
     server_->on("/api/assistant/audio/stop", HTTP_POST, [this]() { handleAssistantAudioStop(); });
+    server_->on("/api/assistant/conversation", HTTP_GET, [this]() { handleAssistantConversationGet(); });
+    server_->on("/api/assistant/conversation/reset", HTTP_POST, [this]() { handleAssistantConversationReset(); });
+    server_->on("/api/assistant/conversation/limit", HTTP_POST, [this]() { handleAssistantConversationLimit(); });
     server_->on("/api/assistant/settings", HTTP_GET, [this]() { handleAssistantSettingsGet(); });
     server_->on("/api/assistant/settings", HTTP_POST, [this]() { handleAssistantSettingsPost(); });
     server_->on("/api/assistant/models", HTTP_GET, [this]() { handleAssistantModels(); });
@@ -301,6 +305,86 @@ void WebServerManager::handleAssistantAudioStop() {
     appendCommandToDoc(doc, response);
     String payload;
     serializeJson(doc, payload);
+    sendJson(200, payload);
+}
+
+void WebServerManager::handleAssistantConversationGet() {
+    ConversationBuffer& buffer = ConversationBuffer::getInstance();
+    if (!buffer.begin()) {
+        sendJson(500, "{\"status\":\"error\",\"message\":\"Conversation buffer unavailable\"}");
+        return;
+    }
+
+    auto entries = buffer.getEntries();
+
+    JsonDocument doc;
+    doc["status"] = "success";
+    doc["limit"] = static_cast<uint32_t>(buffer.getLimit());
+    doc["size"] = static_cast<uint32_t>(buffer.size());
+    JsonArray messages = doc.createNestedArray("messages");
+    for (const auto& entry : entries) {
+        JsonObject obj = messages.add<JsonObject>();
+        obj["role"] = entry.role.c_str();
+        obj["text"] = entry.text.c_str();
+        obj["timestamp"] = entry.timestamp;
+        if (!entry.command.empty()) {
+            obj["command"] = entry.command.c_str();
+        }
+        if (!entry.transcription.empty()) {
+            obj["transcription"] = entry.transcription.c_str();
+        }
+        if (!entry.args.empty()) {
+            JsonArray args = obj.createNestedArray("args");
+            for (const auto& arg : entry.args) {
+                args.add(arg.c_str());
+            }
+        }
+    }
+
+    String payload;
+    serializeJson(doc, payload);
+    sendJson(200, payload);
+}
+
+void WebServerManager::handleAssistantConversationReset() {
+    if (!ConversationBuffer::getInstance().clear()) {
+        sendJson(500, "{\"status\":\"error\",\"message\":\"Impossibile resettare il buffer\"}");
+        return;
+    }
+    sendJson(200, "{\"status\":\"success\",\"message\":\"Buffer conversazione resettato\"}");
+}
+
+void WebServerManager::handleAssistantConversationLimit() {
+    String body = server_->arg("plain");
+    if (body.isEmpty()) {
+        sendJson(400, "{\"status\":\"error\",\"message\":\"Empty body\"}");
+        return;
+    }
+
+    StaticJsonDocument<128> doc;
+    auto err = deserializeJson(doc, body);
+    if (err) {
+        sendJson(400, "{\"status\":\"error\",\"message\":\"Invalid JSON\"}");
+        return;
+    }
+
+    int limit = doc["limit"] | 0;
+    if (limit <= 0) {
+        sendJson(400, "{\"status\":\"error\",\"message\":\"Valore limite non valido\"}");
+        return;
+    }
+
+    if (!ConversationBuffer::getInstance().setLimit(static_cast<size_t>(limit))) {
+        sendJson(500, "{\"status\":\"error\",\"message\":\"Impossibile aggiornare il limite\"}");
+        return;
+    }
+
+    JsonDocument response;
+    response["status"] = "success";
+    response["limit"] = static_cast<uint32_t>(ConversationBuffer::getInstance().getLimit());
+
+    String payload;
+    serializeJson(response, payload);
     sendJson(200, payload);
 }
 

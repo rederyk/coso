@@ -3,6 +3,7 @@
 #include "core/audio_manager.h"
 #include "core/microphone_manager.h"
 #include "core/command_center.h"
+#include "core/conversation_buffer.h"
 #include "utils/logger.h"
 #include <esp_http_client.h>
 #include <cstring>
@@ -302,6 +303,8 @@ void VoiceAssistant::speechToTextTask(void* param) {
         if (success && !transcription.empty()) {
             LOG_I("STT successful: %s", transcription.c_str());
 
+            ConversationBuffer::getInstance().addUserMessage(transcription, transcription);
+
             // Send transcription to AI processing task
             std::string* text_copy = new std::string(transcription);
             if (xQueueSend(va->transcriptionQueue_, &text_copy, pdMS_TO_TICKS(1000)) != pdPASS) {
@@ -353,6 +356,12 @@ void VoiceAssistant::aiProcessingTask(void* param) {
                         } else {
                             LOG_I("No command to execute (conversational response only)");
                         }
+
+                        const std::string response_text = cmd.text.empty() ? std::string("Comando elaborato") : cmd.text;
+                        ConversationBuffer::getInstance().addAssistantMessage(response_text,
+                                                                             cmd.command,
+                                                                             cmd.args,
+                                                                             cmd.transcription);
 
                         // Send result to voice command queue for external consumption (screen/web)
                         VoiceCommand* cmd_copy = new VoiceCommand(cmd);
@@ -1066,6 +1075,8 @@ bool VoiceAssistant::sendTextMessage(const std::string& text) {
     }
 
     LOG_I("Sending text message to LLM: %s", text.c_str());
+
+    ConversationBuffer::getInstance().addUserMessage(text);
 
     // Send text directly to transcription queue (bypass STT)
     std::string* text_copy = new std::string(text);

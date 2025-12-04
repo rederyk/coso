@@ -423,7 +423,7 @@ I metodi stub dovranno essere implementati per chiamare gli endpoint locali:
 - Whisper Local: `http://192.168.1.51:8000/v1/audio/transcriptions`
 - LLM Cloud: `https://api.openai.com/v1/chat/completions`
 - LLM Local: `http://192.168.1.51:11434/v1/chat/completions`
-- LLM Model: `llama3.2:3b`
+- LLM Model: `llama3.2:latest`
 
 ### 📺 Voice Assistant Settings (come nello screen)
 - La card principale include il bottone verde `Hold to Talk` che diventa rosso quando tieni premuto il microfono; le callback `handleTriggerPressed/Released` invocano `VoiceAssistant::startRecording()` e `stopRecordingAndProcess()`.

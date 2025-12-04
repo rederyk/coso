@@ -45,6 +45,7 @@
 #include "screens/voice_assistant_settings_screen.h"
 #include "core/audio_manager.h"
 #include "core/microphone_manager.h"
+#include "core/conversation_buffer.h"
 // #include "core/voice_assistant.h"  // Temporarily disabled due to include issues
 #include "ui/ui_symbols.h"
 #include "utils/logger.h"
@@ -310,6 +311,10 @@ void setup() {
         initial_led_brightness = settings_mgr.getLedBrightness();
     } else {
         logger.warn("[Settings] Initialization failed - persistent settings disabled");
+    }
+
+    if (!ConversationBuffer::getInstance().begin()) {
+        logger.warn("[VoiceAssistant] Conversation buffer unavailable");
     }
 
     // Initialize and start WiFi and BLE managers

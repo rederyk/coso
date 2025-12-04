@@ -206,13 +206,13 @@
       flex-wrap: wrap;
       align-items: center;
     }
-    .setting-card button.secondary {
+    button.secondary {
       background: rgba(255, 255, 255, 0.09);
       color: var(--text);
       box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3);
       border: 1px solid rgba(255, 255, 255, 0.08);
     }
-    .setting-card button.secondary:hover {
+    button.secondary:hover {
       transform: translateY(-1px);
     }
     .active-endpoint {
@@ -275,6 +275,23 @@
       color: #fff;
       box-shadow: 0 8px 30px rgba(255, 107, 107, 0.35);
     }
+    .memory-meta {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 6px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .memory-meta strong {
+      font-size: 16px;
+      color: var(--text);
+    }
+    .memory-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
     @media (max-width: 640px) {
       body {
         padding: 12px;
@@ -300,6 +317,24 @@
     </header>
     <section class="panel">
       <div id="chat" class="chat" role="log" aria-live="polite"></div>
+    </section>
+    <section class="panel memory-panel">
+      <div class="panel-heading">
+        <div>
+          <p class="eyebrow">Memoria conversazioni</p>
+          <h2>Buffer condiviso</h2>
+        </div>
+        <div class="memory-meta">
+          <span>Righe conservate</span>
+          <strong id="memory-usage">0 / 0</strong>
+          <button id="reset-memory" class="secondary">Reset buffer</button>
+        </div>
+      </div>
+      <p class="helper-text">Il buffer JSON condiviso mantiene la cronologia tra vocale e chat. Usa i pulsanti per gestire la memoria.</p>
+      <div class="memory-actions">
+        <button id="shrink-memory" class="secondary">-5 righe</button>
+        <button id="expand-memory" class="secondary">+5 righe</button>
+      </div>
     </section>
     <section class="panel controls">
       <div class="input-group">
@@ -428,7 +463,12 @@
     const refreshModelsBtn = document.getElementById('refresh-models');
     const systemPromptTemplateEl = document.getElementById('system-prompt-template');
     const systemPromptPreviewEl = document.getElementById('system-prompt-preview');
+    const memoryUsageEl = document.getElementById('memory-usage');
+    const resetMemoryBtn = document.getElementById('reset-memory');
+    const shrinkMemoryBtn = document.getElementById('shrink-memory');
+    const expandMemoryBtn = document.getElementById('expand-memory');
     let pendingModelSelection = '';
+    let conversationLimit = 0;
 
     function setStatus(text, state = 'idle') {
       statusEl.textContent = text;
@@ -462,6 +502,53 @@
       return parts.join(' · ');
     }
 
+    function buildConversationMeta(entry) {
+      const parts = [];
+      if (entry.command) {
+        parts.push(`Comando: ${entry.command}`);
+      }
+      if (Array.isArray(entry.args) && entry.args.length) {
+        parts.push(`Argomenti: ${entry.args.join(', ')}`);
+      }
+      if (entry.role === 'user' && entry.transcription) {
+        parts.push('Trascrizione vocale');
+      }
+      return parts.join(' · ');
+    }
+
+    function renderConversationHistory(entries = []) {
+      chatEl.innerHTML = '';
+      if (!entries.length) {
+        appendMessage('assistant', 'Ciao! Scrivimi o usa il microfono per dirmi cosa fare.', 'Comando: nessuno');
+        return;
+      }
+      entries.forEach((entry) => {
+        const role = entry.role === 'user' ? 'user' : 'assistant';
+        const text = entry.text || '';
+        const meta = buildConversationMeta(entry);
+        appendMessage(role, text, meta);
+      });
+    }
+
+    async function loadConversationHistory() {
+      try {
+        const response = await fetch('/api/assistant/conversation');
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.message || 'Impossibile caricare la conversazione');
+        }
+        const messages = Array.isArray(data.messages) ? data.messages : [];
+        conversationLimit = Number(data.limit) || conversationLimit || 30;
+        const size = Number(data.size) || messages.length;
+        memoryUsageEl.textContent = `${size} / ${conversationLimit}`;
+        renderConversationHistory(messages);
+        return true;
+      } catch (err) {
+        setStatus(err.message, 'error');
+        return false;
+      }
+    }
+
     async function postJson(url, payload) {
       const res = await fetch(url, {
         method: 'POST',
@@ -473,6 +560,37 @@
         throw new Error(data.message || 'Errore del server');
       }
       return data;
+    }
+
+    async function resetConversationBuffer() {
+      if (resetMemoryBtn.disabled) {
+        return;
+      }
+      resetMemoryBtn.disabled = true;
+      try {
+        await postJson('/api/assistant/conversation/reset', {});
+        setStatus('Buffer conversazione resettato');
+        await loadConversationHistory();
+      } catch (err) {
+        setStatus(err.message, 'error');
+      } finally {
+        resetMemoryBtn.disabled = false;
+      }
+    }
+
+    async function adjustConversationLimit(delta) {
+      const desired = Math.min(100, Math.max(10, (conversationLimit || 30) + delta));
+      if (desired === conversationLimit) {
+        return;
+      }
+      try {
+        const data = await postJson('/api/assistant/conversation/limit', { limit: desired });
+        conversationLimit = Number(data.limit) || desired;
+        setStatus('Limite conversazioni aggiornato');
+        await loadConversationHistory();
+      } catch (err) {
+        setStatus(err.message, 'error');
+      }
     }
 
     async function sendChatMessage() {
@@ -488,6 +606,7 @@
         const response = await postJson('/api/assistant/chat', { message: text });
         const answer = response.text || response.message || 'Nessuna risposta';
         appendMessage('assistant', answer, buildMeta(response));
+        await loadConversationHistory();
         setStatus('Risposta ricevuta');
       } catch (err) {
         appendMessage('assistant', err.message, 'error');
@@ -664,6 +783,7 @@
         const hasTranscription = handleTranscription(transcription);
         const answer = payload.text || payload.message || 'Nessuna risposta ricevuta';
         appendMessage('assistant', answer, buildMeta(payload));
+        await loadConversationHistory();
         if (!hasTranscription) {
           setStatus('Trascrizione non disponibile', 'error');
         } else {
@@ -694,9 +814,12 @@
     });
     saveSettingsBtn.addEventListener('click', saveVoiceSettings);
     refreshModelsBtn.addEventListener('click', () => refreshModels());
+    resetMemoryBtn.addEventListener('click', resetConversationBuffer);
+    shrinkMemoryBtn.addEventListener('click', () => adjustConversationLimit(-5));
+    expandMemoryBtn.addEventListener('click', () => adjustConversationLimit(5));
 
     setStatus('Pronto');
-    appendMessage('assistant', 'Ciao! Scrivimi o usa il microfono per dirmi cosa fare.', 'Comando: nessuno');
+    loadConversationHistory();
     loadVoiceSettings();
   </script>
 </body>
