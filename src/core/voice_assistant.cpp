@@ -10,6 +10,7 @@
 #include <FS.h>
 #include <SD_MMC.h>
 #include <cJSON.h>
+#include <mutex>
 
 namespace {
 constexpr const char* TAG = "VoiceAssistant";
@@ -82,24 +83,34 @@ bool VoiceAssistant::begin() {
         return false;
     }
 
+    // Set initialized_ before creating worker tasks so they don't exit immediately
+    initialized_ = true;
+
     // Create tasks
     // Note: Recording task is created on-demand when startRecording() is called
-
-    xTaskCreatePinnedToCore(
+    BaseType_t stt_result = xTaskCreatePinnedToCore(
         speechToTextTask, "speech_to_text", STT_TASK_STACK,
         this, STT_TASK_PRIORITY, &sttTask_, tskNO_AFFINITY);
 
-    xTaskCreatePinnedToCore(
+    BaseType_t ai_result = xTaskCreatePinnedToCore(
         aiProcessingTask, "ai_processing", AI_TASK_STACK,
         this, AI_TASK_PRIORITY, &aiTask_, tskNO_AFFINITY);
 
-    initialized_ = true;
+    if (stt_result != pdPASS || ai_result != pdPASS) {
+        LOG_E("Failed to create assistant tasks (stt=%d, ai=%d)", stt_result, ai_result);
+        end();
+        return false;
+    }
+
     LOG_I("Voice assistant initialized successfully (using MicrophoneManager)");
     return true;
 }
 
 void VoiceAssistant::end() {
     initialized_ = false;
+    if (sttTask_) {
+        xTaskNotifyGive(sttTask_);
+    }
 
     // Stop any ongoing recording
     stop_recording_flag_.store(true);
@@ -163,7 +174,10 @@ void VoiceAssistant::startRecording() {
 
     // Reset stop flag
     stop_recording_flag_.store(false);
-    last_recorded_file_.clear();
+    {
+        std::lock_guard<std::mutex> lock(last_recorded_mutex_);
+        last_recorded_file_.clear();
+    }
 
     // Create recording task (lightweight wrapper around MicrophoneManager)
     xTaskCreatePinnedToCore(
@@ -225,14 +239,21 @@ void VoiceAssistant::recordingTask(void* param) {
               result.file_size_bytes,
               result.duration_ms);
 
-        va->last_recorded_file_ = result.file_path;
+        {
+            std::lock_guard<std::mutex> lock(va->last_recorded_mutex_);
+            va->last_recorded_file_ = result.file_path;
+        }
 
-        // TODO: Send the recorded file to STT processing
-        // For now, just log that we have the file ready
-        LOG_I("Audio file ready for STT processing: %s", va->last_recorded_file_.c_str());
+        {
+            std::lock_guard<std::mutex> queue_lock(va->pending_recordings_mutex_);
+            va->pending_recordings_.push(result.file_path);
+        }
 
-        // In the future, we'll read this WAV file and send it to the STT task
-        // via the audioQueue_
+        LOG_I("Audio file ready for STT processing: %s", result.file_path.c_str());
+
+        if (va->sttTask_) {
+            xTaskNotifyGive(va->sttTask_);
+        }
 
     } else {
         LOG_E("Recording failed");
@@ -251,33 +272,45 @@ void VoiceAssistant::speechToTextTask(void* param) {
     LOG_I("Speech-to-text task started");
 
     while (va->initialized_) {
-        // Wait for audio file to be ready (signaled by recordingTask completing)
-        // We use a simple polling approach: check if last_recorded_file_ is set
-        if (!va->last_recorded_file_.empty()) {
-            LOG_I("Processing audio file for STT: %s", va->last_recorded_file_.c_str());
-
-            std::string transcription;
-            bool success = va->makeWhisperRequest(nullptr, transcription);  // File path is in last_recorded_file_
-
-            if (success && !transcription.empty()) {
-                LOG_I("STT successful: %s", transcription.c_str());
-
-                // Send transcription to AI processing task
-                std::string* text_copy = new std::string(transcription);
-                if (xQueueSend(va->transcriptionQueue_, &text_copy, pdMS_TO_TICKS(1000)) != pdPASS) {
-                    LOG_W("Transcription queue full, discarding text");
-                    delete text_copy;
-                }
-            } else {
-                LOG_E("STT failed or empty transcription");
-            }
-
-            // Clear the last recorded file to avoid reprocessing
-            va->last_recorded_file_.clear();
+        // Wait until a new recording is queued or we need to shut down
+        if (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(5000)) == 0) {
+            continue;
         }
 
-        // Sleep to avoid busy-waiting
-        vTaskDelay(pdMS_TO_TICKS(500));
+        if (!va->initialized_) {
+            break;
+        }
+
+        std::string queued_file;
+        {
+            std::lock_guard<std::mutex> lock(va->pending_recordings_mutex_);
+            if (!va->pending_recordings_.empty()) {
+                queued_file = va->pending_recordings_.front();
+                va->pending_recordings_.pop();
+            }
+        }
+
+        if (queued_file.empty()) {
+            continue;
+        }
+
+        LOG_I("Processing audio file for STT: %s", queued_file.c_str());
+
+        std::string transcription;
+        bool success = va->makeWhisperRequest(queued_file, transcription);
+
+        if (success && !transcription.empty()) {
+            LOG_I("STT successful: %s", transcription.c_str());
+
+            // Send transcription to AI processing task
+            std::string* text_copy = new std::string(transcription);
+            if (xQueueSend(va->transcriptionQueue_, &text_copy, pdMS_TO_TICKS(1000)) != pdPASS) {
+                LOG_W("Transcription queue full, discarding text");
+                delete text_copy;
+            }
+        } else {
+            LOG_E("STT failed or empty transcription");
+        }
     }
 
     LOG_I("Speech-to-text task ended");
@@ -344,7 +377,7 @@ void VoiceAssistant::aiProcessingTask(void* param) {
 }
 
 // HTTP helpers - Whisper STT API
-bool VoiceAssistant::makeWhisperRequest(const AudioBuffer* audio, std::string& transcription) {
+bool VoiceAssistant::makeWhisperRequest(const std::string& file_path, std::string& transcription) {
     LOG_I("Making Whisper STT request (file-based implementation)");
 
     // Check if we have WiFi connection
@@ -353,25 +386,24 @@ bool VoiceAssistant::makeWhisperRequest(const AudioBuffer* audio, std::string& t
         return false;
     }
 
-    // Get the file path from last_recorded_file_ (set by recordingTask)
-    if (last_recorded_file_.empty()) {
+    if (file_path.empty()) {
         LOG_E("No recorded file available");
         return false;
     }
 
-    LOG_I("Attempting to open file: '%s'", last_recorded_file_.c_str());
-    LOG_I("File path length: %d bytes", last_recorded_file_.length());
+    LOG_I("Attempting to open file: '%s'", file_path.c_str());
+    LOG_I("File path length: %zu bytes", file_path.length());
 
     // MicrophoneManager returns paths with "/sd" prefix for SD card.
     // We need to use SD_MMC.open() with the path WITHOUT the "/sd" prefix.
-    std::string file_path = last_recorded_file_;
+    std::string normalized_path = file_path;
     if (file_path.find("/sd/") == 0) {
-        file_path = file_path.substr(3);  // Remove "/sd" prefix
-        LOG_I("Removed /sd prefix, using path: '%s'", file_path.c_str());
+        normalized_path = file_path.substr(3);  // Remove "/sd" prefix
+        LOG_I("Removed /sd prefix, using path: '%s'", normalized_path.c_str());
     }
 
     // Open the WAV file using SD_MMC (Arduino File API)
-    File file = SD_MMC.open(file_path.c_str(), FILE_READ);
+    File file = SD_MMC.open(normalized_path.c_str(), FILE_READ);
     if (!file) {
         LOG_E("Failed to open audio file: %s", file_path.c_str());
         LOG_E("SD_MMC.open() returned null");
@@ -599,8 +631,9 @@ bool VoiceAssistant::makeGPTRequest(const std::string& prompt, std::string& resp
     }
 
     // Get endpoint from settings - support both local and cloud modes
+    SettingsManager& settings_manager = SettingsManager::getInstance();
+    SettingsSnapshot settings = settings_manager.getSnapshot();
     std::string gpt_url;
-    const SettingsSnapshot& settings = SettingsManager::getInstance().getSnapshot();
 
     if (settings.localApiMode) {
         // Local mode: use configured local LLM endpoint
@@ -612,56 +645,67 @@ bool VoiceAssistant::makeGPTRequest(const std::string& prompt, std::string& resp
         LOG_I("Using CLOUD LLM API at: %s", gpt_url.c_str());
     }
 
-    // Build JSON request body using cJSON
-    cJSON* root = cJSON_CreateObject();
-    if (!root) {
-        LOG_E("Failed to create JSON object");
+    std::string selected_model = settings.llmModel;
+    if (selected_model.empty() && settings.localApiMode) {
+        std::vector<std::string> available;
+        if (fetchOllamaModels(settings.llmLocalEndpoint, available) && !available.empty()) {
+            selected_model = available.front();
+            settings_manager.setLlmModel(selected_model);
+            settings.llmModel = selected_model;
+            LOG_I("Selected default local model: %s", selected_model.c_str());
+        }
+    }
+
+    if (selected_model.empty()) {
+        LOG_E("No LLM model configured");
         return false;
     }
 
-    // Add model field (from settings)
-    cJSON_AddStringToObject(root, "model", settings.llmModel.c_str());
+    const std::string system_prompt = getSystemPrompt();
 
-    // Build messages array
-    cJSON* messages = cJSON_CreateArray();
-    if (!messages) {
-        LOG_E("Failed to create messages array");
+    auto buildRequestBody = [&](const std::string& model, std::string& out) -> bool {
+        // Build JSON request body using cJSON
+        cJSON* root = cJSON_CreateObject();
+        if (!root) {
+            LOG_E("Failed to create JSON object");
+            return false;
+        }
+
+        cJSON_AddStringToObject(root, "model", model.c_str());
+
+        cJSON* messages = cJSON_CreateArray();
+        if (!messages) {
+            LOG_E("Failed to create messages array");
+            cJSON_Delete(root);
+            return false;
+        }
+
+        cJSON* system_msg = cJSON_CreateObject();
+        cJSON_AddStringToObject(system_msg, "role", "system");
+        cJSON_AddStringToObject(system_msg, "content", system_prompt.c_str());
+        cJSON_AddItemToArray(messages, system_msg);
+
+        cJSON* user_msg = cJSON_CreateObject();
+        cJSON_AddStringToObject(user_msg, "role", "user");
+        cJSON_AddStringToObject(user_msg, "content", prompt.c_str());
+        cJSON_AddItemToArray(messages, user_msg);
+
+        cJSON_AddItemToObject(root, "messages", messages);
+        cJSON_AddNumberToObject(root, "temperature", 0.7);
+        cJSON_AddBoolToObject(root, "stream", false);
+
+        char* json_str = cJSON_PrintUnformatted(root);
+        if (!json_str) {
+            LOG_E("Failed to serialize JSON");
+            cJSON_Delete(root);
+            return false;
+        }
+
+        out.assign(json_str);
+        cJSON_free(json_str);
         cJSON_Delete(root);
-        return false;
-    }
-
-    // System message: Define the assistant's role
-    cJSON* system_msg = cJSON_CreateObject();
-    cJSON_AddStringToObject(system_msg, "role", "system");
-    std::string system_prompt = getSystemPrompt();
-    cJSON_AddStringToObject(system_msg, "content", system_prompt.c_str());
-    cJSON_AddItemToArray(messages, system_msg);
-
-    // User message: The transcribed text
-    cJSON* user_msg = cJSON_CreateObject();
-    cJSON_AddStringToObject(user_msg, "role", "user");
-    cJSON_AddStringToObject(user_msg, "content", prompt.c_str());
-    cJSON_AddItemToArray(messages, user_msg);
-
-    cJSON_AddItemToObject(root, "messages", messages);
-
-    // Add optional parameters
-    cJSON_AddNumberToObject(root, "temperature", 0.7);
-    cJSON_AddBoolToObject(root, "stream", false);
-
-    // Convert JSON to string
-    char* json_str = cJSON_PrintUnformatted(root);
-    if (!json_str) {
-        LOG_E("Failed to serialize JSON");
-        cJSON_Delete(root);
-        return false;
-    }
-
-    std::string request_body = json_str;
-    cJSON_free(json_str);
-    cJSON_Delete(root);
-
-    LOG_I("Request body: %s", request_body.c_str());
+        return true;
+    };
 
     // Buffer for response
     std::string response_buffer;
@@ -682,54 +726,84 @@ bool VoiceAssistant::makeGPTRequest(const std::string& prompt, std::string& resp
         return ESP_OK;
     };
 
-    // Configure HTTP client
-    esp_http_client_config_t config = {};
-    config.url = gpt_url.c_str();
-    config.method = HTTP_METHOD_POST;
-    config.event_handler = http_event_handler;
-    config.user_data = &response_buffer;
-    config.timeout_ms = 15000;  // 15 second timeout for LLM
-    config.buffer_size = 4096;
+    bool fallback_attempted = false;
+    std::string request_body;
 
-    esp_http_client_handle_t client = esp_http_client_init(&config);
-    if (!client) {
-        LOG_E("Failed to initialize HTTP client");
-        return false;
-    }
+    while (true) {
+        if (!buildRequestBody(selected_model, request_body)) {
+            return false;
+        }
 
-    // Set headers
-    esp_http_client_set_header(client, "Content-Type", "application/json");
+        LOG_I("Request body: %s", request_body.c_str());
+        response_buffer.clear();
 
-    // Optional: Add API key if using OpenAI cloud (Ollama doesn't need it)
-    if (!settings.localApiMode && !settings.openAiApiKey.empty()) {
-        std::string auth_header = std::string("Bearer ") + settings.openAiApiKey;
-        esp_http_client_set_header(client, "Authorization", auth_header.c_str());
-        LOG_I("Using API key for cloud authentication");
-    }
+        // Configure HTTP client
+        esp_http_client_config_t config = {};
+        config.url = gpt_url.c_str();
+        config.method = HTTP_METHOD_POST;
+        config.event_handler = http_event_handler;
+        config.user_data = &response_buffer;
+        config.timeout_ms = 15000;  // 15 second timeout for LLM
+        config.buffer_size = 4096;
 
-    // Set POST data
-    esp_http_client_set_post_field(client, request_body.c_str(), request_body.length());
+        esp_http_client_handle_t client = esp_http_client_init(&config);
+        if (!client) {
+            LOG_E("Failed to initialize HTTP client");
+            return false;
+        }
 
-    // Perform request
-    esp_err_t err = esp_http_client_perform(client);
-    if (err != ESP_OK) {
-        LOG_E("HTTP request failed: %s", esp_err_to_name(err));
+        // Set headers
+        esp_http_client_set_header(client, "Content-Type", "application/json");
+
+        // Optional: Add API key if using OpenAI cloud (Ollama doesn't need it)
+        if (!settings.localApiMode && !settings.openAiApiKey.empty()) {
+            std::string auth_header = std::string("Bearer ") + settings.openAiApiKey;
+            esp_http_client_set_header(client, "Authorization", auth_header.c_str());
+            LOG_I("Using API key for cloud authentication");
+        }
+
+        // Set POST data
+        esp_http_client_set_post_field(client, request_body.c_str(), request_body.length());
+
+        // Perform request
+        esp_err_t err = esp_http_client_perform(client);
+        if (err != ESP_OK) {
+            LOG_E("HTTP request failed: %s", esp_err_to_name(err));
+            esp_http_client_cleanup(client);
+            return false;
+        }
+
+        int status_code = esp_http_client_get_status_code(client);
+        LOG_I("HTTP Status: %d", status_code);
+
         esp_http_client_cleanup(client);
-        return false;
+
+        if (status_code == 404 && settings.localApiMode && !fallback_attempted) {
+            LOG_W("Model '%s' not available on local endpoint, attempting fallback", selected_model.c_str());
+            std::vector<std::string> available;
+            if (fetchOllamaModels(settings.llmLocalEndpoint, available) && !available.empty()) {
+                const std::string previous_model = selected_model;
+                selected_model = available.front();
+                settings_manager.setLlmModel(selected_model);
+                settings.llmModel = selected_model;
+                fallback_attempted = true;
+                LOG_I("Falling back from %s to %s and retrying request",
+                      previous_model.c_str(), selected_model.c_str());
+                continue;
+            } else {
+                LOG_E("Failed to retrieve fallback models from Ollama");
+            }
+        }
+
+        if (status_code != 200) {
+            LOG_E("LLM API returned error status: %d", status_code);
+            LOG_E("Response: %s", response_buffer.c_str());
+            return false;
+        }
+
+        LOG_I("LLM response: %s", response_buffer.c_str());
+        break;
     }
-
-    int status_code = esp_http_client_get_status_code(client);
-    LOG_I("HTTP Status: %d", status_code);
-
-    esp_http_client_cleanup(client);
-
-    if (status_code != 200) {
-        LOG_E("LLM API returned error status: %d", status_code);
-        LOG_E("Response: %s", response_buffer.c_str());
-        return false;
-    }
-
-    LOG_I("LLM response: %s", response_buffer.c_str());
 
     // Parse JSON response
     // OpenAI/Ollama format: {"choices": [{"message": {"content": "..."}}]}
@@ -1020,6 +1094,11 @@ bool VoiceAssistant::getLastResponse(VoiceCommand& response, uint32_t timeout_ms
     }
 
     return false;
+}
+
+std::string VoiceAssistant::getLastRecordedFile() const {
+    std::lock_guard<std::mutex> lock(last_recorded_mutex_);
+    return last_recorded_file_;
 }
 
 std::string VoiceAssistant::getSystemPrompt() const {

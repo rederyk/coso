@@ -231,7 +231,22 @@ void WebServerManager::handleAssistantChat() {
         return;
     }
 
+    SettingsManager& settings = SettingsManager::getInstance();
+    if (!settings.getVoiceAssistantEnabled()) {
+        sendJson(403, "{\"status\":\"error\",\"message\":\"Voice assistant is disabled\"}");
+        return;
+    }
+
     VoiceAssistant& assistant = VoiceAssistant::getInstance();
+    if (!assistant.isInitialized()) {
+        Logger::getInstance().info("[VoiceAssistant] Initializing before web chat request");
+        if (!assistant.begin()) {
+            Logger::getInstance().warn("[VoiceAssistant] Initialization failed before chat request");
+            sendJson(503, "{\"status\":\"error\",\"message\":\"Voice assistant unavailable\"}");
+            return;
+        }
+    }
+
     if (!assistant.sendTextMessage(message)) {
         sendJson(503, "{\"status\":\"error\",\"message\":\"Voice assistant unavailable\"}");
         return;

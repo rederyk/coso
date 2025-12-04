@@ -8,6 +8,8 @@
 #include <string>
 #include <vector>
 #include <atomic>
+#include <mutex>
+#include <queue>
 
 #include "core/voice_assistant_prompt.h"
 
@@ -86,7 +88,7 @@ public:
     QueueHandle_t getCommandQueue() const { return voiceCommandQueue_; }
 
     /** Get the last recorded file path (for external use) */
-    std::string getLastRecordedFile() const { return last_recorded_file_; }
+    std::string getLastRecordedFile() const;
 
     /** Build the current system prompt, including the active command list */
     std::string getSystemPrompt() const;
@@ -106,7 +108,7 @@ private:
     static void aiProcessingTask(void* param);
 
     // HTTP helpers
-    bool makeWhisperRequest(const AudioBuffer* audio, std::string& transcription);
+    bool makeWhisperRequest(const std::string& file_path, std::string& transcription);
     bool makeGPTRequest(const std::string& prompt, std::string& response);
     bool parseGPTCommand(const std::string& response, VoiceCommand& cmd);
 
@@ -127,4 +129,8 @@ private:
     bool initialized_ = false;
     std::atomic<bool> stop_recording_flag_{false};  // Flag to stop recording
     std::string last_recorded_file_;                // Path to last recorded file
+    mutable std::mutex last_recorded_mutex_;
+
+    std::queue<std::string> pending_recordings_;
+    std::mutex pending_recordings_mutex_;
 };
