@@ -343,7 +343,7 @@ void SettingsManager::loadDefaults() {
     current_.openAiApiKey.clear();
     current_.openAiEndpoint = "https://api.openai.com/v1";
     current_.voiceAssistantEnabled = false;
-    current_.voiceAssistantSystemPromptTemplate = VOICE_ASSISTANT_PROMPT_TEMPLATE;
+    current_.voiceAssistantSystemPromptTemplate.clear();
 
     // Theme
     current_.theme = DEFAULT_THEME;

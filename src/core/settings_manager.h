@@ -42,7 +42,7 @@ struct SettingsSnapshot {
     bool voiceAssistantEnabled = false;
     bool localApiMode = false;  // Toggle between cloud and local Docker APIs
     std::string dockerHostIp = "192.168.1.51";  // IP of Docker host for local APIs
-    std::string voiceAssistantSystemPromptTemplate = VOICE_ASSISTANT_PROMPT_TEMPLATE;
+    std::string voiceAssistantSystemPromptTemplate;  // Leave empty to use LittleFS prompt by default
 
     // Whisper STT endpoints
     std::string whisperCloudEndpoint = "https://api.openai.com/v1/audio/transcriptions";

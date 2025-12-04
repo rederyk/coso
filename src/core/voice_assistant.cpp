@@ -14,6 +14,7 @@
 #include <sstream>
 #include <WiFi.h>
 #include <FS.h>
+#include <LittleFS.h>
 #include <SD_MMC.h>
 #include <cJSON.h>
 #include <mutex>
@@ -103,6 +104,80 @@ std::string formatConversationEntry(const ConversationEntry& entry) {
     }
 
     return content;
+}
+
+constexpr const char* VOICE_ASSISTANT_PROMPT_JSON_PATH = "/voice_assistant_prompt.json";
+constexpr const char* VOICE_ASSISTANT_FALLBACK_PROMPT_TEMPLATE =
+    "You are a helpful voice assistant for an ESP32-S3 device. Respond ONLY with valid JSON in this exact format: "
+    "{\"command\": \"<command_name>\", \"args\": [\"<arg1>\", \"<arg2>\", ...], \"text\": \"<your conversational response>\"}. "
+    "Available commands: {{COMMAND_LIST}}. Bonded BLE hosts: {{BLE_HOSTS}}.";
+
+struct VoiceAssistantPromptDefinition {
+    std::string prompt_template;
+    std::vector<std::string> sections;
+};
+
+std::string readFileToString(const char* path) {
+    File file = LittleFS.open(path, FILE_READ);
+    if (!file) {
+        return {};
+    }
+
+    std::string result;
+    result.reserve(file.size());
+    constexpr size_t kChunkSize = 256;
+    uint8_t buffer[kChunkSize];
+    while (file.available()) {
+        size_t bytes_read = file.read(buffer, kChunkSize);
+        if (bytes_read == 0) {
+            break;
+        }
+        result.append(reinterpret_cast<const char*>(buffer), bytes_read);
+    }
+    file.close();
+    return result;
+}
+
+VoiceAssistantPromptDefinition loadPromptDefinitionFromJson() {
+    VoiceAssistantPromptDefinition definition;
+    const std::string raw = readFileToString(VOICE_ASSISTANT_PROMPT_JSON_PATH);
+    if (raw.empty()) {
+        return definition;
+    }
+
+    cJSON* root = cJSON_Parse(raw.c_str());
+    if (!root) {
+        LOG_W("Failed to parse system prompt JSON at %s", VOICE_ASSISTANT_PROMPT_JSON_PATH);
+        return definition;
+    }
+
+    cJSON* prompt_item = cJSON_GetObjectItem(root, "prompt_template");
+    if (prompt_item && cJSON_IsString(prompt_item) && prompt_item->valuestring) {
+        definition.prompt_template = prompt_item->valuestring;
+    }
+
+    cJSON* sections = cJSON_GetObjectItem(root, "sections");
+    if (sections && cJSON_IsArray(sections)) {
+        cJSON* item = nullptr;
+        cJSON_ArrayForEach(item, sections) {
+            if (item && cJSON_IsString(item) && item->valuestring) {
+                definition.sections.emplace_back(item->valuestring);
+            }
+        }
+    }
+
+    cJSON_Delete(root);
+    return definition;
+}
+
+const VoiceAssistantPromptDefinition& getPromptDefinition() {
+    static VoiceAssistantPromptDefinition cached;
+    static bool loaded = false;
+    if (!loaded) {
+        cached = loadPromptDefinitionFromJson();
+        loaded = true;
+    }
+    return cached;
 }
 
 } // namespace
@@ -1488,9 +1563,14 @@ std::string VoiceAssistant::getLastRecordedFile() const {
 
 std::string VoiceAssistant::getSystemPrompt() const {
     const SettingsSnapshot& settings = SettingsManager::getInstance().getSnapshot();
-    std::string prompt_template = settings.voiceAssistantSystemPromptTemplate.empty()
-        ? VOICE_ASSISTANT_PROMPT_TEMPLATE
-        : settings.voiceAssistantSystemPromptTemplate;
+    const VoiceAssistantPromptDefinition& prompt_definition = getPromptDefinition();
+    const std::string& saved_template = settings.voiceAssistantSystemPromptTemplate;
+    std::string prompt_template = !saved_template.empty()
+        ? saved_template
+        : prompt_definition.prompt_template;
+    if (prompt_template.empty()) {
+        prompt_template = VOICE_ASSISTANT_FALLBACK_PROMPT_TEMPLATE;
+    }
 
     auto commands = CommandCenter::getInstance().listCommands();
     std::string command_list;
@@ -1544,99 +1624,9 @@ std::string VoiceAssistant::getSystemPrompt() const {
         prompt += " Bonded BLE hosts: " + host_list + ".";
     }
 
-    prompt += "Per eseguire uno script Lua, usa il comando 'lua_script' con lo script come argomento. ";
-
-    prompt += "\n**API DISPONIBILI:**\n";
-    prompt += "Per la documentazione completa delle API, usa:\n";
-    prompt += "- `docs.api.gpio()` - Funzioni GPIO (gpio.json)\n";
-    prompt += "- `docs.api.ble()` - Funzioni BLE (ble.json)\n";
-    prompt += "- `docs.api.webData()` - Funzioni WebData (webdata.json)\n";
-    prompt += "- `docs.api.memory()` - Funzioni Memory (memory.json)\n";
-    prompt += "- `docs.api.audio()` - Funzioni Audio (audio.json)\n";
-    prompt += "- `docs.api.display()` - Funzioni Display (display.json)\n";
-    prompt += "- `docs.api.led()` - Funzioni LED (led.json)\n";
-    prompt += "- `docs.api.system()` - Funzioni System (system.json)\n";
-    prompt += "- `docs.reference.cities()` - Coordinate città italiane (cities.json)\n";
-    prompt += "- `docs.reference.weather()` - Guida Open-Meteo API (weather_api.md)\n";
-    prompt += "- `docs.examples.weather_query()` - Esempio query meteo (weather_query.json)\n";
-    prompt += "- `docs.examples.gpio_control()` - Esempio controllo GPIO (gpio_control.json)\n";
-    prompt += "- `docs.examples.ble_keyboard()` - Esempio tastiera BLE (ble_keyboard.json)\n";
-    prompt += "- `docs.get('path/to/file.json')` - Getter generico per qualsiasi documento\n\n";
-
-    prompt += "**PATTERN D'USO (query in 2 step):**\n";
-    prompt += "1. Se non conosci dettagli API o dati: `println(docs.api.gpio())` o `println(docs.reference.cities())`\n";
-    prompt += "2. Poi esegui il comando con le info corrette: `gpio.write(23, true)`\n\n";
-
-    prompt += "**ESEMPI RAPIDI:**\n";
-    prompt += "- Meteo Milano: `local cities = docs.reference.cities(); local milano_lat = cities.Milano.lat; local milano_lon = cities.Milano.lon; webData.fetch_once('https://api.open-meteo.com/v1/forecast?latitude=' .. milano_lat .. '&longitude=' .. milano_lon .. '&current=temperature_2m,weather_code&timezone=Europe/Rome', 'weather.json'); println(webData.read_data('weather.json'))`\n";
-    prompt += "- GPIO Toggle: `gpio.toggle(23)`\n";
-    prompt += "- Memoria Read: `println(memory.read_file('config.json'))`\n";
-    prompt += "- BLE Digita: `ble.type('AA:BB:CC:DD:EE:FF', 'Hello')`\n\n";
-
-    // Phase 2: Smart Output Decision - Add should_refine_output field instructions
-
-    prompt += "\n**API DISPONIBILI:**\n";
-    prompt += "Per la documentazione completa delle API, usa:\n";
-    prompt += "- `docs.api.gpio()` - Funzioni GPIO (gpio.json)\n";
-    prompt += "- `docs.api.ble()` - Funzioni BLE (ble.json)\n";
-    prompt += "- `docs.api.webData()` - Funzioni WebData (webdata.json)\n";
-    prompt += "- `docs.api.memory()` - Funzioni Memory (memory.json)\n";
-    prompt += "- `docs.api.audio()` - Funzioni Audio (audio.json)\n";
-    prompt += "- `docs.api.display()` - Funzioni Display (display.json)\n";
-    prompt += "- `docs.api.led()` - Funzioni LED (led.json)\n";
-    prompt += "- `docs.api.system()` - Funzioni System (system.json)\n";
-    prompt += "- `docs.reference.cities()` - Coordinate città italiane (cities.json)\n";
-    prompt += "- `docs.reference.weather()` - Guida Open-Meteo API (weather_api.md)\n";
-    prompt += "- `docs.examples.weather_query()` - Esempio query meteo (weather_query.json)\n";
-    prompt += "- `docs.examples.gpio_control()` - Esempio controllo GPIO (gpio_control.json)\n";
-    prompt += "- `docs.examples.ble_keyboard()` - Esempio tastiera BLE (ble_keyboard.json)\n";
-    prompt += "- `docs.get('path/to/file.json')` - Getter generico per qualsiasi documento\n\n";
-
-    prompt += "**PATTERN D'USO (query in 2 step):**\n";
-    prompt += "1. Se non conosci dettagli API o dati: `println(docs.api.gpio())` o `println(docs.reference.cities())`\n";
-    prompt += "2. Poi esegui il comando con le info corrette: `gpio.write(23, true)`\n\n";
-
-    prompt += "**ESEMPI RAPIDI:**\n";
-    prompt += "- Meteo Milano: `local cities = docs.reference.cities(); local milano_lat = cities.Milano.lat; local milano_lon = cities.Milano.lon; webData.fetch_once('https://api.open-meteo.com/v1/forecast?latitude=' .. milano_lat .. '&longitude=' .. milano_lon .. '&current=temperature_2m,weather_code&timezone=Europe/Rome', 'weather.json'); println(webData.read_data('weather.json'))`\n";
-    prompt += "- GPIO Toggle: `gpio.toggle(23)`\n";
-    prompt += "- Memoria Read: `println(memory.read_file('config.json'))`\n";
-    prompt += "- BLE Digita: `ble.type('AA:BB:CC:DD:EE:FF', 'Hello')`\n\n";
-    // Phase 2: Smart Output Decision - Add should_refine_output field instructions
-    prompt += "\n\n**NUOVO FORMATO RISPOSTA JSON (Phase 2):**\n";
-    prompt += "La tua risposta JSON deve includere questi campi:\n";
-    prompt += "```json\n";
-    prompt += "{\n";
-    prompt += "  \"command\": \"comando_da_eseguire\",\n";
-    prompt += "  \"args\": [\"arg1\", \"arg2\"],\n";
-    prompt += "  \"text\": \"Risposta testuale user-friendly\",\n";
-    prompt += "  \"should_refine_output\": true/false,\n";
-    prompt += "  \"refinement_extract\": \"text\"  // Opzionale: quale campo estrarre dal refinement\n";
-    prompt += "}\n```\n\n";
-    prompt += "**Campo should_refine_output:**\n";
-    prompt += "Imposta questo campo a `true` se il comando produrrà output tecnico (JSON, log, dati grezzi) ";
-    prompt += "che deve essere riformattato in modo user-friendly. Imposta a `false` se l'output è già comprensibile.\n\n";
-    prompt += "**Campo refinement_extract (opzionale):**\n";
-    prompt += "Specifica quale campo estrarre dal response di refinement. Valori possibili:\n";
-    prompt += "- \"text\" (default): Estrae solo il testo user-friendly dal campo 'text' del JSON\n";
-    prompt += "- \"full\" o \"json\": Restituisce l'intero JSON response per manipolazione dati strutturati\n\n";
-    prompt += "**Quando usare should_refine_output=true:**\n";
-    prompt += "- Comandi webData.fetch_once() o webData.read_data() (producono JSON)\n";
-    prompt += "- Comandi memory.read_file() (potrebbero contenere dati grezzi)\n";
-    prompt += "- Comandi heap, system_status, log_tail (producono statistiche tecniche)\n";
-    prompt += "- Qualsiasi comando che produce output >200 caratteri o JSON\n\n";
-    prompt += "**Quando usare should_refine_output=false:**\n";
-    prompt += "- Comandi semplici come volume_up, brightness_down (output già chiaro)\n";
-    prompt += "- Comandi conversazionali che non producono output tecnico\n";
-    prompt += "- Se hai già formattato l'output nel campo 'text'\n\n";
-    prompt += "**Esempi:**\n";
-    prompt += "Query meteo per utente:\n";
-    prompt += "{\"command\": \"lua_script\", \"args\": [\"webData.read_data('weather.json')\"], \"text\": \"Sto leggendo i dati meteo\", \"should_refine_output\": true, \"refinement_extract\": \"text\"}\n";
-    prompt += "→ Output: \"A Milano ci sono 9.5°C...\" (solo testo user-friendly)\n\n";
-    prompt += "Query meteo per elaborazione:\n";
-    prompt += "{\"command\": \"lua_script\", \"args\": [\"webData.read_data('weather.json')\"], \"text\": \"Sto leggendo i dati meteo\", \"should_refine_output\": true, \"refinement_extract\": \"full\"}\n";
-    prompt += "→ Output: {\"command\":\"none\",\"text\":\"...\",\"data\":{...}} (JSON completo per elaborazione)\n\n";
-    prompt += "Volume up (no refinement):\n";
-    prompt += "{\"command\": \"volume_up\", \"args\": [], \"text\": \"Volume aumentato\", \"should_refine_output\": false}";
+    for (const auto& section : prompt_definition.sections) {
+        prompt += section;
+    }
 
     return prompt;
 }
