@@ -5,6 +5,7 @@
 #include "core/command_center.h"
 #include "core/conversation_buffer.h"
 #include "core/ble_hid_manager.h"
+#include "peripheral/gpio_manager.h"
 #include "utils/logger.h"
 #include <esp_http_client.h>
 #include <cstring>
@@ -400,17 +401,48 @@ void VoiceAssistant::aiProcessingTask(void* param) {
                     if (va->parseGPTCommand(llm_response, cmd)) {
                         LOG_I("Command parsed successfully: %s (text: %s)", cmd.command.c_str(), cmd.text.c_str());
 
-                        // Execute command via CommandCenter only if command is not "none"
-                        if (cmd.command != "none" && cmd.command != "unknown" && !cmd.command.empty()) {
-                            CommandResult result = CommandCenter::getInstance().executeCommand(cmd.command, cmd.args);
+                        // Check if this is a Lua script command
+                        bool is_script_command = (cmd.command == "lua_script" ||
+                                                 cmd.command.find("script") != std::string::npos ||
+                                                 (!cmd.args.empty() && cmd.args[0].find("function") != std::string::npos));
 
-                            if (result.success) {
-                                LOG_I("Command executed successfully: %s", result.message.c_str());
+                        if (is_script_command) {
+                            // Execute as Lua script
+                            std::string script_content;
+                            if (cmd.command == "lua_script" && !cmd.args.empty()) {
+                                // Script content is in args
+                                script_content = cmd.args[0];
+                            } else if (!cmd.args.empty()) {
+                                // Try to extract script from args
+                                script_content = cmd.args[0];
                             } else {
-                                LOG_E("Command execution failed: %s", result.message.c_str());
+                                // Use the text field as script
+                                script_content = cmd.text;
+                            }
+
+                            LOG_I("Executing Lua script: %s", script_content.c_str());
+                            CommandResult script_result = va->lua_sandbox_.execute(script_content);
+
+                            if (script_result.success) {
+                                LOG_I("Lua script executed successfully: %s", script_result.message.c_str());
+                                cmd.text = "Script eseguito con successo";
+                            } else {
+                                LOG_E("Lua script execution failed: %s", script_result.message.c_str());
+                                cmd.text = "Errore nell'esecuzione dello script: " + script_result.message;
                             }
                         } else {
-                            LOG_I("No command to execute (conversational response only)");
+                            // Execute command via CommandCenter only if command is not "none"
+                            if (cmd.command != "none" && cmd.command != "unknown" && !cmd.command.empty()) {
+                                CommandResult result = CommandCenter::getInstance().executeCommand(cmd.command, cmd.args);
+
+                                if (result.success) {
+                                    LOG_I("Command executed successfully: %s", result.message.c_str());
+                                } else {
+                                    LOG_E("Command execution failed: %s", result.message.c_str());
+                                }
+                            } else {
+                                LOG_I("No command to execute (conversational response only)");
+                            }
                         }
 
                         const std::string response_text = cmd.text.empty() ? std::string("Comando elaborato") : cmd.text;
@@ -1284,5 +1316,415 @@ std::string VoiceAssistant::getSystemPrompt() const {
         prompt += " Bonded BLE hosts: " + host_list + ".";
     }
 
+    // Add Lua scripting capabilities
+    prompt += "\n\nInoltre puoi utilizzare script Lua per operazioni complesse combinando GPIO, BLE, audio e altre funzioni. ";
+    prompt += "Per eseguire uno script Lua, usa il comando 'lua_script' con lo script come argomento. ";
+    prompt += "API Lua disponibili:\n";
+    prompt += "- GPIO: gpio.write(pin, value), gpio.read(pin), gpio.toggle(pin)\n";
+    prompt += "- BLE: ble.type(host_mac, text), ble.send_key(host_mac, keycode, modifier), ble.mouse_move(host_mac, dx, dy), ble.click(host_mac, buttons)\n";
+    prompt += "- Audio: audio.volume_up(), audio.volume_down()\n";
+    prompt += "- Display: display.brightness_up(), display.brightness_down()\n";
+    prompt += "- LED: led.set_brightness(percentage)\n";
+    prompt += "- Sistema: system.ping(), system.uptime(), system.heap(), system.sd_status(), system.status()\n";
+    prompt += "- Timing: delay(ms)\n";
+    prompt += "Esempi:\n";
+    prompt += "- LED lampeggiante: {\"command\": \"lua_script\", \"args\": [\"gpio.write(23, true); delay(1000); gpio.write(23, false)\"], \"text\": \"LED lampeggiato\"}\n";
+    prompt += "- Scrivi testo BLE: {\"command\": \"lua_script\", \"args\": [\"ble.type('AA:BB:CC:DD:EE:FF', 'Ciao mondo!')\"], \"text\": \"Testo inviato via BLE\"}\n";
+    prompt += "- Sequenza complessa: {\"command\": \"lua_script\", \"args\": [\"gpio.write(23, true); ble.type('AA:BB:CC:DD:EE:FF', 'LED acceso'); delay(2000); gpio.write(23, false); audio.volume_up()\"], \"text\": \"Sequenza completata\"}";
+
     return prompt;
+}
+
+// LuaSandbox implementation
+VoiceAssistant::LuaSandbox::LuaSandbox() : L(nullptr) {
+    L = luaL_newstate();
+    if (L) {
+        luaL_openlibs(L);
+        setupSandbox();
+    } else {
+        LOG_E("Failed to create Lua state");
+    }
+}
+
+VoiceAssistant::LuaSandbox::~LuaSandbox() {
+    if (L) {
+        lua_close(L);
+        L = nullptr;
+    }
+}
+
+void VoiceAssistant::LuaSandbox::setupSandbox() {
+    if (!L) return;
+
+    // Remove dangerous functions
+    luaL_dostring(L, R"(
+        -- Disable dangerous functions
+        os.execute = nil
+        io.popen = nil
+        os.remove = nil
+        os.rename = nil
+        loadfile = nil
+        dofile = nil
+
+        -- Safe GPIO API
+        gpio = {
+            write = function(pin, value)
+                return esp32_gpio_write(pin, value)
+            end,
+            read = function(pin)
+                return esp32_gpio_read(pin)
+            end,
+            toggle = function(pin)
+                return esp32_gpio_toggle(pin)
+            end
+        }
+
+        -- Safe timing
+        delay = function(ms)
+            esp32_delay(ms)
+        end
+
+        -- BLE API
+        ble = {
+            type = function(host_mac, text)
+                return esp32_ble_type(host_mac, text)
+            end,
+            send_key = function(host_mac, keycode, modifier)
+                return esp32_ble_send_key(host_mac, keycode, modifier or 0)
+            end,
+            mouse_move = function(host_mac, dx, dy, wheel, buttons)
+                return esp32_ble_mouse_move(host_mac, dx or 0, dy or 0, wheel or 0, buttons or 0)
+            end,
+            click = function(host_mac, buttons)
+                return esp32_ble_click(host_mac, buttons)
+            end
+        }
+
+        -- Audio API
+        audio = {
+            volume_up = function()
+                return esp32_volume_up()
+            end,
+            volume_down = function()
+                return esp32_volume_down()
+            end
+        }
+
+        -- Display API
+        display = {
+            brightness_up = function()
+                return esp32_brightness_up()
+            end,
+            brightness_down = function()
+                return esp32_brightness_down()
+            end
+        }
+
+        -- LED API
+        led = {
+            set_brightness = function(percentage)
+                return esp32_led_brightness(percentage)
+            end
+        }
+
+        -- System API
+        system = {
+            ping = function()
+                return esp32_ping()
+            end,
+            uptime = function()
+                return esp32_uptime()
+            end,
+            heap = function()
+                return esp32_heap()
+            end,
+            sd_status = function()
+                return esp32_sd_status()
+            end,
+            status = function()
+                return esp32_system_status()
+            end
+        }
+    )");
+
+    // Register C functions
+    lua_register(L, "esp32_gpio_write", lua_gpio_write);
+    lua_register(L, "esp32_gpio_read", lua_gpio_read);
+    lua_register(L, "esp32_gpio_toggle", lua_gpio_toggle);
+    lua_register(L, "esp32_delay", lua_delay);
+
+    // BLE functions
+    lua_register(L, "esp32_ble_type", lua_ble_type);
+    lua_register(L, "esp32_ble_send_key", lua_ble_send_key);
+    lua_register(L, "esp32_ble_mouse_move", lua_ble_mouse_move);
+    lua_register(L, "esp32_ble_click", lua_ble_click);
+
+    // Audio functions
+    lua_register(L, "esp32_volume_up", lua_volume_up);
+    lua_register(L, "esp32_volume_down", lua_volume_down);
+
+    // Display functions
+    lua_register(L, "esp32_brightness_up", lua_brightness_up);
+    lua_register(L, "esp32_brightness_down", lua_brightness_down);
+
+    // LED functions
+    lua_register(L, "esp32_led_brightness", lua_led_brightness);
+
+    // System functions
+    lua_register(L, "esp32_ping", lua_ping);
+    lua_register(L, "esp32_uptime", lua_uptime);
+    lua_register(L, "esp32_heap", lua_heap);
+    lua_register(L, "esp32_sd_status", lua_sd_status);
+    lua_register(L, "esp32_system_status", lua_system_status);
+}
+
+CommandResult VoiceAssistant::LuaSandbox::execute(const std::string& script) {
+    if (!L) {
+        return {false, "Lua state not initialized"};
+    }
+
+    int result = luaL_dostring(L, script.c_str());
+
+    if (result != LUA_OK) {
+        const char* error = lua_tostring(L, -1);
+        std::string error_msg = "Lua error: ";
+        error_msg += error ? error : "unknown";
+        lua_pop(L, 1); // Remove error message from stack
+        return {false, error_msg};
+    }
+
+    return {true, "Lua script executed"};
+}
+
+int VoiceAssistant::LuaSandbox::lua_gpio_write(lua_State* L) {
+    int pin = luaL_checkinteger(L, 1);
+    bool value = lua_toboolean(L, 2);
+
+    auto* gpio = GPIOManager::getInstance()->requestGPIO(
+        pin, PERIPH_GPIO_OUTPUT, "lua"
+    );
+
+    if (gpio) {
+        gpio->write(value);
+        GPIOManager::getInstance()->releaseGPIO(pin, "lua");
+        lua_pushboolean(L, true);
+    } else {
+        lua_pushboolean(L, false);
+    }
+
+    return 1;
+}
+
+int VoiceAssistant::LuaSandbox::lua_gpio_read(lua_State* L) {
+    int pin = luaL_checkinteger(L, 1);
+
+    auto* gpio = GPIOManager::getInstance()->requestGPIO(
+        pin, PERIPH_GPIO_INPUT, "lua"
+    );
+
+    if (gpio) {
+        bool value = gpio->read();
+        GPIOManager::getInstance()->releaseGPIO(pin, "lua");
+        lua_pushboolean(L, value);
+    } else {
+        lua_pushnil(L);
+    }
+
+    return 1;
+}
+
+int VoiceAssistant::LuaSandbox::lua_gpio_toggle(lua_State* L) {
+    int pin = luaL_checkinteger(L, 1);
+
+    auto* gpio = GPIOManager::getInstance()->requestGPIO(
+        pin, PERIPH_GPIO_OUTPUT, "lua"
+    );
+
+    if (gpio) {
+        gpio->toggle();
+        GPIOManager::getInstance()->releaseGPIO(pin, "lua");
+        lua_pushboolean(L, true);
+    } else {
+        lua_pushboolean(L, false);
+    }
+
+    return 1;
+}
+
+int VoiceAssistant::LuaSandbox::lua_delay(lua_State* L) {
+    int ms = luaL_checkinteger(L, 1);
+    delay(ms);
+    return 0;
+}
+
+// BLE functions
+int VoiceAssistant::LuaSandbox::lua_ble_type(lua_State* L) {
+    const char* host_mac = luaL_checkstring(L, 1);
+    const char* text = luaL_checkstring(L, 2);
+
+    CommandResult result = CommandCenter::getInstance().executeCommand("bt_type", {host_mac, text});
+    lua_pushboolean(L, result.success);
+    if (!result.success) {
+        lua_pushstring(L, result.message.c_str());
+        return 2;
+    }
+    return 1;
+}
+
+int VoiceAssistant::LuaSandbox::lua_ble_send_key(lua_State* L) {
+    const char* host_mac = luaL_checkstring(L, 1);
+    int keycode = luaL_checkinteger(L, 2);
+    int modifier = luaL_optinteger(L, 3, 0);
+
+    CommandResult result = CommandCenter::getInstance().executeCommand("bt_send_key",
+        {host_mac, std::to_string(keycode), std::to_string(modifier)});
+    lua_pushboolean(L, result.success);
+    if (!result.success) {
+        lua_pushstring(L, result.message.c_str());
+        return 2;
+    }
+    return 1;
+}
+
+int VoiceAssistant::LuaSandbox::lua_ble_mouse_move(lua_State* L) {
+    const char* host_mac = luaL_checkstring(L, 1);
+    int dx = luaL_optinteger(L, 2, 0);
+    int dy = luaL_optinteger(L, 3, 0);
+    int wheel = luaL_optinteger(L, 4, 0);
+    int buttons = luaL_optinteger(L, 5, 0);
+
+    CommandResult result = CommandCenter::getInstance().executeCommand("bt_mouse_move",
+        {host_mac, std::to_string(dx), std::to_string(dy), std::to_string(wheel), std::to_string(buttons)});
+    lua_pushboolean(L, result.success);
+    if (!result.success) {
+        lua_pushstring(L, result.message.c_str());
+        return 2;
+    }
+    return 1;
+}
+
+int VoiceAssistant::LuaSandbox::lua_ble_click(lua_State* L) {
+    const char* host_mac = luaL_checkstring(L, 1);
+    int buttons = luaL_checkinteger(L, 2);
+
+    CommandResult result = CommandCenter::getInstance().executeCommand("bt_click",
+        {host_mac, std::to_string(buttons)});
+    lua_pushboolean(L, result.success);
+    if (!result.success) {
+        lua_pushstring(L, result.message.c_str());
+        return 2;
+    }
+    return 1;
+}
+
+// Audio functions
+int VoiceAssistant::LuaSandbox::lua_volume_up(lua_State* L) {
+    CommandResult result = CommandCenter::getInstance().executeCommand("volume_up", {});
+    lua_pushboolean(L, result.success);
+    if (!result.success) {
+        lua_pushstring(L, result.message.c_str());
+        return 2;
+    }
+    return 1;
+}
+
+int VoiceAssistant::LuaSandbox::lua_volume_down(lua_State* L) {
+    CommandResult result = CommandCenter::getInstance().executeCommand("volume_down", {});
+    lua_pushboolean(L, result.success);
+    if (!result.success) {
+        lua_pushstring(L, result.message.c_str());
+        return 2;
+    }
+    return 1;
+}
+
+// Display functions
+int VoiceAssistant::LuaSandbox::lua_brightness_up(lua_State* L) {
+    CommandResult result = CommandCenter::getInstance().executeCommand("brightness_up", {});
+    lua_pushboolean(L, result.success);
+    if (!result.success) {
+        lua_pushstring(L, result.message.c_str());
+        return 2;
+    }
+    return 1;
+}
+
+int VoiceAssistant::LuaSandbox::lua_brightness_down(lua_State* L) {
+    CommandResult result = CommandCenter::getInstance().executeCommand("brightness_down", {});
+    lua_pushboolean(L, result.success);
+    if (!result.success) {
+        lua_pushstring(L, result.message.c_str());
+        return 2;
+    }
+    return 1;
+}
+
+// LED functions
+int VoiceAssistant::LuaSandbox::lua_led_brightness(lua_State* L) {
+    int percentage = luaL_checkinteger(L, 1);
+
+    CommandResult result = CommandCenter::getInstance().executeCommand("led_brightness",
+        {std::to_string(percentage)});
+    lua_pushboolean(L, result.success);
+    if (!result.success) {
+        lua_pushstring(L, result.message.c_str());
+        return 2;
+    }
+    return 1;
+}
+
+// System functions
+int VoiceAssistant::LuaSandbox::lua_ping(lua_State* L) {
+    CommandResult result = CommandCenter::getInstance().executeCommand("ping", {});
+    lua_pushboolean(L, result.success);
+    if (result.success) {
+        lua_pushstring(L, result.message.c_str());
+        return 2;
+    }
+    lua_pushstring(L, result.message.c_str());
+    return 2;
+}
+
+int VoiceAssistant::LuaSandbox::lua_uptime(lua_State* L) {
+    CommandResult result = CommandCenter::getInstance().executeCommand("uptime", {});
+    lua_pushboolean(L, result.success);
+    if (result.success) {
+        lua_pushstring(L, result.message.c_str());
+        return 2;
+    }
+    lua_pushstring(L, result.message.c_str());
+    return 2;
+}
+
+int VoiceAssistant::LuaSandbox::lua_heap(lua_State* L) {
+    CommandResult result = CommandCenter::getInstance().executeCommand("heap", {});
+    lua_pushboolean(L, result.success);
+    if (result.success) {
+        lua_pushstring(L, result.message.c_str());
+        return 2;
+    }
+    lua_pushstring(L, result.message.c_str());
+    return 2;
+}
+
+int VoiceAssistant::LuaSandbox::lua_sd_status(lua_State* L) {
+    CommandResult result = CommandCenter::getInstance().executeCommand("sd_status", {});
+    lua_pushboolean(L, result.success);
+    if (result.success) {
+        lua_pushstring(L, result.message.c_str());
+        return 2;
+    }
+    lua_pushstring(L, result.message.c_str());
+    return 2;
+}
+
+int VoiceAssistant::LuaSandbox::lua_system_status(lua_State* L) {
+    CommandResult result = CommandCenter::getInstance().executeCommand("system_status", {});
+    lua_pushboolean(L, result.success);
+    if (result.success) {
+        lua_pushstring(L, result.message.c_str());
+        return 2;
+    }
+    lua_pushstring(L, result.message.c_str());
+    return 2;
 }

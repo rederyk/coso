@@ -12,6 +12,13 @@
 #include <queue>
 
 #include "core/voice_assistant_prompt.h"
+#include "core/command_center.h"
+
+extern "C" {
+#include <lua.h>
+#include <lauxlib.h>
+#include <lualib.h>
+}
 
 /**
  * Voice Assistant Module
@@ -96,6 +103,40 @@ public:
     /** Fetch available models from Ollama API */
     bool fetchOllamaModels(const std::string& base_url, std::vector<std::string>& models);
 
+    /** Lua scripting sandbox for complex commands */
+    class LuaSandbox {
+    private:
+        lua_State* L;
+
+        void setupSandbox();
+
+    public:
+        LuaSandbox();
+        ~LuaSandbox();
+
+        CommandResult execute(const std::string& script);
+
+        // Lua C API bindings
+        static int lua_gpio_write(lua_State* L);
+        static int lua_gpio_read(lua_State* L);
+        static int lua_gpio_toggle(lua_State* L);
+        static int lua_delay(lua_State* L);
+        static int lua_ble_type(lua_State* L);
+        static int lua_ble_send_key(lua_State* L);
+        static int lua_ble_mouse_move(lua_State* L);
+        static int lua_ble_click(lua_State* L);
+        static int lua_volume_up(lua_State* L);
+        static int lua_volume_down(lua_State* L);
+        static int lua_brightness_up(lua_State* L);
+        static int lua_brightness_down(lua_State* L);
+        static int lua_led_brightness(lua_State* L);
+        static int lua_ping(lua_State* L);
+        static int lua_uptime(lua_State* L);
+        static int lua_heap(lua_State* L);
+        static int lua_sd_status(lua_State* L);
+        static int lua_system_status(lua_State* L);
+    };
+
 private:
     VoiceAssistant();
     ~VoiceAssistant();
@@ -133,4 +174,6 @@ private:
 
     std::queue<std::string> pending_recordings_;
     std::mutex pending_recordings_mutex_;
+
+    LuaSandbox lua_sandbox_;  // Lua scripting engine
 };
