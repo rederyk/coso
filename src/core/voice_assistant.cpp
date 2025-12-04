@@ -18,6 +18,7 @@
 #include <mutex>
 
 namespace {
+thread_local VoiceAssistant::LuaSandbox* s_active_lua_sandbox = nullptr;
 constexpr const char* TAG = "VoiceAssistant";
 
 #define LOG_I(format, ...) Logger::getInstance().infof("[VoiceAssistant] " format, ##__VA_ARGS__)
@@ -216,6 +217,11 @@ bool VoiceAssistant::isEnabled() const {
 
 bool VoiceAssistant::isInitialized() const {
     return initialized_;
+}
+
+CommandResult VoiceAssistant::executeLuaScript(const std::string& script) {
+    std::lock_guard<std::mutex> lock(lua_mutex_);
+    return lua_sandbox_.execute(script);
 }
 
 void VoiceAssistant::triggerListening() {
@@ -423,7 +429,7 @@ void VoiceAssistant::aiProcessingTask(void* param) {
                             }
 
                             LOG_I("Executing Lua script: %s", script_content.c_str());
-                            CommandResult script_result = va->lua_sandbox_.execute(script_content);
+                            CommandResult script_result = va->executeLuaScript(script_content);
 
                             // Capture script output
                             cmd.output = script_result.message;
@@ -1608,6 +1614,17 @@ CommandResult VoiceAssistant::LuaSandbox::execute(const std::string& script) {
     // Preprocess script to fix common LLM mistakes
     std::string processed_script = preprocessScript(script);
 
+    output_buffer_.clear();
+    struct SandboxActivation {
+        LuaSandbox* previous;
+        SandboxActivation(LuaSandbox* current) : previous(s_active_lua_sandbox) {
+            s_active_lua_sandbox = current;
+        }
+        ~SandboxActivation() {
+            s_active_lua_sandbox = previous;
+        }
+    } activation(this);
+
     int result = luaL_dostring(L, processed_script.c_str());
 
     if (result != LUA_OK) {
@@ -1617,11 +1634,16 @@ CommandResult VoiceAssistant::LuaSandbox::execute(const std::string& script) {
         lua_pop(L, 1); // Remove error message from stack
 
         Serial.printf("[LUA] Execution error: %s\n", error_msg.c_str());
+        if (!output_buffer_.empty()) {
+            error_msg += "\nOutput:\n";
+            error_msg += output_buffer_;
+        }
         return {false, error_msg};
     }
 
     Serial.println("[LUA] Script executed successfully");
-    return {true, "Lua script executed"};
+    const std::string message = output_buffer_.empty() ? "Lua script executed" : output_buffer_;
+    return {true, message};
 }
 
 int VoiceAssistant::LuaSandbox::lua_gpio_write(lua_State* L) {
@@ -1882,7 +1904,21 @@ int VoiceAssistant::LuaSandbox::lua_println(lua_State* L) {
     // Log the message
     Serial.println(message.c_str());
 
+    if (!message.empty() && s_active_lua_sandbox) {
+        s_active_lua_sandbox->appendOutput(message);
+    }
+
     return 0;  // No return values
+}
+
+void VoiceAssistant::LuaSandbox::appendOutput(const std::string& text) {
+    if (text.empty()) {
+        return;
+    }
+    if (!output_buffer_.empty()) {
+        output_buffer_ += '\n';
+    }
+    output_buffer_ += text;
 }
 
 // WebData functions

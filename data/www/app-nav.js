@@ -8,6 +8,13 @@
       match: (path) => path === '/' || path.endsWith('/') || path.includes('index'),
     },
     {
+      id: 'lua',
+      label: 'Lua Console',
+      href: '/lua-console.html',
+      icon: '🧪',
+      match: (path) => path.includes('lua-console'),
+    },
+    {
       id: 'files',
       label: 'File Manager',
       href: '/file-manager.html',

@@ -108,8 +108,10 @@ void WebServerManager::registerRoutes() {
     server_->on("/", HTTP_GET, [this]() { handleRoot(); });
     server_->on("/commands", HTTP_GET, [this]() { handleRoot(); });
     server_->on("/file-manager", HTTP_GET, [this]() { handleFileManagerPage(); });
+    server_->on("/lua-console", HTTP_GET, [this]() { handleLuaConsolePage(); });
     server_->on("/api/commands", HTTP_GET, [this]() { handleApiCommands(); });
     server_->on("/api/commands/execute", HTTP_POST, [this]() { handleApiExecute(); });
+    server_->on("/api/lua/execute", HTTP_POST, [this]() { handleApiLuaExecute(); });
     server_->on("/api/assistant/chat", HTTP_POST, [this]() { handleAssistantChat(); });
     server_->on("/api/assistant/audio/start", HTTP_POST, [this]() { handleAssistantAudioStart(); });
     server_->on("/api/assistant/audio/stop", HTTP_POST, [this]() { handleAssistantAudioStop(); });
@@ -231,6 +233,45 @@ void WebServerManager::handleApiExecute() {
     out["status"] = result.success ? "success" : "error";
     out["command"] = command;
     out["message"] = result.message.c_str();
+
+    String response;
+    serializeJson(out, response);
+    sendJson(result.success ? 200 : 400, response);
+}
+
+void WebServerManager::handleLuaConsolePage() {
+    if (!serveFile("/www/lua-console.html")) {
+        server_->send(404, "text/plain", "lua-console.html not found");
+    }
+}
+
+void WebServerManager::handleApiLuaExecute() {
+    String body = server_->arg("plain");
+    if (body.isEmpty()) {
+        sendJson(400, "{\"status\":\"error\",\"message\":\"Empty body\"}");
+        return;
+    }
+
+    DynamicJsonDocument doc(8192);
+    auto err = deserializeJson(doc, body);
+    if (err) {
+        sendJson(400, "{\"status\":\"error\",\"message\":\"Invalid JSON\"}");
+        return;
+    }
+
+    const char* script = doc["script"] | "";
+    if (!script || strlen(script) == 0) {
+        sendJson(400, "{\"status\":\"error\",\"message\":\"Missing script\"}");
+        return;
+    }
+
+    VoiceAssistant& assistant = VoiceAssistant::getInstance();
+    const CommandResult result = assistant.executeLuaScript(script);
+
+    StaticJsonDocument<256> out;
+    out["status"] = result.success ? "success" : "error";
+    out["message"] = result.message.c_str();
+    out["script"] = script;
 
     String response;
     serializeJson(out, response);

@@ -28,6 +28,8 @@ private:
     void handleRoot();
     void handleApiCommands();
     void handleApiExecute();
+    void handleLuaConsolePage();
+    void handleApiLuaExecute();
     void handleAssistantChat();
     void handleAssistantAudioStart();
     void handleAssistantAudioStop();

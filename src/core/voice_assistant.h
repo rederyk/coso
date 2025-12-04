@@ -143,7 +143,11 @@ public:
         static int lua_webdata_read_data(lua_State* L);
         static int lua_webdata_list_files(lua_State* L);
         static int lua_println(lua_State* L);
+        void appendOutput(const std::string& text);
+        std::string output_buffer_;
     };
+
+    CommandResult executeLuaScript(const std::string& script);
 
 private:
     VoiceAssistant();
@@ -184,4 +188,5 @@ private:
     std::mutex pending_recordings_mutex_;
 
     LuaSandbox lua_sandbox_;  // Lua scripting engine
+    std::mutex lua_mutex_;
 };
