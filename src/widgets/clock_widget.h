@@ -11,7 +11,8 @@ public:
     void update() override;
 
 private:
-    lv_obj_t* label = nullptr;
+    lv_obj_t* date_label = nullptr;
+    lv_obj_t* time_label = nullptr;
     lv_timer_t* refresh_timer = nullptr;
     static void timerCallback(lv_timer_t* timer);
 };
