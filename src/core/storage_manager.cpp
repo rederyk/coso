@@ -68,6 +68,21 @@ void fillJsonFromSnapshot(const SettingsSnapshot& snapshot, JsonDocument& doc) {
     palette["dockIconSymbol"] = snapshot.dockIconSymbolColor;
     palette["dockIconRadius"] = snapshot.dockIconRadius;
 
+    // Storage access whitelist
+    JsonObject storage = doc["storage"].to<JsonObject>();
+    JsonArray sd_allowed = storage["sdAllowedPaths"].to<JsonArray>();
+    for (const auto& path : snapshot.storageAllowedSdPaths) {
+        if (!path.empty()) {
+            sd_allowed.add(path);
+        }
+    }
+    JsonArray littlefs_allowed = storage["littleFsAllowedPaths"].to<JsonArray>();
+    for (const auto& path : snapshot.storageAllowedLittleFsPaths) {
+        if (!path.empty()) {
+            littlefs_allowed.add(path);
+        }
+    }
+
     // System
     JsonObject system = doc["system"].to<JsonObject>();
     system["version"] = snapshot.version;
@@ -130,6 +145,27 @@ void fillSnapshotFromJson(SettingsSnapshot& snapshot, const JsonDocument& doc) {
     snapshot.dockIconSymbolColor =
         doc["palette"]["dockIconSymbol"] | snapshot.dockIconSymbolColor;
     snapshot.dockIconRadius = doc["palette"]["dockIconRadius"] | snapshot.dockIconRadius;
+
+    JsonArrayConst sd_allowed = doc["storage"]["sdAllowedPaths"].as<JsonArrayConst>();
+    if (!sd_allowed.isNull()) {
+        snapshot.storageAllowedSdPaths.clear();
+        for (JsonVariantConst entry : sd_allowed) {
+            const char* path = entry | "";
+            if (path && path[0] != '\0') {
+                snapshot.storageAllowedSdPaths.push_back(path);
+            }
+        }
+    }
+    JsonArrayConst littlefs_allowed = doc["storage"]["littleFsAllowedPaths"].as<JsonArrayConst>();
+    if (!littlefs_allowed.isNull()) {
+        snapshot.storageAllowedLittleFsPaths.clear();
+        for (JsonVariantConst entry : littlefs_allowed) {
+            const char* path = entry | "";
+            if (path && path[0] != '\0') {
+                snapshot.storageAllowedLittleFsPaths.push_back(path);
+            }
+        }
+    }
 
     // System
     snapshot.version = doc["system"]["version"] | snapshot.version;

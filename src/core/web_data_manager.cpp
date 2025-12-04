@@ -1,4 +1,5 @@
 #include "core/web_data_manager.h"
+#include "core/storage_access_manager.h"
 #include "core/storage_manager.h"
 #include "core/settings_manager.h"
 
@@ -44,6 +45,11 @@ bool WebDataManager::begin() {
             ESP_LOGE(LOG_TAG, "Failed to create cache directory: %s", CACHE_DIR);
             return false;
         }
+    }
+
+    if (!StorageAccessManager::getInstance().begin()) {
+        ESP_LOGE(LOG_TAG, "Failed to initialize storage access manager");
+        return false;
     }
 
     initialized_ = true;
@@ -114,7 +120,7 @@ WebDataManager::RequestResult WebDataManager::fetchOnce(const std::string& url, 
     result = makeHttpRequest(url, response_data);
 
     if (result.success && !response_data.empty()) {
-        if (saveToCache(filename, response_data)) {
+        if (StorageAccessManager::getInstance().writeWebData(filename, response_data)) {
             updateRateLimit(domain);
             ESP_LOGI(LOG_TAG, "Successfully cached %d bytes to %s", response_data.size(), filename.c_str());
         } else {
@@ -180,38 +186,23 @@ std::string WebDataManager::readData(const std::string& filename) {
     if (!initialized_) return "";
 
     std::string data;
-    if (loadFromCache(filename, data)) {
+    if (StorageAccessManager::getInstance().readWebData(filename, data)) {
         return data;
     }
     return "";
 }
 
 std::vector<std::string> WebDataManager::listFiles() {
-    std::vector<std::string> files;
-
-    if (!initialized_) return files;
-
-    File root = LittleFS.open(CACHE_DIR);
-    if (!root || !root.isDirectory()) {
-        return files;
+    if (!initialized_) {
+        return {};
     }
-
-    File file = root.openNextFile();
-    while (file) {
-        if (!file.isDirectory()) {
-            files.push_back(file.name());
-        }
-        file = root.openNextFile();
-    }
-
-    return files;
+    return StorageAccessManager::getInstance().listWebDataFiles();
 }
 
 bool WebDataManager::deleteData(const std::string& filename) {
     if (!initialized_) return false;
 
-    std::string path = getCachePath(filename);
-    if (LittleFS.remove(path.c_str())) {
+    if (StorageAccessManager::getInstance().deleteWebData(filename)) {
         ESP_LOGI(LOG_TAG, "Deleted cached file: %s", filename.c_str());
         return true;
     }
@@ -288,7 +279,7 @@ void WebDataManager::cleanupOldFiles(uint32_t max_age_hours) {
             if (current_time - file_time > max_age_seconds) {
                 std::string filename = file.name();
                 file.close();
-                if (LittleFS.remove(filename.c_str())) {
+                if (StorageAccessManager::getInstance().deleteWebData(filename)) {
                     ESP_LOGI(LOG_TAG, "Cleaned up old file: %s", filename.c_str());
                 }
                 file = root.openNextFile();
@@ -386,56 +377,6 @@ std::string WebDataManager::extractDomain(const std::string& url) const {
     }
 
     return domain;
-}
-
-bool WebDataManager::saveToCache(const std::string& filename, const std::string& data) {
-    std::string path = getCachePath(filename);
-
-    File file = LittleFS.open(path.c_str(), "w");
-    if (!file) {
-        ESP_LOGE(LOG_TAG, "Failed to open file for writing: %s", path.c_str());
-        return false;
-    }
-
-    size_t written = file.write((uint8_t*)data.c_str(), data.size());
-    file.close();
-
-    if (written != data.size()) {
-        ESP_LOGE(LOG_TAG, "Failed to write all data: %d/%d bytes", written, data.size());
-        return false;
-    }
-
-    return true;
-}
-
-bool WebDataManager::loadFromCache(const std::string& filename, std::string& data) {
-    std::string path = getCachePath(filename);
-
-    File file = LittleFS.open(path.c_str(), "r");
-    if (!file) {
-        return false;
-    }
-
-    size_t size = file.size();
-    if (size == 0) {
-        file.close();
-        return false;
-    }
-
-    data.resize(size);
-    size_t read = file.read((uint8_t*)data.data(), size);
-    file.close();
-
-    if (read != size) {
-        ESP_LOGE(LOG_TAG, "Failed to read all data: %d/%d bytes", read, size);
-        return false;
-    }
-
-    return true;
-}
-
-std::string WebDataManager::getCachePath(const std::string& filename) const {
-    return std::string(CACHE_DIR) + "/" + filename;
 }
 
 void WebDataManager::scheduledDownloadTimer(lv_timer_t* timer) {

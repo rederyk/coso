@@ -77,11 +77,6 @@ private:
     bool validateUrl(const std::string& url) const;
     std::string extractDomain(const std::string& url) const;
 
-    /** Storage helpers */
-    bool saveToCache(const std::string& filename, const std::string& data);
-    bool loadFromCache(const std::string& filename, std::string& data);
-    std::string getCachePath(const std::string& filename) const;
-
     /** Scheduling */
     static void scheduledDownloadTimer(lv_timer_t* timer);
     void executeScheduledDownload(const std::string& task_id);

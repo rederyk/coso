@@ -88,6 +88,8 @@ void SettingsManager::reset() {
     notify(SettingKey::BleEnabled);
     notify(SettingKey::BleAdvertising);
     notify(SettingKey::BleMaxConnections);
+    notify(SettingKey::StorageSdWhitelist);
+    notify(SettingKey::StorageLittleFsWhitelist);
 }
 
 void SettingsManager::setWifiSsid(const std::string& ssid) {
@@ -359,6 +361,9 @@ void SettingsManager::loadDefaults() {
     current_.webDataMaxFileSizeKb = 50;
     current_.webDataMaxRequestsPerHour = 10;
     current_.webDataRequestTimeoutMs = 10000;
+
+    current_.storageAllowedSdPaths = {"/webdata","/memory","/userDir"};
+    current_.storageAllowedLittleFsPaths = {"/webdata", "/memory"};
 
     // System
     current_.version = DEFAULT_VERSION;
@@ -903,6 +908,24 @@ void SettingsManager::setWebDataRequestTimeoutMs(uint32_t timeoutMs) {
     }
     current_.webDataRequestTimeoutMs = timeoutMs;
     persistSnapshot();
+}
+
+void SettingsManager::setStorageAllowedSdPaths(const std::vector<std::string>& paths) {
+    if (!initialized_ || paths == current_.storageAllowedSdPaths) {
+        return;
+    }
+    current_.storageAllowedSdPaths = paths;
+    persistSnapshot();
+    notify(SettingKey::StorageSdWhitelist);
+}
+
+void SettingsManager::setStorageAllowedLittleFsPaths(const std::vector<std::string>& paths) {
+    if (!initialized_ || paths == current_.storageAllowedLittleFsPaths) {
+        return;
+    }
+    current_.storageAllowedLittleFsPaths = paths;
+    persistSnapshot();
+    notify(SettingKey::StorageLittleFsWhitelist);
 }
 
 void SettingsManager::notify(SettingKey key) {

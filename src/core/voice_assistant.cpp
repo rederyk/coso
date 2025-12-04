@@ -1341,8 +1341,10 @@ std::string VoiceAssistant::getSystemPrompt() const {
     prompt += "- Display: display.brightness_up(), display.brightness_down()\n";
     prompt += "- LED: led.set_brightness(percentage)\n";
     prompt += "- WebData: webData.fetch_once(url, filename), webData.fetch_scheduled(url, filename, minutes), webData.read_data(filename), webData.list_files()\n";
+    prompt += "  (l'accesso ai file è limitato alle directory whitelist configurate; usa preferibilmente `/webdata` o `/memory` e lascia che venga eseguito `StorageAccessManager`)\n";
     prompt += "- Sistema: system.ping(), system.uptime(), system.heap(), system.sd_status(), system.status()\n";
     prompt += "- Timing: delay(ms)\n";
+    prompt += "  (non accedere direttamente ad altre directory; la sandbox segue la whitelist `/webdata` e `/memory` gestita da StorageAccessManager)\n";
     prompt += "Esempi:\n";
     prompt += "- Scarica dati meteo: {\"command\": \"lua_script\", \"args\": [\"webData.fetch_once('https://api.open-meteo.com/v1/forecast?latitude=45.4642&longitude=9.1900&current_weather=true', 'weather.json')\"], \"text\": \"Dati meteo scaricati\"}\n";
     prompt += "- Leggi dati salvati: {\"command\": \"lua_script\", \"args\": [\"local data = webData.read_data('weather.json'); println('Dati:', data)\"], \"text\": \"Dati letti\"}\n";

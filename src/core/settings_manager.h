@@ -78,6 +78,10 @@ struct SettingsSnapshot {
     uint32_t webDataMaxRequestsPerHour = 10;
     uint32_t webDataRequestTimeoutMs = 10000;
 
+    // Storage access whitelist
+    std::vector<std::string> storageAllowedSdPaths;
+    std::vector<std::string> storageAllowedLittleFsPaths;
+
     // System
     std::string version;
     uint32_t bootCount = 0;
@@ -149,7 +153,10 @@ public:
 
         // System
         Version,
-        BootCount
+        BootCount,
+
+        StorageSdWhitelist,
+        StorageLittleFsWhitelist
     };
 
     using Callback = std::function<void(SettingKey, const SettingsSnapshot&)>;
@@ -311,6 +318,16 @@ public:
 
     uint32_t getWebDataRequestTimeoutMs() const { return current_.webDataRequestTimeoutMs; }
     void setWebDataRequestTimeoutMs(uint32_t timeoutMs);
+
+    const std::vector<std::string>& getStorageAllowedSdPaths() const {
+        return current_.storageAllowedSdPaths;
+    }
+    void setStorageAllowedSdPaths(const std::vector<std::string>& paths);
+
+    const std::vector<std::string>& getStorageAllowedLittleFsPaths() const {
+        return current_.storageAllowedLittleFsPaths;
+    }
+    void setStorageAllowedLittleFsPaths(const std::vector<std::string>& paths);
 
     // System
     uint32_t getBootCount() const { return current_.bootCount; }
