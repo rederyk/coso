@@ -19,6 +19,32 @@
 
 namespace {
 constexpr size_t LOG_TAIL_LINES = 10;
+constexpr uint8_t HID_MOD_CTRL = 0x01;
+constexpr uint8_t HID_MOD_SHIFT = 0x02;
+constexpr uint8_t HID_MOD_ALT = 0x04;
+constexpr uint8_t HID_MOD_GUI = 0x08;
+
+constexpr uint8_t HID_KEY_ENTER = 0x28;
+constexpr uint8_t HID_KEY_ESC = 0x29;
+constexpr uint8_t HID_KEY_BACKSPACE = 0x2A;
+constexpr uint8_t HID_KEY_TAB = 0x2B;
+constexpr uint8_t HID_KEY_SPACE = 0x2C;
+constexpr uint8_t HID_KEY_INSERT = 0x49;
+constexpr uint8_t HID_KEY_HOME = 0x4A;
+constexpr uint8_t HID_KEY_PAGE_UP = 0x4B;
+constexpr uint8_t HID_KEY_DELETE = 0x4C;
+constexpr uint8_t HID_KEY_END = 0x4D;
+constexpr uint8_t HID_KEY_PAGE_DOWN = 0x4E;
+constexpr uint8_t HID_KEY_ARROW_RIGHT = 0x4F;
+constexpr uint8_t HID_KEY_ARROW_LEFT = 0x50;
+constexpr uint8_t HID_KEY_ARROW_DOWN = 0x51;
+constexpr uint8_t HID_KEY_ARROW_UP = 0x52;
+constexpr uint8_t HID_KEY_CAPS_LOCK = 0x39;
+constexpr uint8_t HID_KEY_PRINT_SCREEN = 0x46;
+constexpr uint8_t HID_KEY_SCROLL_LOCK = 0x47;
+constexpr uint8_t HID_KEY_PAUSE = 0x48;
+constexpr uint8_t HID_KEY_NUM_LOCK = 0x53;
+constexpr uint8_t HID_KEY_MENU = 0x65;
 
 std::string joinArgs(const std::vector<std::string>& args, size_t start) {
     if (start >= args.size()) {
@@ -191,6 +217,172 @@ bool parseMouseButtonsToken(const std::string& token, uint8_t& mask) {
     }
 
     return mask != 0;
+}
+
+std::string trimCopy(const std::string& text) {
+    const auto first = text.find_first_not_of(" \t\r\n");
+    if (first == std::string::npos) {
+        return {};
+    }
+    const auto last = text.find_last_not_of(" \t\r\n");
+    return text.substr(first, last - first + 1);
+}
+
+std::string canonicalizeKeyToken(const std::string& token) {
+    std::string out;
+    out.reserve(token.size());
+    for (char c : token) {
+        const unsigned char uc = static_cast<unsigned char>(c);
+        if (std::isalnum(uc)) {
+            out.push_back(static_cast<char>(std::tolower(uc)));
+        }
+    }
+    return out;
+}
+
+struct KeyNameEntry {
+    const char* name;
+    uint8_t keycode;
+    uint8_t implicit_modifier;
+};
+
+constexpr KeyNameEntry NAMED_KEY_ENTRIES[] = {
+    {"enter", HID_KEY_ENTER, 0},
+    {"return", HID_KEY_ENTER, 0},
+    {"escape", HID_KEY_ESC, 0},
+    {"esc", HID_KEY_ESC, 0},
+    {"space", HID_KEY_SPACE, 0},
+    {"spacebar", HID_KEY_SPACE, 0},
+    {"tab", HID_KEY_TAB, 0},
+    {"backspace", HID_KEY_BACKSPACE, 0},
+    {"delete", HID_KEY_DELETE, 0},
+    {"del", HID_KEY_DELETE, 0},
+    {"insert", HID_KEY_INSERT, 0},
+    {"ins", HID_KEY_INSERT, 0},
+    {"home", HID_KEY_HOME, 0},
+    {"end", HID_KEY_END, 0},
+    {"pageup", HID_KEY_PAGE_UP, 0},
+    {"pgup", HID_KEY_PAGE_UP, 0},
+    {"pagedown", HID_KEY_PAGE_DOWN, 0},
+    {"pgdown", HID_KEY_PAGE_DOWN, 0},
+    {"arrowup", HID_KEY_ARROW_UP, 0},
+    {"up", HID_KEY_ARROW_UP, 0},
+    {"arrowdown", HID_KEY_ARROW_DOWN, 0},
+    {"down", HID_KEY_ARROW_DOWN, 0},
+    {"arrowleft", HID_KEY_ARROW_LEFT, 0},
+    {"left", HID_KEY_ARROW_LEFT, 0},
+    {"arrowright", HID_KEY_ARROW_RIGHT, 0},
+    {"right", HID_KEY_ARROW_RIGHT, 0},
+    {"capslock", HID_KEY_CAPS_LOCK, 0},
+    {"printscreen", HID_KEY_PRINT_SCREEN, 0},
+    {"prtsc", HID_KEY_PRINT_SCREEN, 0},
+    {"scrolllock", HID_KEY_SCROLL_LOCK, 0},
+    {"pause", HID_KEY_PAUSE, 0},
+    {"break", HID_KEY_PAUSE, 0},
+    {"numlock", HID_KEY_NUM_LOCK, 0},
+    {"menu", HID_KEY_MENU, 0}
+};
+
+bool lookupNamedKeyCode(const std::string& canonical, uint8_t& keycode, uint8_t& implicit_modifier) {
+    implicit_modifier = 0;
+
+    if (canonical.size() == 1) {
+        char c = canonical[0];
+        if (c >= 'a' && c <= 'z') {
+            keycode = static_cast<uint8_t>(0x04 + (c - 'a'));
+            return true;
+        }
+        if (c >= '1' && c <= '9') {
+            keycode = static_cast<uint8_t>(0x1D + (c - '0'));
+            return true;
+        }
+        if (c == '0') {
+            keycode = 0x27;
+            return true;
+        }
+    }
+
+    if (canonical.size() > 1 && canonical[0] == 'f') {
+        char* end = nullptr;
+        long number = std::strtol(canonical.c_str() + 1, &end, 10);
+        if (end && *end == '\0' && number >= 1 && number <= 12) {
+            keycode = static_cast<uint8_t>(0x3A + (number - 1));
+            return true;
+        }
+    }
+
+    for (const auto& entry : NAMED_KEY_ENTRIES) {
+        if (canonical == entry.name) {
+            keycode = entry.keycode;
+            implicit_modifier = entry.implicit_modifier;
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool parseKeyComboToken(const std::string& token, uint8_t& keycode, uint8_t& modifier) {
+    std::string trimmed = trimCopy(token);
+    if (trimmed.empty()) {
+        return false;
+    }
+
+    keycode = 0;
+    modifier = 0;
+    bool found_key = false;
+
+    size_t start = 0;
+    while (start < trimmed.size()) {
+        size_t plus_pos = trimmed.find('+', start);
+        std::string part = trimCopy(trimmed.substr(start, plus_pos - start));
+        if (part.empty()) {
+            return false;
+        }
+
+        std::string canonical = canonicalizeKeyToken(part);
+        if (canonical.empty()) {
+            return false;
+        }
+
+        if (canonical == "ctrl" || canonical == "control") {
+            modifier |= HID_MOD_CTRL;
+        } else if (canonical == "shift") {
+            modifier |= HID_MOD_SHIFT;
+        } else if (canonical == "alt" || canonical == "option") {
+            modifier |= HID_MOD_ALT;
+        } else if (canonical == "super" || canonical == "meta" || canonical == "cmd" ||
+                   canonical == "win" || canonical == "gui") {
+            modifier |= HID_MOD_GUI;
+        } else {
+            uint8_t implicit_modifier = 0;
+            uint8_t candidate = 0;
+            if (!lookupNamedKeyCode(canonical, candidate, implicit_modifier)) {
+                return false;
+            }
+            if (found_key) {
+                return false;
+            }
+            keycode = candidate;
+            modifier |= implicit_modifier;
+            found_key = true;
+        }
+
+        if (plus_pos == std::string::npos) {
+            break;
+        }
+        start = plus_pos + 1;
+    }
+
+    return found_key;
+}
+
+bool parseKeyToken(const std::string& token, uint8_t& keycode, uint8_t& modifier) {
+    modifier = 0;
+    if (parseByteToken(token, keycode)) {
+        return true;
+    }
+    return parseKeyComboToken(token, keycode, modifier);
 }
 }  // namespace
 
@@ -418,7 +610,7 @@ void CommandCenter::registerBuiltins() {
     registerCommand("bt_send_key", "Send HID keycode to bonded BLE host",
         [](const std::vector<std::string>& args) {
             if (args.size() < 2) {
-                return CommandResult{false, "Usage: bt_send_key <host_mac> <keycode> [modifier]"};
+                return CommandResult{false, "Usage: bt_send_key <host_mac> <keycode_or_combo> [modifier]"};
             }
 
             std::string normalized_mac;
@@ -428,11 +620,11 @@ void CommandCenter::registerBuiltins() {
             }
 
             uint8_t keycode = 0;
-            if (!parseByteToken(args[1], keycode)) {
-                return CommandResult{false, "Invalid keycode (use decimal or 0xNN)"};
+            uint8_t modifier = 0;
+            if (!parseKeyToken(args[1], keycode, modifier)) {
+                return CommandResult{false, "Invalid key token (use HID code or combo like ctrl+enter)"};
             }
 
-            uint8_t modifier = 0;
             if (args.size() >= 3) {
                 if (!parseByteToken(args[2], modifier)) {
                     return CommandResult{false, "Invalid modifier (use decimal or 0xNN)"};

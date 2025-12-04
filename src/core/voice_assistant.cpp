@@ -4,6 +4,7 @@
 #include "core/microphone_manager.h"
 #include "core/command_center.h"
 #include "core/conversation_buffer.h"
+#include "core/ble_hid_manager.h"
 #include "utils/logger.h"
 #include <esp_http_client.h>
 #include <cstring>
@@ -1122,13 +1123,35 @@ std::string VoiceAssistant::getSystemPrompt() const {
     std::string command_list;
     for (size_t i = 0; i < commands.size(); ++i) {
         if (i > 0) {
-            command_list += ", ";
+            command_list += "; ";
         }
         command_list += commands[i].name;
+        if (!commands[i].description.empty()) {
+            command_list += " (" + commands[i].description + ")";
+        }
     }
 
     if (command_list.empty()) {
         command_list = "none";
+    }
+
+    std::string host_list;
+    BleHidManager& ble = BleHidManager::getInstance();
+    if (!ble.isInitialized()) {
+        host_list = "unavailable (BLE not initialized)";
+    } else {
+        auto bonded_peers = ble.getBondedPeers();
+        if (bonded_peers.empty()) {
+            host_list = "none";
+        } else {
+            for (size_t i = 0; i < bonded_peers.size(); ++i) {
+                if (i > 0) {
+                    host_list += ", ";
+                }
+                host_list += bonded_peers[i].address.toString();
+                host_list += bonded_peers[i].isConnected ? " (connected)" : " (not connected)";
+            }
+        }
     }
 
     std::string prompt = prompt_template;
@@ -1138,6 +1161,14 @@ std::string VoiceAssistant::getSystemPrompt() const {
         prompt.replace(pos, placeholder.length(), command_list);
     } else {
         prompt += " Available commands: " + command_list;
+    }
+
+    const std::string hosts_placeholder = VOICE_ASSISTANT_BLE_HOSTS_PLACEHOLDER;
+    const size_t hosts_pos = prompt.find(hosts_placeholder);
+    if (hosts_pos != std::string::npos) {
+        prompt.replace(hosts_pos, hosts_placeholder.length(), host_list);
+    } else {
+        prompt += " Bonded BLE hosts: " + host_list + ".";
     }
 
     return prompt;
