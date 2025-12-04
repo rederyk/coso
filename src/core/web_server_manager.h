@@ -41,6 +41,7 @@ private:
     void handleAssistantPromptGet();
     void handleAssistantPromptPost();
     void handleAssistantPromptPreview();
+    void handleAssistantPromptResolveAndSave();
     void handleAssistantPromptVariables();
     void handleAssistantModels();
     void handleApiHealth();

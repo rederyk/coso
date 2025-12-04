@@ -113,6 +113,7 @@ public:
     void reloadPromptDefinition();
     bool buildPromptFromJson(const std::string& raw_json, std::string& error, std::string& output) const;
     bool savePromptDefinition(const std::string& raw_json, std::string& error);
+    bool resolveAndSavePrompt(const std::string& raw_json, std::string& error, std::string& resolved_json_out);
     void setSystemPromptVariable(const std::string& key, const std::string& value);
     void clearSystemPromptVariable(const std::string& key);
     void clearSystemPromptVariables();

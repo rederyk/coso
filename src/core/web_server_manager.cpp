@@ -123,6 +123,7 @@ void WebServerManager::registerRoutes() {
     server_->on("/api/assistant/prompt", HTTP_GET, [this]() { handleAssistantPromptGet(); });
     server_->on("/api/assistant/prompt", HTTP_POST, [this]() { handleAssistantPromptPost(); });
     server_->on("/api/assistant/prompt/preview", HTTP_POST, [this]() { handleAssistantPromptPreview(); });
+    server_->on("/api/assistant/prompt/resolve-and-save", HTTP_POST, [this]() { handleAssistantPromptResolveAndSave(); });
     server_->on("/api/assistant/prompt/variables", HTTP_GET, [this]() { handleAssistantPromptVariables(); });
     server_->on("/api/assistant/models", HTTP_GET, [this]() { handleAssistantModels(); });
     server_->on("/api/health", HTTP_GET, [this]() { handleApiHealth(); });
@@ -696,6 +697,44 @@ void WebServerManager::handleAssistantPromptVariables() {
     String payload;
     serializeJson(doc, payload);
     sendJson(200, payload);
+}
+
+void WebServerManager::handleAssistantPromptResolveAndSave() {
+    String body = server_->arg("plain");
+    if (body.isEmpty()) {
+        sendJson(400, "{\"status\":\"error\",\"message\":\"Empty body\"}");
+        return;
+    }
+
+    VoiceAssistant& assistant = VoiceAssistant::getInstance();
+    std::string error;
+    std::string resolved_json;
+
+    Logger::getInstance().infof("[WebServer] Resolving and saving prompt...");
+
+    // Esegue auto_populate e risolve tutti i placeholder
+    if (!assistant.resolveAndSavePrompt(std::string(body.c_str()), error, resolved_json)) {
+        Logger::getInstance().warnf("[WebServer] Resolve and save failed: %s", error.c_str());
+        StaticJsonDocument<256> response;
+        response["status"] = "error";
+        response["message"] = error.empty() ? "Risoluzione non riuscita" : error.c_str();
+        String payload;
+        serializeJson(response, payload);
+        sendJson(400, payload);
+        return;
+    }
+
+    // Ritorna il nuovo JSON risolto
+    DynamicJsonDocument response(resolved_json.length() + 512);
+    response["status"] = "success";
+    response["message"] = "Prompt risolto e salvato";
+    response["resolved_json"] = resolved_json.c_str();
+
+    String payload;
+    serializeJson(response, payload);
+    sendJson(200, payload);
+
+    Logger::getInstance().infof("[WebServer] Prompt resolved and saved successfully");
 }
 
 void WebServerManager::handleAssistantModels() {

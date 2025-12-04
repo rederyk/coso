@@ -1738,6 +1738,74 @@ bool VoiceAssistant::savePromptDefinition(const std::string& raw_json, std::stri
     return true;
 }
 
+bool VoiceAssistant::resolveAndSavePrompt(const std::string& raw_json,
+                                          std::string& error,
+                                          std::string& resolved_json_out) {
+    // 1. Parse del JSON
+    VoiceAssistantPromptDefinition definition;
+    if (!parsePromptDefinition(raw_json, definition, error)) {
+        return false;
+    }
+
+    // 2. Esegui auto_populate per popolare le variabili
+    LOG_I("[resolveAndSavePrompt] Executing auto_populate commands...");
+    if (!executeAutoPopulateCommands(raw_json, error)) {
+        LOG_W("[resolveAndSavePrompt] Auto-populate failed: %s", error.c_str());
+        // Continue anyway, some variables might still be populated
+    }
+
+    // 3. Risolvi le sections sostituendo i placeholder
+    std::vector<std::string> resolved_sections;
+    for (const auto& section : definition.sections) {
+        std::string resolved = resolvePromptVariables(section);
+        resolved_sections.push_back(resolved);
+        LOG_I("[resolveAndSavePrompt] Resolved section: %s", resolved.c_str());
+    }
+
+    // 4. Crea nuovo JSON con sections risolte
+    cJSON* root = cJSON_CreateObject();
+    if (!root) {
+        error = "Failed to create JSON";
+        return false;
+    }
+
+    // Mantieni prompt_template
+    if (!definition.prompt_template.empty()) {
+        cJSON_AddStringToObject(root, "prompt_template", definition.prompt_template.c_str());
+    }
+
+    // Aggiungi sections risolte
+    cJSON* sections_array = cJSON_CreateArray();
+    for (const auto& section : resolved_sections) {
+        cJSON_AddItemToArray(sections_array, cJSON_CreateString(section.c_str()));
+    }
+    cJSON_AddItemToObject(root, "sections", sections_array);
+
+    // NON includere auto_populate nel JSON salvato (già risolto)
+
+    // 5. Serializza
+    char* json_string = cJSON_Print(root);
+    if (!json_string) {
+        cJSON_Delete(root);
+        error = "Failed to serialize JSON";
+        return false;
+    }
+
+    resolved_json_out = json_string;
+    cJSON_free(json_string);
+    cJSON_Delete(root);
+
+    LOG_I("[resolveAndSavePrompt] Resolved JSON: %s", resolved_json_out.c_str());
+
+    // 6. Salva su filesystem usando savePromptDefinition
+    if (!savePromptDefinition(resolved_json_out, error)) {
+        return false;
+    }
+
+    LOG_I("[resolveAndSavePrompt] Prompt resolved and saved successfully");
+    return true;
+}
+
 void VoiceAssistant::setSystemPromptVariable(const std::string& key, const std::string& value) {
     if (key.empty()) {
         return;

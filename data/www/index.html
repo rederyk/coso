@@ -528,7 +528,8 @@
         <p class="helper-text">Il prompt system viene ora definito da un JSON completo. Modificalo direttamente e controlla l'anteprima risolta.</p>
         <div class="card-actions">
           <button id="reload-prompt-json" class="secondary">Ricarica JSON</button>
-          <button id="save-prompt-json">Salva prompt</button>
+          <button id="resolve-and-save-prompt">Risolvi e Salva</button>
+          <button id="save-prompt-json" class="secondary">Salva Grezzo</button>
         </div>
         <textarea id="system-prompt-editor" rows="10" placeholder="Inserisci il JSON del prompt..."></textarea>
         <div class="helper-text" style="margin-top:0.5rem;">Anteprima risolta:</div>
@@ -566,6 +567,7 @@
     const systemPromptEditor = document.getElementById('system-prompt-editor');
     const promptReloadBtn = document.getElementById('reload-prompt-json');
     const promptSaveBtn = document.getElementById('save-prompt-json');
+    const resolveAndSaveBtn = document.getElementById('resolve-and-save-prompt');
     const systemPromptPreviewEl = document.getElementById('system-prompt-preview');
     const variablesDisplayEl = document.getElementById('variables-display');
     const variablesListEl = document.getElementById('variables-list');
@@ -1116,6 +1118,45 @@
       }
     }
 
+    async function resolveAndSavePrompt() {
+      resolveAndSaveBtn.disabled = true;
+      setStatusAnimated('Risoluzione e salvataggio in corso', 'busy');
+
+      try {
+        const response = await fetchWithTimeout('/api/assistant/prompt/resolve-and-save', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: systemPromptEditor.value
+        }, 30000); // 30s timeout per esecuzione comandi
+
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.message || 'Risoluzione fallita');
+        }
+
+        // Aggiorna l'editor con il JSON risolto
+        try {
+          const formatted = JSON.stringify(JSON.parse(data.resolved_json), null, 2);
+          systemPromptEditor.value = formatted;
+        } catch {
+          systemPromptEditor.value = data.resolved_json;
+        }
+
+        clearStatusAnimation();
+        setStatus('✓ Prompt risolto e salvato', 'idle');
+        await loadPromptDefinition(false);
+
+        // Mostra messaggio informativo
+        setTimeout(() => setStatus('Pronto', 'idle'), 3000);
+      } catch (err) {
+        clearStatusAnimation();
+        setStatus('✗ ' + err.message, 'error');
+        setTimeout(() => setStatus('Pronto', 'idle'), 5000);
+      } finally {
+        resolveAndSaveBtn.disabled = false;
+      }
+    }
+
     async function toggleRecording() {
       if (!recording) {
         try {
@@ -1221,6 +1262,7 @@
     refreshModelsBtn.addEventListener('click', () => refreshModels());
     promptReloadBtn.addEventListener('click', () => loadPromptDefinition());
     promptSaveBtn.addEventListener('click', savePromptDefinition);
+    resolveAndSaveBtn.addEventListener('click', resolveAndSavePrompt);
     systemPromptEditor.addEventListener('input', () => {
       if (promptPreviewTimer) {
         clearTimeout(promptPreviewTimer);

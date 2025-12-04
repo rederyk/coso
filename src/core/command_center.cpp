@@ -15,6 +15,7 @@
 #include "core/audio_manager.h"
 #include "core/backlight_manager.h"
 #include "core/time_manager.h"
+#include "core/voice_assistant.h"
 #include "screens/ble_manager.h"
 #include "utils/logger.h"
 
@@ -827,5 +828,18 @@ void CommandCenter::registerBuiltins() {
                              " sd_card=" + sd_status +
                              " wifi=" + wifi_status;
             return CommandResult{true, msg};
+        });
+
+    registerCommand("lua_exec", "Execute Lua script and return output",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                return CommandResult{false, "Usage: lua_exec <script>"};
+            }
+
+            // Get Lua engine from VoiceAssistant
+            VoiceAssistant& va = VoiceAssistant::getInstance();
+            CommandResult result = va.executeLuaScript(args[0]);
+
+            return result;
         });
 }
