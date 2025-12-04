@@ -9,6 +9,7 @@
 #include "utils/logger.h"
 #include <esp_http_client.h>
 #include <cstring>
+#include <sstream>
 #include <WiFi.h>
 #include <FS.h>
 #include <SD_MMC.h>
@@ -1476,6 +1477,94 @@ void VoiceAssistant::LuaSandbox::setupSandbox() {
     lua_register(L, "esp32_heap", lua_heap);
     lua_register(L, "esp32_sd_status", lua_sd_status);
     lua_register(L, "esp32_system_status", lua_system_status);
+
+    // Utility functions
+    lua_register(L, "println", lua_println);
+}
+
+std::string VoiceAssistant::LuaSandbox::preprocessScript(const std::string& script) {
+    std::string processed = script;
+    std::string output;
+    size_t pos = 0;
+    int line_num = 1;
+
+    Serial.println("[LUA] Preprocessing script...");
+
+    // Replace null with nil (JavaScript -> Lua)
+    size_t null_pos = 0;
+    while ((null_pos = processed.find("null", null_pos)) != std::string::npos) {
+        processed.replace(null_pos, 4, "nil");
+        null_pos += 3;
+    }
+
+    // Process line by line to filter invalid calls
+    std::istringstream stream(processed);
+    std::string line;
+    int valid_lines = 0;
+    int skipped_lines = 0;
+
+    while (std::getline(stream, line)) {
+        // Trim whitespace
+        size_t start = line.find_first_not_of(" \t\r\n");
+        size_t end = line.find_last_not_of(" \t\r\n");
+
+        if (start == std::string::npos) {
+            // Empty line, keep it
+            output += "\n";
+            line_num++;
+            continue;
+        }
+
+        std::string trimmed = line.substr(start, end - start + 1);
+
+        // Check if line is a valid API call or control structure
+        bool is_valid = false;
+
+        // Valid prefixes (API namespaces)
+        const char* valid_prefixes[] = {
+            "gpio.", "ble.", "led.", "audio.", "display.", "system.",
+            "delay(", "println(",
+            "if ", "else", "end", "for ", "while ", "do", "then",
+            "local ", "function ", "return",
+            "--"  // Comments
+        };
+
+        for (const char* prefix : valid_prefixes) {
+            if (trimmed.find(prefix) == 0 || trimmed.find(prefix) != std::string::npos) {
+                is_valid = true;
+                break;
+            }
+        }
+
+        // Check for assignments (local var = ...)
+        if (trimmed.find("=") != std::string::npos && trimmed.find("local") != std::string::npos) {
+            is_valid = true;
+        }
+
+        // Check for closing braces/parentheses
+        if (trimmed == "}" || trimmed == ")" || trimmed == "end") {
+            is_valid = true;
+        }
+
+        if (is_valid) {
+            output += line + "\n";
+            valid_lines++;
+            Serial.printf("[LUA] Line %d: VALID - %s\n", line_num, trimmed.c_str());
+        } else {
+            // Try to parse as pcall to catch errors
+            output += "pcall(function() " + line + " end)\n";
+            skipped_lines++;
+            Serial.printf("[LUA] Line %d: WRAPPED - %s\n", line_num, trimmed.c_str());
+        }
+
+        line_num++;
+    }
+
+    Serial.printf("[LUA] Preprocessing complete: %d valid, %d wrapped\n", valid_lines, skipped_lines);
+    Serial.println("[LUA] Processed script:");
+    Serial.println(output.c_str());
+
+    return output;
 }
 
 CommandResult VoiceAssistant::LuaSandbox::execute(const std::string& script) {
@@ -1483,16 +1572,22 @@ CommandResult VoiceAssistant::LuaSandbox::execute(const std::string& script) {
         return {false, "Lua state not initialized"};
     }
 
-    int result = luaL_dostring(L, script.c_str());
+    // Preprocess script to fix common LLM mistakes
+    std::string processed_script = preprocessScript(script);
+
+    int result = luaL_dostring(L, processed_script.c_str());
 
     if (result != LUA_OK) {
         const char* error = lua_tostring(L, -1);
         std::string error_msg = "Lua error: ";
         error_msg += error ? error : "unknown";
         lua_pop(L, 1); // Remove error message from stack
+
+        Serial.printf("[LUA] Execution error: %s\n", error_msg.c_str());
         return {false, error_msg};
     }
 
+    Serial.println("[LUA] Script executed successfully");
     return {true, "Lua script executed"};
 }
 
@@ -1727,4 +1822,32 @@ int VoiceAssistant::LuaSandbox::lua_system_status(lua_State* L) {
     }
     lua_pushstring(L, result.message.c_str());
     return 2;
+}
+
+int VoiceAssistant::LuaSandbox::lua_println(lua_State* L) {
+    // Get the number of arguments
+    int n = lua_gettop(L);
+    std::string message;
+
+    // Concatenate all arguments
+    for (int i = 1; i <= n; i++) {
+        if (lua_isstring(L, i)) {
+            if (i > 1) message += " ";
+            message += lua_tostring(L, i);
+        } else if (lua_isnumber(L, i)) {
+            if (i > 1) message += " ";
+            message += std::to_string(lua_tonumber(L, i));
+        } else if (lua_isboolean(L, i)) {
+            if (i > 1) message += " ";
+            message += lua_toboolean(L, i) ? "true" : "false";
+        } else if (lua_isnil(L, i)) {
+            if (i > 1) message += " ";
+            message += "nil";
+        }
+    }
+
+    // Log the message
+    Serial.println(message.c_str());
+
+    return 0;  // No return values
 }

@@ -109,6 +109,7 @@ public:
         lua_State* L;
 
         void setupSandbox();
+        std::string preprocessScript(const std::string& script);
 
     public:
         LuaSandbox();
@@ -135,6 +136,7 @@ public:
         static int lua_heap(lua_State* L);
         static int lua_sd_status(lua_State* L);
         static int lua_system_status(lua_State* L);
+        static int lua_println(lua_State* L);
     };
 
 private:
