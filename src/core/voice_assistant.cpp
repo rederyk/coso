@@ -446,9 +446,14 @@ void VoiceAssistant::aiProcessingTask(void* param) {
                                 cmd.text = "Errore nell'esecuzione dello script: " + script_result.message;
                             }
 
-                            // Phase 1: Output Refinement - Check if Lua output needs refinement
+                            // Phase 1-2: Output Refinement - Check if Lua output needs refinement
                             if (script_result.success && !cmd.output.empty()) {
-                                cmd.needs_refinement = va->shouldRefineOutput(cmd);
+                                // Phase 2: If LLM didn't set needs_refinement flag, use heuristic
+                                if (!cmd.needs_refinement) {
+                                    cmd.needs_refinement = va->shouldRefineOutput(cmd);
+                                    LOG_I("Using heuristic for refinement decision: %s",
+                                          cmd.needs_refinement ? "true" : "false");
+                                }
 
                                 if (cmd.needs_refinement) {
                                     LOG_I("Lua output needs refinement, processing...");
@@ -477,9 +482,14 @@ void VoiceAssistant::aiProcessingTask(void* param) {
                                 if (result.success) {
                                     LOG_I("Command executed successfully: %s", result.message.c_str());
 
-                                    // Phase 1: Output Refinement - Check if command output needs refinement
+                                    // Phase 1-2: Output Refinement - Check if command output needs refinement
                                     if (!cmd.output.empty()) {
-                                        cmd.needs_refinement = va->shouldRefineOutput(cmd);
+                                        // Phase 2: If LLM didn't set needs_refinement flag, use heuristic
+                                        if (!cmd.needs_refinement) {
+                                            cmd.needs_refinement = va->shouldRefineOutput(cmd);
+                                            LOG_I("Using heuristic for refinement decision: %s",
+                                                  cmd.needs_refinement ? "true" : "false");
+                                        }
 
                                         if (cmd.needs_refinement) {
                                             LOG_I("Command output needs refinement, processing...");
@@ -1106,10 +1116,22 @@ bool VoiceAssistant::parseGPTCommand(const std::string& response, VoiceCommand& 
         cmd.text = "";  // Empty if not provided
     }
 
+    // Phase 2: Extract should_refine_output flag (optional, defaults to false)
+    cJSON* should_refine = cJSON_GetObjectItem(root, "should_refine_output");
+    if (should_refine && cJSON_IsBool(should_refine)) {
+        cmd.needs_refinement = cJSON_IsTrue(should_refine);
+        LOG_I("LLM specified should_refine_output: %s", cmd.needs_refinement ? "true" : "false");
+    } else {
+        // Fallback to heuristic if LLM didn't specify
+        cmd.needs_refinement = false;
+        LOG_I("LLM didn't specify should_refine_output, will use heuristic");
+    }
+
     cJSON_Delete(root);
 
-    LOG_I("Parsed command: %s (args count: %d, text: %s)",
-          cmd.command.c_str(), cmd.args.size(), cmd.text.c_str());
+    LOG_I("Parsed command: %s (args count: %d, text: %s, needs_refinement: %s)",
+          cmd.command.c_str(), cmd.args.size(), cmd.text.c_str(),
+          cmd.needs_refinement ? "true" : "false");
     return true;
 }
 
@@ -1503,6 +1525,33 @@ std::string VoiceAssistant::getSystemPrompt() const {
     prompt += "- LED lampeggiante: {\"command\": \"lua_script\", \"args\": [\"gpio.write(23, true); delay(1000); gpio.write(23, false)\"], \"text\": \"LED lampeggiato\"}\n";
     prompt += "- Scrivi testo BLE: {\"command\": \"lua_script\", \"args\": [\"ble.type('AA:BB:CC:DD:EE:FF', 'Ciao mondo!')\"], \"text\": \"Testo inviato via BLE\"}\n";
     prompt += "- Sequenza complessa: {\"command\": \"lua_script\", \"args\": [\"gpio.write(23, true); ble.type('AA:BB:CC:DD:EE:FF', 'LED acceso'); delay(2000); gpio.write(23, false); audio.volume_up()\"], \"text\": \"Sequenza completata\"}";
+
+    // Phase 2: Smart Output Decision - Add should_refine_output field instructions
+    prompt += "\n\n**NUOVO FORMATO RISPOSTA JSON (Phase 2):**\n";
+    prompt += "La tua risposta JSON deve includere questi campi:\n";
+    prompt += "```json\n";
+    prompt += "{\n";
+    prompt += "  \"command\": \"comando_da_eseguire\",\n";
+    prompt += "  \"args\": [\"arg1\", \"arg2\"],\n";
+    prompt += "  \"text\": \"Risposta testuale user-friendly\",\n";
+    prompt += "  \"should_refine_output\": true/false\n";
+    prompt += "}\n```\n\n";
+    prompt += "**Campo should_refine_output:**\n";
+    prompt += "Imposta questo campo a `true` se il comando produrrà output tecnico (JSON, log, dati grezzi) ";
+    prompt += "che deve essere riformattato in modo user-friendly. Imposta a `false` se l'output è già comprensibile.\n\n";
+    prompt += "**Quando usare should_refine_output=true:**\n";
+    prompt += "- Comandi webData.fetch_once() o webData.read_data() (producono JSON)\n";
+    prompt += "- Comandi memory.read_file() (potrebbero contenere dati grezzi)\n";
+    prompt += "- Comandi heap, system_status, log_tail (producono statistiche tecniche)\n";
+    prompt += "- Qualsiasi comando che produce output >200 caratteri o JSON\n\n";
+    prompt += "**Quando usare should_refine_output=false:**\n";
+    prompt += "- Comandi semplici come volume_up, brightness_down (output già chiaro)\n";
+    prompt += "- Comandi conversazionali che non producono output tecnico\n";
+    prompt += "- Se hai già formattato l'output nel campo 'text'\n\n";
+    prompt += "**Esempi:**\n";
+    prompt += "Query meteo: {\"command\": \"lua_script\", \"args\": [\"webData.fetch_once(...)\"], \"text\": \"Sto recuperando i dati meteo\", \"should_refine_output\": true}\n";
+    prompt += "Volume up: {\"command\": \"volume_up\", \"args\": [], \"text\": \"Volume aumentato\", \"should_refine_output\": false}\n";
+    prompt += "Heap stats: {\"command\": \"heap\", \"args\": [], \"text\": \"Ecco le statistiche di memoria\", \"should_refine_output\": true}";
 
     return prompt;
 }
