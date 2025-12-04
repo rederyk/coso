@@ -2081,6 +2081,21 @@ int VoiceAssistant::LuaSandbox::lua_webdata_list_files(lua_State* L) {
     auto& webData = WebDataManager::getInstance();
     std::vector<std::string> files = webData.listFiles();
 
+    std::ostringstream oss;
+    if (files.empty()) {
+        oss << "WebData directory is empty";
+    } else {
+        oss << "WebData files:";
+        for (const auto& file : files) {
+            oss << "\n- " << file;
+        }
+    }
+    const std::string output = oss.str();
+    Serial.println(output.c_str());
+    if (s_active_lua_sandbox) {
+        s_active_lua_sandbox->appendOutput(output);
+    }
+
     lua_newtable(L);
     for (size_t i = 0; i < files.size(); ++i) {
         lua_pushinteger(L, i + 1);  // Lua arrays are 1-indexed
