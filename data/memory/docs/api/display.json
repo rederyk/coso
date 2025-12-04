@@ -1,0 +1,169 @@
+{
+  "namespace": "display",
+  "description": "Controllo display LCD/OLED per output visivo",
+  "functions": {
+    "print": {
+      "signature": "display.print(text: string, x: number, y: number, size: number)",
+      "description": "Stampa testo su display a coordinate specificate",
+      "parameters": {
+        "text": {
+          "type": "string",
+          "description": "Testo da visualizzare",
+          "required": true
+        },
+        "x": {
+          "type": "number",
+          "description": "Coordinata X (pixel, 0 = sinistra)",
+          "required": true
+        },
+        "y": {
+          "type": "number",
+          "description": "Coordinata Y (pixel, 0 = alto)",
+          "required": true
+        },
+        "size": {
+          "type": "number",
+          "description": "Dimensione font (1 = piccolo, 2 = medio, 3 = grande)",
+          "required": false,
+          "default": 1
+        }
+      },
+      "returns": "void",
+      "examples": [
+        {
+          "code": "display.print('Ciao!', 10, 20, 2)",
+          "description": "Stampa testo a (10,20) con font medio"
+        },
+        {
+          "code": "display.print('Temperatura: 22°C', 0, 0, 1)",
+          "description": "Mostra temperatura in alto a sinistra"
+        }
+      ]
+    },
+    "clear": {
+      "signature": "display.clear()",
+      "description": "Cancella tutto il contenuto del display",
+      "parameters": {},
+      "returns": "void",
+      "examples": [
+        {
+          "code": "display.clear()\ndisplay.print('Nuovo messaggio', 0, 0, 2)",
+          "description": "Pulisce display e stampa nuovo testo"
+        }
+      ]
+    },
+    "set_brightness": {
+      "signature": "display.set_brightness(level: number)",
+      "description": "Imposta luminosità display (0-255)",
+      "parameters": {
+        "level": {
+          "type": "number",
+          "description": "Livello luminosità: 0 = spento, 255 = massimo",
+          "required": true,
+          "range": "0-255"
+        }
+      },
+      "returns": "void",
+      "examples": [
+        {
+          "code": "display.set_brightness(128)",
+          "description": "Imposta luminosità al 50%"
+        },
+        {
+          "code": "display.set_brightness(0)",
+          "description": "Spegne display"
+        }
+      ]
+    },
+    "draw_line": {
+      "signature": "display.draw_line(x1: number, y1: number, x2: number, y2: number)",
+      "description": "Disegna linea tra due punti",
+      "parameters": {
+        "x1": {
+          "type": "number",
+          "description": "Coordinata X punto iniziale",
+          "required": true
+        },
+        "y1": {
+          "type": "number",
+          "description": "Coordinata Y punto iniziale",
+          "required": true
+        },
+        "x2": {
+          "type": "number",
+          "description": "Coordinata X punto finale",
+          "required": true
+        },
+        "y2": {
+          "type": "number",
+          "description": "Coordinata Y punto finale",
+          "required": true
+        }
+      },
+      "returns": "void",
+      "examples": [
+        {
+          "code": "display.draw_line(0, 0, 127, 63)",
+          "description": "Disegna diagonale"
+        }
+      ]
+    },
+    "draw_rect": {
+      "signature": "display.draw_rect(x: number, y: number, width: number, height: number, filled: boolean)",
+      "description": "Disegna rettangolo",
+      "parameters": {
+        "x": {
+          "type": "number",
+          "description": "Coordinata X angolo superiore sinistro",
+          "required": true
+        },
+        "y": {
+          "type": "number",
+          "description": "Coordinata Y angolo superiore sinistro",
+          "required": true
+        },
+        "width": {
+          "type": "number",
+          "description": "Larghezza rettangolo",
+          "required": true
+        },
+        "height": {
+          "type": "number",
+          "description": "Altezza rettangolo",
+          "required": true
+        },
+        "filled": {
+          "type": "boolean",
+          "description": "true = riempito, false = solo bordo",
+          "required": false,
+          "default": false
+        }
+      },
+      "returns": "void",
+      "examples": [
+        {
+          "code": "display.draw_rect(10, 10, 50, 30, true)",
+          "description": "Disegna rettangolo pieno"
+        }
+      ]
+    }
+  },
+  "display_specs": {
+    "type": "SSD1306 OLED (128x64)",
+    "resolution": "128x64 pixel",
+    "color": "Monocromatico (bianco su nero)",
+    "interface": "I2C (SDA/SCL)"
+  },
+  "coordinate_system": {
+    "origin": "(0, 0) = angolo superiore sinistro",
+    "x_range": "0-127 pixel",
+    "y_range": "0-63 pixel"
+  },
+  "notes": [
+    "Aggiornamento display: ~50ms (non usare in loop veloci)",
+    "Font sizes: 1 = 6x8px, 2 = 12x16px, 3 = 18x24px",
+    "Testo oltre bordi viene troncato",
+    "Per animazioni: usare clear() + ridisegna frame",
+    "Consumo: ~20mA @ 100% brightness"
+  ]
+}

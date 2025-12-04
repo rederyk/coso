@@ -1,0 +1,60 @@
+{
+  "gpio_control_on_off": {
+    "name": "Controllo GPIO Accensione/Spegimento",
+    "description": "Esempio di controllo base di un pin GPIO per accenderlo o spegnerlo.",
+    "scenario": [
+      {
+        "step": 1,
+        "description": "Accende un pin GPIO specificato",
+        "command": "lua_script",
+        "args_template": [
+          "gpio.write({PIN_NUMBER}, true)"
+        ],
+        "placeholders": {
+          "{PIN_NUMBER}": "Numero del pin GPIO da controllare (es. 23)"
+        },
+        "expected_output_type": "void",
+        "output_example": ""
+      },
+      {
+        "step": 2,
+        "description": "Spegne un pin GPIO specificato",
+        "command": "lua_script",
+        "args_template": [
+          "gpio.write({PIN_NUMBER}, false)"
+        ],
+        "placeholders": {
+          "{PIN_NUMBER}": "Numero del pin GPIO da controllare (es. 23)"
+        },
+        "expected_output_type": "void",
+        "output_example": ""
+      }
+    ],
+    "notes": [
+      "Assicurarsi che il pin GPIO sia configurato correttamente come output.",
+      "L'LLM dovrebbe essere in grado di sostituire {PIN_NUMBER} con il valore fornito dall'utente."
+    ]
+  },
+  "gpio_control_toggle": {
+    "name": "Controllo GPIO Toggle",
+    "description": "Esempio di come invertire lo stato di un pin GPIO.",
+    "scenario": [
+      {
+        "step": 1,
+        "description": "Inverte lo stato del pin GPIO specificato",
+        "command": "lua_script",
+        "args_template": [
+          "gpio.toggle({PIN_NUMBER})"
+        ],
+        "placeholders": {
+          "{PIN_NUMBER}": "Numero del pin GPIO da controllare (es. 23)"
+        },
+        "expected_output_type": "void",
+        "output_example": ""
+      }
+    ],
+    "notes": [
+      "Utile per interruttori o pulsanti per cambiare stato con una singola azione."
+    ]
+  }
+}

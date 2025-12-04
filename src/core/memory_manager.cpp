@@ -15,6 +15,7 @@ bool MemoryManager::init() {
     // Load default permissions
     directory_permissions_["/memory"] = {"", true, true, false};
     directory_permissions_["/userDir"] = {"", true, true, true};
+    directory_permissions_["/docs"] = {"", true, false, false}; // NEW: read-only for documentation
 
     // TODO: Load from settings when settings are updated to include memory.directories
     // For now, use defaults as specified in plan

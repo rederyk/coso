@@ -1544,51 +1544,63 @@ std::string VoiceAssistant::getSystemPrompt() const {
         prompt += " Bonded BLE hosts: " + host_list + ".";
     }
 
-    // Add Lua scripting capabilities
-    prompt += "\n\nInoltre puoi utilizzare script Lua per operazioni complesse combinando GPIO, BLE, audio, web data e altre funzioni. ";
     prompt += "Per eseguire uno script Lua, usa il comando 'lua_script' con lo script come argomento. ";
-    prompt += "API Lua disponibili:\n";
-    prompt += "- GPIO: gpio.write(pin, value), gpio.read(pin), gpio.toggle(pin)\n";
-    prompt += "- BLE: ble.type(host_mac, text), ble.send_key(host_mac, keycode, modifier), ble.mouse_move(host_mac, dx, dy), ble.click(host_mac, buttons)\n";
-    prompt += "- Audio: audio.volume_up(), audio.volume_down()\n";
-    prompt += "- Display: display.brightness_up(), display.brightness_down()\n";
-    prompt += "- LED: led.set_brightness(percentage)\n";
-    prompt += "- WebData: webData.fetch_once(url, filename), webData.fetch_scheduled(url, filename, minutes), webData.read_data(filename), webData.list_files()\n";
-    prompt += "- Memory: memory.read_file(filename), memory.write_file(filename, data), memory.list_files(), memory.delete_file(filename)\n";
-    prompt += "  (l'accesso ai file è limitato alle directory whitelist configurate; usa preferibilmente `/webdata` o `/memory` e lascia che venga eseguito `StorageAccessManager`)\n";
-    prompt += "- Sistema: system.ping(), system.uptime(), system.heap(), system.sd_status(), system.status()\n";
-    prompt += "- Timing: delay(ms)\n";
-    prompt += "\n**API METEO CONSIGLIATA PER L'ITALIA:**\n";
-    prompt += "Usa Open-Meteo API (gratuita, nessuna API key richiesta):\n";
-    prompt += "URL: https://api.open-meteo.com/v1/forecast?latitude=LAT&longitude=LON&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m&timezone=Europe/Rome\n\n";
-    prompt += "Coordinate città italiane principali:\n";
-    prompt += "- Milano: lat=45.4642, lon=9.1900\n";
-    prompt += "- Roma: lat=41.9028, lon=12.4964\n";
-    prompt += "- Napoli: lat=40.8518, lon=14.2681\n";
-    prompt += "- Torino: lat=45.0703, lon=7.6869\n";
-    prompt += "- Firenze: lat=43.7696, lon=11.2558\n";
-    prompt += "- Venezia: lat=45.4408, lon=12.3155\n";
-    prompt += "- Bologna: lat=44.4949, lon=11.3426\n";
-    prompt += "- Genova: lat=44.4056, lon=8.9463\n";
-    prompt += "- Palermo: lat=38.1157, lon=13.3615\n";
-    prompt += "- Bari: lat=41.1171, lon=16.8719\n";
-    prompt += "- Pisa: lat=43.7228, lon=10.4017\n";
-    prompt += "- Livorno: lat=43.5485, lon=10.3106\n";
-    prompt += "- Piombino: lat=42.9242, lon=10.5267\n\n";
-    prompt += "**Response JSON contiene:**\n";
-    prompt += "- current.temperature_2m: temperatura in °C\n";
-    prompt += "- current.relative_humidity_2m: umidità in %\n";
-    prompt += "- current.apparent_temperature: temperatura percepita in °C\n";
-    prompt += "- current.wind_speed_10m: velocità vento in km/h\n";
-    prompt += "- current.precipitation: precipitazioni in mm\n";
-    prompt += "- current.weather_code: codice meteo (0=sereno, 1-3=nuvoloso, 61-65=pioggia, 71-77=neve)\n\n";
-    prompt += "Esempi:\n";
-    prompt += "- Meteo Milano: {\"command\": \"lua_script\", \"args\": [\"webData.fetch_once('https://api.open-meteo.com/v1/forecast?latitude=45.4642&longitude=9.1900&current=temperature_2m,relative_humidity_2m,wind_speed_10m&timezone=Europe/Rome', 'weather_milano.json')\"], \"text\": \"Sto scaricando i dati meteo di Milano\", \"should_refine_output\": true}\n";
-    prompt += "- Leggi meteo: {\"command\": \"lua_script\", \"args\": [\"println(webData.read_data('weather_milano.json'))\"], \"text\": \"Ecco il meteo\", \"should_refine_output\": true}\n";
-    prompt += "- LED lampeggiante: {\"command\": \"lua_script\", \"args\": [\"gpio.write(23, true); delay(1000); gpio.write(23, false)\"], \"text\": \"LED lampeggiato\"}\n";
-    prompt += "- Scrivi testo BLE: {\"command\": \"lua_script\", \"args\": [\"ble.type('AA:BB:CC:DD:EE:FF', 'Ciao mondo!')\"], \"text\": \"Testo inviato via BLE\"}\n";
-    prompt += "- Sequenza complessa: {\"command\": \"lua_script\", \"args\": [\"gpio.write(23, true); ble.type('AA:BB:CC:DD:EE:FF', 'LED acceso'); delay(2000); gpio.write(23, false); audio.volume_up()\"], \"text\": \"Sequenza completata\"}";
 
+    prompt += "\n**API DISPONIBILI:**\n";
+    prompt += "Per la documentazione completa delle API, usa:\n";
+    prompt += "- `docs.api.gpio()` - Funzioni GPIO (gpio.json)\n";
+    prompt += "- `docs.api.ble()` - Funzioni BLE (ble.json)\n";
+    prompt += "- `docs.api.webData()` - Funzioni WebData (webdata.json)\n";
+    prompt += "- `docs.api.memory()` - Funzioni Memory (memory.json)\n";
+    prompt += "- `docs.api.audio()` - Funzioni Audio (audio.json)\n";
+    prompt += "- `docs.api.display()` - Funzioni Display (display.json)\n";
+    prompt += "- `docs.api.led()` - Funzioni LED (led.json)\n";
+    prompt += "- `docs.api.system()` - Funzioni System (system.json)\n";
+    prompt += "- `docs.reference.cities()` - Coordinate città italiane (cities.json)\n";
+    prompt += "- `docs.reference.weather()` - Guida Open-Meteo API (weather_api.md)\n";
+    prompt += "- `docs.examples.weather_query()` - Esempio query meteo (weather_query.json)\n";
+    prompt += "- `docs.examples.gpio_control()` - Esempio controllo GPIO (gpio_control.json)\n";
+    prompt += "- `docs.examples.ble_keyboard()` - Esempio tastiera BLE (ble_keyboard.json)\n";
+    prompt += "- `docs.get('path/to/file.json')` - Getter generico per qualsiasi documento\n\n";
+
+    prompt += "**PATTERN D'USO (query in 2 step):**\n";
+    prompt += "1. Se non conosci dettagli API o dati: `println(docs.api.gpio())` o `println(docs.reference.cities())`\n";
+    prompt += "2. Poi esegui il comando con le info corrette: `gpio.write(23, true)`\n\n";
+
+    prompt += "**ESEMPI RAPIDI:**\n";
+    prompt += "- Meteo Milano: `local cities = docs.reference.cities(); local milano_lat = cities.Milano.lat; local milano_lon = cities.Milano.lon; webData.fetch_once('https://api.open-meteo.com/v1/forecast?latitude=' .. milano_lat .. '&longitude=' .. milano_lon .. '&current=temperature_2m,weather_code&timezone=Europe/Rome', 'weather.json'); println(webData.read_data('weather.json'))`\n";
+    prompt += "- GPIO Toggle: `gpio.toggle(23)`\n";
+    prompt += "- Memoria Read: `println(memory.read_file('config.json'))`\n";
+    prompt += "- BLE Digita: `ble.type('AA:BB:CC:DD:EE:FF', 'Hello')`\n\n";
+
+    // Phase 2: Smart Output Decision - Add should_refine_output field instructions
+
+    prompt += "\n**API DISPONIBILI:**\n";
+    prompt += "Per la documentazione completa delle API, usa:\n";
+    prompt += "- `docs.api.gpio()` - Funzioni GPIO (gpio.json)\n";
+    prompt += "- `docs.api.ble()` - Funzioni BLE (ble.json)\n";
+    prompt += "- `docs.api.webData()` - Funzioni WebData (webdata.json)\n";
+    prompt += "- `docs.api.memory()` - Funzioni Memory (memory.json)\n";
+    prompt += "- `docs.api.audio()` - Funzioni Audio (audio.json)\n";
+    prompt += "- `docs.api.display()` - Funzioni Display (display.json)\n";
+    prompt += "- `docs.api.led()` - Funzioni LED (led.json)\n";
+    prompt += "- `docs.api.system()` - Funzioni System (system.json)\n";
+    prompt += "- `docs.reference.cities()` - Coordinate città italiane (cities.json)\n";
+    prompt += "- `docs.reference.weather()` - Guida Open-Meteo API (weather_api.md)\n";
+    prompt += "- `docs.examples.weather_query()` - Esempio query meteo (weather_query.json)\n";
+    prompt += "- `docs.examples.gpio_control()` - Esempio controllo GPIO (gpio_control.json)\n";
+    prompt += "- `docs.examples.ble_keyboard()` - Esempio tastiera BLE (ble_keyboard.json)\n";
+    prompt += "- `docs.get('path/to/file.json')` - Getter generico per qualsiasi documento\n\n";
+
+    prompt += "**PATTERN D'USO (query in 2 step):**\n";
+    prompt += "1. Se non conosci dettagli API o dati: `println(docs.api.gpio())` o `println(docs.reference.cities())`\n";
+    prompt += "2. Poi esegui il comando con le info corrette: `gpio.write(23, true)`\n\n";
+
+    prompt += "**ESEMPI RAPIDI:**\n";
+    prompt += "- Meteo Milano: `local cities = docs.reference.cities(); local milano_lat = cities.Milano.lat; local milano_lon = cities.Milano.lon; webData.fetch_once('https://api.open-meteo.com/v1/forecast?latitude=' .. milano_lat .. '&longitude=' .. milano_lon .. '&current=temperature_2m,weather_code&timezone=Europe/Rome', 'weather.json'); println(webData.read_data('weather.json'))`\n";
+    prompt += "- GPIO Toggle: `gpio.toggle(23)`\n";
+    prompt += "- Memoria Read: `println(memory.read_file('config.json'))`\n";
+    prompt += "- BLE Digita: `ble.type('AA:BB:CC:DD:EE:FF', 'Hello')`\n\n";
     // Phase 2: Smart Output Decision - Add should_refine_output field instructions
     prompt += "\n\n**NUOVO FORMATO RISPOSTA JSON (Phase 2):**\n";
     prompt += "La tua risposta JSON deve includere questi campi:\n";
@@ -1771,7 +1783,32 @@ void VoiceAssistant::LuaSandbox::setupSandbox() {
                 return esp32_memory_delete_file(filename)
             end
         }
+
+        -- Docs API
+        docs = {
+            api = {
+                gpio = function() return memory.read_file("docs/api/gpio.json") end,
+                ble = function() return memory.read_file("docs/api/ble.json") end,
+                webData = function() return memory.read_file("docs/api/webdata.json") end,
+                memory = function() return memory.read_file("docs/api/memory.json") end,
+                audio = function() return memory.read_file("docs/api/audio.json") end,
+                display = function() return memory.read_file("docs/api/display.json") end,
+                led = function() return memory.read_file("docs/api/led.json") end,
+                system = function() return memory.read_file("docs/api/system.json") end
+            },
+            reference = {
+                cities = function() return memory.read_file("docs/reference/cities.json") end,
+                weather = function() return memory.read_file("docs/reference/weather_api.md") end
+            },
+            examples = {
+                weather_query = function() return memory.read_file("docs/examples/weather_query.json") end,
+                gpio_control = function() return memory.read_file("docs/examples/gpio_control.json") end,
+                ble_keyboard = function() return memory.read_file("docs/examples/ble_keyboard.json") end
+            },
+            get = function(path) return memory.read_file("docs/" .. path) end -- Generic getter for any doc
+        }
     )");
+
 
     // Register C functions
     lua_register(L, "esp32_gpio_write", lua_gpio_write);
