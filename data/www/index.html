@@ -554,6 +554,9 @@
       if (Array.isArray(response.args) && response.args.length) {
         parts.push(`Argomenti: ${response.args.join(', ')}`);
       }
+      if (response.output) {
+        parts.push(`Output: ${response.output}`);
+      }
       return parts.join(' · ');
     }
 

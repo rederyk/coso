@@ -32,12 +32,14 @@ public:
         std::vector<std::string> args;
         std::string text;           // Conversational response text from LLM
         std::string transcription;  // Original user speech transcription
+        std::string output;         // Command execution output/result
         VoiceCommand() = default;
-        VoiceCommand(std::string cmd, std::vector<std::string> a, std::string txt = "", std::string speech = "")
+        VoiceCommand(std::string cmd, std::vector<std::string> a, std::string txt = "", std::string speech = "", std::string out = "")
             : command(std::move(cmd)),
               args(std::move(a)),
               text(std::move(txt)),
-              transcription(std::move(speech)) {}
+              transcription(std::move(speech)),
+              output(std::move(out)) {}
     };
 
     /** Audio buffer structure */

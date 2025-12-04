@@ -248,6 +248,9 @@ static void appendCommandToDoc(StaticJsonDocument<512>& doc, const VoiceAssistan
     if (!response.transcription.empty()) {
         doc["transcription"] = response.transcription.c_str();
     }
+    if (!response.output.empty()) {
+        doc["output"] = response.output.c_str();
+    }
 }
 
 void WebServerManager::handleAssistantChat() {

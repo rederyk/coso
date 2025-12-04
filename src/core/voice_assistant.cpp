@@ -424,9 +424,12 @@ void VoiceAssistant::aiProcessingTask(void* param) {
                             LOG_I("Executing Lua script: %s", script_content.c_str());
                             CommandResult script_result = va->lua_sandbox_.execute(script_content);
 
+                            // Capture script output
+                            cmd.output = script_result.message;
+
                             if (script_result.success) {
                                 LOG_I("Lua script executed successfully: %s", script_result.message.c_str());
-                                cmd.text = "Script eseguito con successo";
+                                cmd.text = "Script eseguito con successo. Output: " + script_result.message;
                             } else {
                                 LOG_E("Lua script execution failed: %s", script_result.message.c_str());
                                 cmd.text = "Errore nell'esecuzione dello script: " + script_result.message;
@@ -435,6 +438,9 @@ void VoiceAssistant::aiProcessingTask(void* param) {
                             // Execute command via CommandCenter only if command is not "none"
                             if (cmd.command != "none" && cmd.command != "unknown" && !cmd.command.empty()) {
                                 CommandResult result = CommandCenter::getInstance().executeCommand(cmd.command, cmd.args);
+
+                                // Capture command output
+                                cmd.output = result.message;
 
                                 if (result.success) {
                                     LOG_I("Command executed successfully: %s", result.message.c_str());
