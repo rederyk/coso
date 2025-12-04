@@ -16,6 +16,7 @@ struct ConversationEntry {
     std::string command;
     std::vector<std::string> args;
     std::string transcription;
+    std::string refined_output; // Phase 1: Post-processed user-friendly output
 };
 
 class ConversationBuffer {
@@ -29,7 +30,8 @@ public:
                              const std::string& command,
                              const std::vector<std::string>& args,
                              const std::string& transcription = std::string(),
-                             const std::string& output = std::string());
+                             const std::string& output = std::string(),
+                             const std::string& refined_output = std::string());
     bool addEntry(ConversationEntry entry);
 
     bool clear();

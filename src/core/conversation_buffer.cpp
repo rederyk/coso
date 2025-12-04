@@ -66,7 +66,8 @@ bool ConversationBuffer::addAssistantMessage(const std::string& response_text,
                                              const std::string& command,
                                              const std::vector<std::string>& args,
                                              const std::string& transcription,
-                                             const std::string& output) {
+                                             const std::string& output,
+                                             const std::string& refined_output) {
     if (response_text.empty() && command.empty()) {
         return false;
     }
@@ -77,6 +78,7 @@ bool ConversationBuffer::addAssistantMessage(const std::string& response_text,
     entry.args = args;
     entry.transcription = transcription;
     entry.output = output;
+    entry.refined_output = refined_output;
     return addEntry(std::move(entry));
 }
 
@@ -180,6 +182,7 @@ bool ConversationBuffer::loadLocked() {
             entry.command = item["command"].as<const char*>() ? item["command"].as<const char*>() : "";
             entry.output = item["output"].as<const char*>() ? item["output"].as<const char*>() : "";
             entry.transcription = item["transcription"].as<const char*>() ? item["transcription"].as<const char*>() : "";
+            entry.refined_output = item["refined_output"].as<const char*>() ? item["refined_output"].as<const char*>() : "";
 
             JsonArrayConst args = item["args"].as<JsonArrayConst>();
             if (!args.isNull()) {
@@ -220,6 +223,9 @@ bool ConversationBuffer::persistLocked() {
         }
         if (!entry.transcription.empty()) {
             obj["transcription"] = entry.transcription.c_str();
+        }
+        if (!entry.refined_output.empty()) {
+            obj["refined_output"] = entry.refined_output.c_str();
         }
         if (!entry.args.empty()) {
             JsonArray args = obj.createNestedArray("args");

@@ -445,6 +445,24 @@ void VoiceAssistant::aiProcessingTask(void* param) {
                                 LOG_E("Lua script execution failed: %s", script_result.message.c_str());
                                 cmd.text = "Errore nell'esecuzione dello script: " + script_result.message;
                             }
+
+                            // Phase 1: Output Refinement - Check if Lua output needs refinement
+                            if (script_result.success && !cmd.output.empty()) {
+                                cmd.needs_refinement = va->shouldRefineOutput(cmd);
+
+                                if (cmd.needs_refinement) {
+                                    LOG_I("Lua output needs refinement, processing...");
+                                    bool refined = va->refineCommandOutput(cmd);
+
+                                    if (refined && !cmd.refined_output.empty()) {
+                                        // Replace cmd.text with refined output for user display
+                                        cmd.text = cmd.refined_output;
+                                        LOG_I("Using refined output: %s", cmd.refined_output.c_str());
+                                    } else {
+                                        LOG_W("Refinement failed, using original output");
+                                    }
+                                }
+                            }
                         } else {
                             // Execute command via CommandCenter only if command is not "none"
                             if (cmd.command != "none" && cmd.command != "unknown" && !cmd.command.empty()) {
@@ -458,6 +476,24 @@ void VoiceAssistant::aiProcessingTask(void* param) {
 
                                 if (result.success) {
                                     LOG_I("Command executed successfully: %s", result.message.c_str());
+
+                                    // Phase 1: Output Refinement - Check if command output needs refinement
+                                    if (!cmd.output.empty()) {
+                                        cmd.needs_refinement = va->shouldRefineOutput(cmd);
+
+                                        if (cmd.needs_refinement) {
+                                            LOG_I("Command output needs refinement, processing...");
+                                            bool refined = va->refineCommandOutput(cmd);
+
+                                            if (refined && !cmd.refined_output.empty()) {
+                                                // Replace cmd.text with refined output for user display
+                                                cmd.text = cmd.refined_output;
+                                                LOG_I("Using refined output: %s", cmd.refined_output.c_str());
+                                            } else {
+                                                LOG_W("Refinement failed, using original output");
+                                            }
+                                        }
+                                    }
                                 } else {
                                     LOG_E("Command execution failed: %s", result.message.c_str());
                                 }
@@ -471,7 +507,8 @@ void VoiceAssistant::aiProcessingTask(void* param) {
                                                                              cmd.command,
                                                                              cmd.args,
                                                                              cmd.transcription,
-                                                                             cmd.output);
+                                                                             cmd.output,
+                                                                             cmd.refined_output);
 
                         // Send result to voice command queue for external consumption (screen/web)
                         VoiceCommand* cmd_copy = new VoiceCommand(cmd);
@@ -1230,6 +1267,112 @@ bool VoiceAssistant::receiveTranscribedText(std::string& text) {
 bool VoiceAssistant::sendCommand(VoiceCommand* cmd) {
     // TODO: Implement command send
     return false;
+}
+
+// Output refinement helpers (Phase 1: Output Refinement System)
+bool VoiceAssistant::shouldRefineOutput(const VoiceCommand& cmd) {
+    // Criteria to determine if output needs refinement:
+
+    // 1. Empty output - no refinement needed
+    if (cmd.output.empty()) {
+        return false;
+    }
+
+    // 2. Output is very long (>200 characters) - likely technical data
+    if (cmd.output.size() > 200) {
+        LOG_I("Output exceeds 200 chars (%zu), needs refinement", cmd.output.size());
+        return true;
+    }
+
+    // 3. Output contains JSON structure
+    if (cmd.output.find('{') != std::string::npos ||
+        cmd.output.find('[') != std::string::npos) {
+        LOG_I("Output contains JSON, needs refinement");
+        return true;
+    }
+
+    // 4. Lua script commands that use webData (likely produce raw data)
+    if (cmd.command == "lua_script" &&
+        !cmd.args.empty() &&
+        (cmd.args[0].find("webData") != std::string::npos ||
+         cmd.args[0].find("memory.read") != std::string::npos)) {
+        LOG_I("Lua webData/memory command, needs refinement");
+        return true;
+    }
+
+    // 5. Commands that typically produce technical output
+    if (cmd.command == "heap" ||
+        cmd.command == "system_status" ||
+        cmd.command == "log_tail") {
+        LOG_I("Technical command '%s', needs refinement", cmd.command.c_str());
+        return true;
+    }
+
+    return false;
+}
+
+std::string VoiceAssistant::buildRefinementPrompt(const VoiceCommand& cmd) {
+    std::string prompt;
+
+    // Context: what did the user ask?
+    if (!cmd.transcription.empty()) {
+        prompt += "L'utente ha chiesto: \"" + cmd.transcription + "\"\n\n";
+    }
+
+    // What command was executed?
+    if (!cmd.command.empty()) {
+        prompt += "Il sistema ha eseguito il comando: " + cmd.command;
+        if (!cmd.args.empty() && !cmd.args[0].empty()) {
+            // Show only first 100 chars of args to avoid huge prompts
+            std::string args_preview = cmd.args[0];
+            if (args_preview.size() > 100) {
+                args_preview = args_preview.substr(0, 100) + "...";
+            }
+            prompt += " (argomento: " + args_preview + ")";
+        }
+        prompt += "\n\n";
+    }
+
+    // The raw output that needs refinement
+    prompt += "Il comando ha prodotto questo output tecnico:\n";
+    prompt += "```\n" + cmd.output + "\n```\n\n";
+
+    // Instructions for refinement
+    prompt += "Il tuo compito è riassumere questo output in modo comprensibile e user-friendly.\n";
+    prompt += "Linee guida:\n";
+    prompt += "- Se sono dati meteo (temperatura, vento, ecc.), formattali in modo naturale\n";
+    prompt += "- Se è JSON, estrai solo le informazioni rilevanti per l'utente\n";
+    prompt += "- Se sono log o dati tecnici, riassumili in 1-2 frasi chiare\n";
+    prompt += "- Usa un tono conversazionale e amichevole\n";
+    prompt += "- NON includere dettagli tecnici inutili (chiavi JSON, coordinate esatte, ecc.)\n";
+    prompt += "- Rispondi SOLO con il testo formattato, niente altro\n";
+
+    return prompt;
+}
+
+bool VoiceAssistant::refineCommandOutput(VoiceCommand& cmd) {
+    if (cmd.output.empty() || !cmd.needs_refinement) {
+        LOG_W("refineCommandOutput called but output empty or doesn't need refinement");
+        return false;
+    }
+
+    LOG_I("Refining command output (size: %zu bytes)", cmd.output.size());
+
+    // Build refinement prompt
+    std::string refinement_prompt = buildRefinementPrompt(cmd);
+
+    // Call GPT to refine the output
+    std::string refined;
+    bool success = makeGPTRequest(refinement_prompt, refined);
+
+    if (success && !refined.empty()) {
+        cmd.refined_output = refined;
+        LOG_I("Output refined successfully: %s", refined.c_str());
+        return true;
+    } else {
+        LOG_E("Failed to refine output (GPT request failed or empty response)");
+        return false;
+    }
 }
 
 // Public API for chat interface
