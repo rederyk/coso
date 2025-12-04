@@ -64,6 +64,14 @@ struct SettingsSnapshot {
     uint8_t dockIconRadius = 24;
     uint8_t borderRadius = 12;
 
+    // Time & NTP
+    std::string timezone = "CET-1CEST,M3.5.0,M10.5.0/3";  // Europe/Rome
+    std::string ntpServer = "pool.ntp.org";
+    std::string ntpServer2 = "time.google.com";
+    std::string ntpServer3 = "time.cloudflare.com";
+    bool autoTimeSync = true;
+    uint32_t timeSyncIntervalHours = 1;
+
     // System
     std::string version;
     uint32_t bootCount = 0;
@@ -124,6 +132,14 @@ public:
         ThemeDockIconSymbolColor,
         ThemeDockIconRadius,
         ThemeBorderRadius,
+
+        // Time & NTP
+        Timezone,
+        NtpServer,
+        NtpServer2,
+        NtpServer3,
+        AutoTimeSync,
+        TimeSyncIntervalHours,
 
         // System
         Version,
@@ -257,6 +273,25 @@ public:
 
     const std::string& getLlmModel() const { return current_.llmModel; }
     void setLlmModel(const std::string& model);
+
+    // Time & NTP
+    const std::string& getTimezone() const { return current_.timezone; }
+    void setTimezone(const std::string& tz);
+
+    const std::string& getNtpServer() const { return current_.ntpServer; }
+    void setNtpServer(const std::string& server);
+
+    const std::string& getNtpServer2() const { return current_.ntpServer2; }
+    void setNtpServer2(const std::string& server);
+
+    const std::string& getNtpServer3() const { return current_.ntpServer3; }
+    void setNtpServer3(const std::string& server);
+
+    bool getAutoTimeSync() const { return current_.autoTimeSync; }
+    void setAutoTimeSync(bool enabled);
+
+    uint32_t getTimeSyncIntervalHours() const { return current_.timeSyncIntervalHours; }
+    void setTimeSyncIntervalHours(uint32_t hours);
 
     // System
     uint32_t getBootCount() const { return current_.bootCount; }

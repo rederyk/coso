@@ -1,5 +1,6 @@
 #include "wifi_manager.h"
 #include "settings_manager.h"
+#include "core/time_manager.h"
 #include "utils/logger.h"
 #include "drivers/rgb_led_driver.h"
 #include "core/task_config.h"
@@ -68,6 +69,27 @@ void WifiManager::wifi_task(void *pvParameters) {
             if (rgb_led.isInitialized()) {
                 rgb_led.setState(RgbLedManager::LedState::WIFI_CONNECTED);
             }
+
+            // Initialize and sync time via NTP
+            auto& settings = SettingsManager::getInstance();
+            auto& time_mgr = TimeManager::getInstance();
+
+            time_mgr.setTimezone(settings.getTimezone());
+            time_mgr.setNtpServers(
+                settings.getNtpServer(),
+                settings.getNtpServer2(),
+                settings.getNtpServer3()
+            );
+            time_mgr.setAutoSync(
+                settings.getAutoTimeSync(),
+                settings.getTimeSyncIntervalHours()
+            );
+
+            if (time_mgr.begin()) {
+                log_i("Time synchronized via NTP");
+            } else {
+                log_w("Time sync failed, will retry automatically");
+            }
             // Avvia il server web quando la rete è pronta
             WebServerManager& web = WebServerManager::getInstance();
             if (!web.isRunning()) {
@@ -107,6 +129,22 @@ void WifiManager::wifi_task(void *pvParameters) {
                 if (rgb_led.isInitialized()) {
                     rgb_led.setState(RgbLedManager::LedState::WIFI_CONNECTED);
                 }
+
+                // Re-sync time after reconnection
+                auto& time_mgr = TimeManager::getInstance();
+                if (!time_mgr.isInitialized()) {
+                    auto& settings = SettingsManager::getInstance();
+                    time_mgr.setTimezone(settings.getTimezone());
+                    time_mgr.setNtpServers(
+                        settings.getNtpServer(),
+                        settings.getNtpServer2(),
+                        settings.getNtpServer3()
+                    );
+                    time_mgr.begin();
+                } else {
+                    time_mgr.syncNow(5000);  // Quick resync
+                }
+
                 WebServerManager& web = WebServerManager::getInstance();
                 if (!web.isRunning()) {
                     web.start();

@@ -810,6 +810,61 @@ void SettingsManager::setVoiceAssistantSystemPromptTemplate(const std::string& p
     notify(SettingKey::VoiceAssistantSystemPrompt);
 }
 
+// Time & NTP setters
+void SettingsManager::setTimezone(const std::string& tz) {
+    if (!initialized_ || tz == current_.timezone) {
+        return;
+    }
+    current_.timezone = tz;
+    persistSnapshot();
+    notify(SettingKey::Timezone);
+}
+
+void SettingsManager::setNtpServer(const std::string& server) {
+    if (!initialized_ || server == current_.ntpServer) {
+        return;
+    }
+    current_.ntpServer = server;
+    persistSnapshot();
+    notify(SettingKey::NtpServer);
+}
+
+void SettingsManager::setNtpServer2(const std::string& server) {
+    if (!initialized_ || server == current_.ntpServer2) {
+        return;
+    }
+    current_.ntpServer2 = server;
+    persistSnapshot();
+    notify(SettingKey::NtpServer2);
+}
+
+void SettingsManager::setNtpServer3(const std::string& server) {
+    if (!initialized_ || server == current_.ntpServer3) {
+        return;
+    }
+    current_.ntpServer3 = server;
+    persistSnapshot();
+    notify(SettingKey::NtpServer3);
+}
+
+void SettingsManager::setAutoTimeSync(bool enabled) {
+    if (!initialized_ || enabled == current_.autoTimeSync) {
+        return;
+    }
+    current_.autoTimeSync = enabled;
+    persistSnapshot();
+    notify(SettingKey::AutoTimeSync);
+}
+
+void SettingsManager::setTimeSyncIntervalHours(uint32_t hours) {
+    if (!initialized_ || hours == current_.timeSyncIntervalHours) {
+        return;
+    }
+    current_.timeSyncIntervalHours = hours;
+    persistSnapshot();
+    notify(SettingKey::TimeSyncIntervalHours);
+}
+
 void SettingsManager::notify(SettingKey key) {
     for (const auto& entry : callbacks_) {
         if (entry.fn) {

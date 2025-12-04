@@ -14,6 +14,7 @@
 #include "core/ble_hid_manager.h"
 #include "core/audio_manager.h"
 #include "core/backlight_manager.h"
+#include "core/time_manager.h"
 #include "screens/ble_manager.h"
 #include "utils/logger.h"
 
@@ -511,6 +512,55 @@ void CommandCenter::registerBuiltins() {
             return CommandResult{true, msg};
         }
         return CommandResult{false, "SD card not mounted"};
+    });
+
+    // Time commands
+    registerCommand("time", "Get current date and time", [](const std::vector<std::string>&) {
+        auto& time_mgr = TimeManager::getInstance();
+        if (!time_mgr.isSynchronized()) {
+            return CommandResult{false, "Time not synchronized. Connect to WiFi first."};
+        }
+        std::string time_str = time_mgr.getTimeString("%Y-%m-%d %H:%M:%S %Z");
+        return CommandResult{true, time_str};
+    });
+
+    registerCommand("time_unix", "Get current Unix timestamp", [](const std::vector<std::string>&) {
+        auto& time_mgr = TimeManager::getInstance();
+        if (!time_mgr.isSynchronized()) {
+            return CommandResult{false, "Time not synchronized"};
+        }
+        time_t now = time_mgr.now();
+        return CommandResult{true, "timestamp=" + std::to_string(now)};
+    });
+
+    registerCommand("time_sync", "Manually sync time via NTP", [](const std::vector<std::string>&) {
+        auto& time_mgr = TimeManager::getInstance();
+        if (!time_mgr.isInitialized()) {
+            return CommandResult{false, "TimeManager not initialized. Connect to WiFi first."};
+        }
+        bool success = time_mgr.syncNow(10000);
+        if (success) {
+            std::string time_str = time_mgr.getTimeString();
+            return CommandResult{true, "Time synced: " + time_str};
+        } else {
+            return CommandResult{false, "NTP sync failed"};
+        }
+    });
+
+    registerCommand("time_status", "Get time synchronization status", [](const std::vector<std::string>&) {
+        auto& time_mgr = TimeManager::getInstance();
+        auto status = time_mgr.getSyncStatus();
+
+        std::string msg = "synchronized=" + std::string(status.synchronized ? "true" : "false");
+        msg += " sync_count=" + std::to_string(status.sync_count);
+        msg += " sync_failures=" + std::to_string(status.sync_failures);
+        msg += " ntp_server=" + status.ntp_server;
+        if (status.synchronized) {
+            msg += " last_sync=" + std::to_string(status.last_sync);
+            msg += " current_time=" + std::to_string(time_mgr.now());
+        }
+
+        return CommandResult{true, msg};
     });
 
     // Tail logs

@@ -1,6 +1,8 @@
 #include "widgets/clock_widget.h"
+#include "core/time_manager.h"
 
 #include <Arduino.h>
+#include <ctime>
 
 ClockWidget::ClockWidget() : label(nullptr), refresh_timer(nullptr) {}
 
@@ -34,15 +36,26 @@ void ClockWidget::create(lv_obj_t* parent) {
 void ClockWidget::update() {
     if (!label) return;
 
-    // Calcola i valori PRIMA di entrare nel mutex
-    uint32_t uptime_s = millis() / 1000;
-    uint32_t hours = (uptime_s / 3600) % 24;
-    uint32_t minutes = (uptime_s % 3600) / 60;
-    uint32_t seconds = uptime_s % 60;
-
     // Buffer statico per formattazione
-    static char buffer[16];
-    snprintf(buffer, sizeof(buffer), "%02lu:%02lu:%02lu", hours, minutes, seconds);
+    static char buffer[32];
+
+    // Try to get real time from TimeManager
+    auto& time_mgr = TimeManager::getInstance();
+    if (time_mgr.isSynchronized()) {
+        // Show real time (HH:MM:SS)
+        struct tm local_time = time_mgr.getLocalTime();
+        snprintf(buffer, sizeof(buffer), "%02d:%02d:%02d",
+                 local_time.tm_hour,
+                 local_time.tm_min,
+                 local_time.tm_sec);
+    } else {
+        // Fallback to uptime if time not synchronized
+        uint32_t uptime_s = millis() / 1000;
+        uint32_t hours = (uptime_s / 3600) % 24;
+        uint32_t minutes = (uptime_s % 3600) / 60;
+        uint32_t seconds = uptime_s % 60;
+        snprintf(buffer, sizeof(buffer), "%02lu:%02lu:%02lu", hours, minutes, seconds);
+    }
 
     const bool already_owned = lvgl_mutex_is_owned_by_current_task();
     bool lock_acquired = already_owned;
