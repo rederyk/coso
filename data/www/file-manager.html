@@ -117,7 +117,13 @@
       display: flex;
       align-items: center;
       gap: 8px;
+    }
+    .entry-name.clickable {
       cursor: pointer;
+      color: var(--accent);
+    }
+    .entry-name.clickable:hover {
+      color: var(--accent-dark);
     }
     .badge {
       font-size: 11px;
@@ -144,16 +150,67 @@
       color: var(--muted);
       font-size: 15px;
     }
-    .action-buttons {
+    .entry-actions {
+      position: relative;
+      width: 1%;
+      white-space: nowrap;
+    }
+    .action-menu {
+      display: inline-flex;
+      position: relative;
+      justify-content: flex-end;
+      width: 100%;
+    }
+    .menu-toggle {
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 10px;
+      width: 40px;
+      height: 36px;
       display: flex;
-      gap: 6px;
-      flex-wrap: wrap;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      box-shadow: none;
     }
-    .action-buttons button {
-      padding: 6px 10px;
-      font-size: 12px;
-      border-radius: 999px;
+    .menu-toggle span {
+      display: block;
+      width: 16px;
+      height: 2px;
+      background: var(--text);
+      border-radius: 2px;
     }
+    .menu-toggle span + span { margin-top: 4px; }
+    .menu-dropdown {
+      position: absolute;
+      top: calc(100% + 8px);
+      right: 0;
+      background: rgba(2, 10, 18, 0.92);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 14px;
+      box-shadow: 0 18px 30px rgba(0,0,0,0.45);
+      display: none;
+      flex-direction: column;
+      min-width: 150px;
+      overflow: hidden;
+      z-index: 10;
+    }
+    .action-menu.open .menu-dropdown { display: flex; }
+    .menu-dropdown button {
+      background: none;
+      border: none;
+      color: var(--text);
+      padding: 10px 16px;
+      text-align: left;
+      font-size: 13px;
+      cursor: pointer;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+      border-radius: 0;
+      box-shadow: none;
+    }
+    .menu-dropdown button:last-child { border-bottom: none; }
+    .menu-dropdown button:hover { background: rgba(255,255,255,0.06); }
+    .menu-dropdown button.danger { color: var(--danger); }
     @media (max-width: 640px) {
       body { padding: 16px; }
       table { font-size: 13px; }
@@ -194,6 +251,7 @@
     const statusEl = document.getElementById('status');
     const breadcrumbsEl = document.getElementById('breadcrumbs');
     const storageEl = document.getElementById('storage-status');
+    let openMenu = null;
 
     const fileInput = document.getElementById('file-input');
     document.getElementById('upload').addEventListener('click', () => fileInput.click());
@@ -249,7 +307,21 @@
       });
     }
 
+    function closeOpenMenu() {
+      if (openMenu) {
+        openMenu.classList.remove('open');
+        openMenu = null;
+      }
+    }
+
+    document.addEventListener('click', (event) => {
+      if (!event.target.closest('.action-menu')) {
+        closeOpenMenu();
+      }
+    });
+
     function renderEntries(entries = []) {
+      closeOpenMenu();
       if (!entries.length) {
         entriesContainer.innerHTML = '<div id="entries-empty">This directory is empty.</div>';
         return;
@@ -272,28 +344,63 @@
         const fullPath = joinPath(currentPath, entry.name);
         row.innerHTML = `
           <td>
-            <div class="entry-name">
+            <div class="entry-name ${entry.directory ? 'clickable' : ''}">
               <span>${entry.directory ? '📁' : '📄'}</span>
               <span>${entry.name}</span>
             </div>
           </td>
           <td>${entry.directory ? '—' : formatBytes(entry.size || 0)}</td>
           <td><span class="badge">${entry.directory ? 'directory' : 'file'}</span></td>
-          <td>
-            <div class="action-buttons">
-              ${entry.directory ? '<button class="secondary" data-open>Open</button>' : '<button class="secondary" data-download>Download</button>'}
-              <button class="secondary" data-rename>Rename</button>
-              <button class="danger secondary" data-delete>Delete</button>
+          <td class="entry-actions">
+            <div class="action-menu" data-menu>
+              <button class="menu-toggle" data-menu-toggle aria-label="Open actions">
+                <span></span>
+                <span></span>
+                <span></span>
+              </button>
+              <div class="menu-dropdown">
+                ${entry.directory ? '' : '<button data-download>Download</button>'}
+                <button data-rename>Rename</button>
+                <button class="danger" data-delete>Delete</button>
+              </div>
             </div>
           </td>
         `;
-        row.querySelector('[data-rename]').addEventListener('click', () => renameEntry(fullPath, entry.directory));
-        row.querySelector('[data-delete]').addEventListener('click', () => deleteEntry(fullPath, entry.directory));
+        const entryNameEl = row.querySelector('.entry-name');
         if (entry.directory) {
-          row.querySelector('[data-open]').addEventListener('click', () => loadDirectory(fullPath));
-        } else {
-          row.querySelector('[data-download]').addEventListener('click', () => downloadEntry(fullPath));
+          entryNameEl.addEventListener('click', () => loadDirectory(fullPath));
         }
+        const renameBtn = row.querySelector('[data-rename]');
+        const deleteBtn = row.querySelector('[data-delete]');
+        renameBtn.addEventListener('click', () => {
+          closeOpenMenu();
+          renameEntry(fullPath, entry.directory);
+        });
+        deleteBtn.addEventListener('click', () => {
+          closeOpenMenu();
+          deleteEntry(fullPath, entry.directory);
+        });
+        const downloadBtn = row.querySelector('[data-download]');
+        if (downloadBtn) {
+          downloadBtn.addEventListener('click', () => {
+            closeOpenMenu();
+            downloadEntry(fullPath);
+          });
+        }
+        const menuEl = row.querySelector('[data-menu]');
+        const toggleBtn = row.querySelector('[data-menu-toggle]');
+        toggleBtn.addEventListener('click', (event) => {
+          event.stopPropagation();
+          if (openMenu && openMenu !== menuEl) {
+            openMenu.classList.remove('open');
+          }
+          const willOpen = !menuEl.classList.contains('open');
+          closeOpenMenu();
+          if (willOpen) {
+            menuEl.classList.add('open');
+            openMenu = menuEl;
+          }
+        });
         tbody.appendChild(row);
       });
       entriesContainer.innerHTML = '';
@@ -339,7 +446,7 @@
     }
 
     async function deleteEntry(path, isDir) {
-      const confirmDelete = confirm(`Delete ${isDir ? 'folder' : 'file'} ${path}?`);
+      const confirmDelete = confirm(`Delete ${isDir ? 'folder' : 'file'} ${path}? This action cannot be undone.`);
       if (!confirmDelete) return;
       statusEl.textContent = 'Deleting…';
       const res = await fetch('/api/fs/delete', {
