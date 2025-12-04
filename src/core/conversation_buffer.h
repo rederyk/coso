@@ -11,6 +11,7 @@
 struct ConversationEntry {
     std::string role;
     std::string text;
+    std::string output;
     uint32_t timestamp = 0;
     std::string command;
     std::vector<std::string> args;
@@ -27,7 +28,8 @@ public:
     bool addAssistantMessage(const std::string& response_text,
                              const std::string& command,
                              const std::vector<std::string>& args,
-                             const std::string& transcription = std::string());
+                             const std::string& transcription = std::string(),
+                             const std::string& output = std::string());
     bool addEntry(ConversationEntry entry);
 
     bool clear();

@@ -434,6 +434,9 @@ void VoiceAssistant::aiProcessingTask(void* param) {
 
                             // Capture script output
                             cmd.output = script_result.message;
+                            if (!cmd.output.empty()) {
+                                LOG_I("Lua command output: %s", cmd.output.c_str());
+                            }
 
                             if (script_result.success) {
                                 LOG_I("Lua script executed successfully: %s", script_result.message.c_str());
@@ -449,6 +452,9 @@ void VoiceAssistant::aiProcessingTask(void* param) {
 
                                 // Capture command output
                                 cmd.output = result.message;
+                                if (!cmd.output.empty()) {
+                                    LOG_I("Command output: %s", cmd.output.c_str());
+                                }
 
                                 if (result.success) {
                                     LOG_I("Command executed successfully: %s", result.message.c_str());
@@ -464,7 +470,8 @@ void VoiceAssistant::aiProcessingTask(void* param) {
                         ConversationBuffer::getInstance().addAssistantMessage(response_text,
                                                                              cmd.command,
                                                                              cmd.args,
-                                                                             cmd.transcription);
+                                                                             cmd.transcription,
+                                                                             cmd.output);
 
                         // Send result to voice command queue for external consumption (screen/web)
                         VoiceCommand* cmd_copy = new VoiceCommand(cmd);
@@ -483,7 +490,8 @@ void VoiceAssistant::aiProcessingTask(void* param) {
                         ConversationBuffer::getInstance().addAssistantMessage(llm_response,
                                                                              "none",
                                                                              std::vector<std::string>(),
-                                                                             cmd.transcription);
+                                                                             cmd.transcription,
+                                                                             cmd.output);
 
                         // Send fallback response to queue
                         VoiceCommand* cmd_copy = new VoiceCommand(cmd);
@@ -1725,6 +1733,21 @@ int VoiceAssistant::LuaSandbox::lua_memory_write_file(lua_State* L) {
 int VoiceAssistant::LuaSandbox::lua_memory_list_files(lua_State* L) {
     auto& memory = MemoryManager::getInstance();
     std::vector<std::string> files = memory.listFiles();
+
+    std::ostringstream oss;
+    if (files.empty()) {
+        oss << "Memory directory is empty";
+    } else {
+        oss << "Memory files:";
+        for (const auto& file : files) {
+            oss << "\n- " << file;
+        }
+    }
+    const std::string output = oss.str();
+    Serial.println(output.c_str());
+    if (s_active_lua_sandbox) {
+        s_active_lua_sandbox->appendOutput(output);
+    }
 
     lua_newtable(L);
     for (size_t i = 0; i < files.size(); ++i) {

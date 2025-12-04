@@ -65,7 +65,8 @@ bool ConversationBuffer::addUserMessage(const std::string& text, const std::stri
 bool ConversationBuffer::addAssistantMessage(const std::string& response_text,
                                              const std::string& command,
                                              const std::vector<std::string>& args,
-                                             const std::string& transcription) {
+                                             const std::string& transcription,
+                                             const std::string& output) {
     if (response_text.empty() && command.empty()) {
         return false;
     }
@@ -75,6 +76,7 @@ bool ConversationBuffer::addAssistantMessage(const std::string& response_text,
     entry.command = command;
     entry.args = args;
     entry.transcription = transcription;
+    entry.output = output;
     return addEntry(std::move(entry));
 }
 
@@ -176,6 +178,7 @@ bool ConversationBuffer::loadLocked() {
             entry.text = item["text"].as<const char*>() ? item["text"].as<const char*>() : "";
             entry.timestamp = item["timestamp"] | 0u;
             entry.command = item["command"].as<const char*>() ? item["command"].as<const char*>() : "";
+            entry.output = item["output"].as<const char*>() ? item["output"].as<const char*>() : "";
             entry.transcription = item["transcription"].as<const char*>() ? item["transcription"].as<const char*>() : "";
 
             JsonArrayConst args = item["args"].as<JsonArrayConst>();
@@ -211,6 +214,9 @@ bool ConversationBuffer::persistLocked() {
         obj["timestamp"] = entry.timestamp;
         if (!entry.command.empty()) {
             obj["command"] = entry.command.c_str();
+        }
+        if (!entry.output.empty()) {
+            obj["output"] = entry.output.c_str();
         }
         if (!entry.transcription.empty()) {
             obj["transcription"] = entry.transcription.c_str();

@@ -409,6 +409,9 @@ void WebServerManager::handleAssistantConversationGet() {
         if (!entry.command.empty()) {
             obj["command"] = entry.command.c_str();
         }
+        if (!entry.output.empty()) {
+            obj["output"] = entry.output.c_str();
+        }
         if (!entry.transcription.empty()) {
             obj["transcription"] = entry.transcription.c_str();
         }

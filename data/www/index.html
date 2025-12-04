@@ -594,7 +594,8 @@
         const role = entry.role === 'user' ? 'user' : 'assistant';
         const text = entry.text || '';
         const meta = buildConversationMeta(entry);
-        appendMessage(role, text, meta);
+        const output = entry.output || '';
+        appendMessage(role, text, meta, output);
       });
     }
 
