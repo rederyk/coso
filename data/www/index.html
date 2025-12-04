@@ -125,6 +125,13 @@
       font-size: 12px;
       color: var(--muted);
     }
+    .message-output {
+      font-size: 13px;
+      color: var(--primary);
+      white-space: pre-wrap;
+      font-family: "JetBrains Mono", "Space Mono", "Fira Code", monospace;
+      margin-top: 6px;
+    }
     .controls {
       display: flex;
       flex-direction: column;
@@ -530,12 +537,18 @@
       statusEl.classList.remove('loading');
     }
 
-    function appendMessage(role, text, meta = '') {
+    function appendMessage(role, text, meta = '', output = '') {
       const bubble = document.createElement('div');
       bubble.classList.add('message', role);
       const content = document.createElement('span');
       content.textContent = text;
       bubble.appendChild(content);
+      if (output) {
+        const outputEl = document.createElement('span');
+        outputEl.classList.add('message-output');
+        outputEl.textContent = output;
+        bubble.appendChild(outputEl);
+      }
       if (meta) {
         const metaEl = document.createElement('span');
         metaEl.classList.add('meta');
@@ -553,9 +566,6 @@
       }
       if (Array.isArray(response.args) && response.args.length) {
         parts.push(`Argomenti: ${response.args.join(', ')}`);
-      }
-      if (response.output) {
-        parts.push(`Output: ${response.output}`);
       }
       return parts.join(' · ');
     }
@@ -706,7 +716,7 @@
         }
 
         const answer = response.text || response.message || 'Nessuna risposta';
-        appendMessage('assistant', answer, buildMeta(response));
+        appendMessage('assistant', answer, buildMeta(response), response.output || '');
         await loadConversationHistory();
 
         clearStatusAnimation();
@@ -915,7 +925,7 @@
         }
 
         const answer = payload.text || payload.message || 'Nessuna risposta ricevuta';
-        appendMessage('assistant', answer, buildMeta(payload));
+        appendMessage('assistant', answer, buildMeta(payload), payload.output || '');
         await loadConversationHistory();
 
         clearStatusAnimation();
