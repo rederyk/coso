@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ESP32-S3 File Manager</title>
+  <style>
+    :root {
+      --bg: #05060f;
+      --panel: rgba(12, 18, 32, 0.92);
+      --panel-border: rgba(255,255,255,0.06);
+      --accent: #5cffe1;
+      --accent-dark: #3ce0c7;
+      --danger: #ff7b7b;
+      --muted: #9fb0c6;
+      --text: #eef5ff;
+      --shadow: 0 18px 40px rgba(0,0,0,0.35);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Inter", "Space Grotesk", system-ui, -apple-system, sans-serif;
+      background: radial-gradient(circle at 15% 20%, rgba(92,255,225,0.16), transparent 40%),
+                  radial-gradient(circle at 80% 0%, rgba(82,120,255,0.18), transparent 35%),
+                  var(--bg);
+      color: var(--text);
+      padding: 24px;
+    }
+    main {
+      max-width: 1100px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+    h1 {
+      margin: 0;
+      font-size: 1.8rem;
+    }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--panel-border);
+      border-radius: 18px;
+      padding: 18px;
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(14px);
+    }
+    .breadcrumbs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center;
+      font-size: 14px;
+      color: var(--muted);
+    }
+    .breadcrumbs button {
+      background: none;
+      border: none;
+      color: var(--accent);
+      cursor: pointer;
+      font-size: 14px;
+      padding: 0;
+    }
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 12px;
+    }
+    button {
+      border: none;
+      border-radius: 12px;
+      padding: 10px 18px;
+      font-weight: 600;
+      cursor: pointer;
+      background: linear-gradient(135deg, var(--accent), var(--accent-dark));
+      color: #021218;
+      box-shadow: 0 12px 30px rgba(92,255,225,0.25);
+      transition: transform 0.15s ease, box-shadow 0.2s ease;
+    }
+    button.secondary {
+      background: rgba(255,255,255,0.05);
+      color: var(--text);
+      box-shadow: none;
+    }
+    button.danger {
+      background: linear-gradient(135deg, #ff9b9b, var(--danger));
+      color: #1f0505;
+    }
+    button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+    button:hover:not(:disabled) { transform: translateY(-1px); }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 16px;
+      font-size: 14px;
+    }
+    th, td {
+      text-align: left;
+      padding: 10px 6px;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+    }
+    th {
+      text-transform: uppercase;
+      font-size: 12px;
+      color: var(--muted);
+      letter-spacing: 0.5px;
+    }
+    tr:hover td {
+      background: rgba(255,255,255,0.02);
+    }
+    .entry-name {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+    }
+    .badge {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      border: 1px solid rgba(255,255,255,0.12);
+      color: var(--muted);
+    }
+    #status {
+      margin-top: 12px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .storage {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+    .storage strong { color: var(--text); }
+    #entries-empty {
+      margin: 18px 0;
+      color: var(--muted);
+      font-size: 15px;
+    }
+    .action-buttons {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .action-buttons button {
+      padding: 6px 10px;
+      font-size: 12px;
+      border-radius: 999px;
+    }
+    @media (max-width: 640px) {
+      body { padding: 16px; }
+      table { font-size: 13px; }
+      .actions { flex-direction: column; }
+      button { width: 100%; text-align: center; }
+      .action-buttons { flex-direction: column; width: 100%; }
+      .action-buttons button { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>ESP32-S3 File Manager</h1>
+      <p class="breadcrumbs" id="breadcrumbs"></p>
+    </header>
+
+    <section class="panel">
+      <div class="actions">
+        <button id="upload">Upload files</button>
+        <button class="secondary" id="new-folder">New folder</button>
+        <button class="secondary" id="refresh">Refresh</button>
+        <button class="secondary" id="home">Go to root</button>
+      </div>
+      <input type="file" id="file-input" multiple style="display:none">
+      <div id="status">Waiting…</div>
+      <div id="entries-container"></div>
+    </section>
+
+    <section class="panel">
+      <div class="storage" id="storage-status">SD status pending…</div>
+    </section>
+  </main>
+
+  <script>
+    let currentPath = '/';
+    const entriesContainer = document.getElementById('entries-container');
+    const statusEl = document.getElementById('status');
+    const breadcrumbsEl = document.getElementById('breadcrumbs');
+    const storageEl = document.getElementById('storage-status');
+
+    const fileInput = document.getElementById('file-input');
+    document.getElementById('upload').addEventListener('click', () => fileInput.click());
+    document.getElementById('new-folder').addEventListener('click', () => createFolder());
+    document.getElementById('refresh').addEventListener('click', () => loadDirectory(currentPath));
+    document.getElementById('home').addEventListener('click', () => loadDirectory('/'));
+    fileInput.addEventListener('change', () => handleUpload(fileInput.files));
+
+    function formatBytes(bytes) {
+      if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
+      const units = ['B','KB','MB','GB'];
+      let i = 0;
+      let value = bytes;
+      while (value >= 1024 && i < units.length - 1) {
+        value /= 1024;
+        i++;
+      }
+      return `${value.toFixed(value >= 10 ? 0 : 1)} ${units[i]}`;
+    }
+
+    function joinPath(base, part) {
+      if (!part) return base || '/';
+      const cleanBase = (base || '/').replace(/\/+$/, '') || '/';
+      const cleanPart = part.replace(/^\/+/, '');
+      if (!cleanPart) return cleanBase || '/';
+      if (cleanBase === '/') return `/${cleanPart}`;
+      return `${cleanBase}/${cleanPart}`;
+    }
+
+    function validateName(name) {
+      const trimmed = (name || '').trim();
+      if (!trimmed) return null;
+      if (!/^[\w.\- ]+$/.test(trimmed)) return null;
+      return trimmed;
+    }
+
+    function renderBreadcrumb(path) {
+      const segments = path === '/' ? [''] : path.split('/').filter(Boolean);
+      const crumbs = ['root', ...segments];
+      let running = '';
+      breadcrumbsEl.innerHTML = '';
+      crumbs.forEach((segment, idx) => {
+        const button = document.createElement('button');
+        button.textContent = idx === 0 ? '/' : `/${segment}`;
+        running = idx === 0 ? '/' : joinPath(running || '/', segment);
+        button.addEventListener('click', () => loadDirectory(running || '/'));
+        breadcrumbsEl.appendChild(button);
+        if (idx < crumbs.length - 1) {
+          const sep = document.createElement('span');
+          sep.textContent = '›';
+          breadcrumbsEl.appendChild(sep);
+        }
+      });
+    }
+
+    function renderEntries(entries = []) {
+      if (!entries.length) {
+        entriesContainer.innerHTML = '<div id="entries-empty">This directory is empty.</div>';
+        return;
+      }
+      const table = document.createElement('table');
+      table.innerHTML = `
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Size</th>
+            <th>Type</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      `;
+      const tbody = table.querySelector('tbody');
+      entries.forEach((entry) => {
+        const row = document.createElement('tr');
+        const fullPath = joinPath(currentPath, entry.name);
+        row.innerHTML = `
+          <td>
+            <div class="entry-name">
+              <span>${entry.directory ? '📁' : '📄'}</span>
+              <span>${entry.name}</span>
+            </div>
+          </td>
+          <td>${entry.directory ? '—' : formatBytes(entry.size || 0)}</td>
+          <td><span class="badge">${entry.directory ? 'directory' : 'file'}</span></td>
+          <td>
+            <div class="action-buttons">
+              ${entry.directory ? '<button class="secondary" data-open>Open</button>' : '<button class="secondary" data-download>Download</button>'}
+              <button class="secondary" data-rename>Rename</button>
+              <button class="danger secondary" data-delete>Delete</button>
+            </div>
+          </td>
+        `;
+        row.querySelector('[data-rename]').addEventListener('click', () => renameEntry(fullPath, entry.directory));
+        row.querySelector('[data-delete]').addEventListener('click', () => deleteEntry(fullPath, entry.directory));
+        if (entry.directory) {
+          row.querySelector('[data-open]').addEventListener('click', () => loadDirectory(fullPath));
+        } else {
+          row.querySelector('[data-download]').addEventListener('click', () => downloadEntry(fullPath));
+        }
+        tbody.appendChild(row);
+      });
+      entriesContainer.innerHTML = '';
+      entriesContainer.appendChild(table);
+    }
+
+    async function loadDirectory(path = '/') {
+      statusEl.textContent = `Loading ${path}…`;
+      try {
+        const res = await fetch(`/api/fs/list?path=${encodeURIComponent(path)}`);
+        if (!res.ok) throw new Error('List failed');
+        const data = await res.json();
+        currentPath = data.path || path;
+        renderBreadcrumb(currentPath);
+        renderEntries(data.entries || []);
+        renderStorage(data.storage || {});
+        statusEl.textContent = `Showing ${data.count || 0} entries in ${currentPath}`;
+      } catch (err) {
+        statusEl.textContent = 'Failed to load directory';
+        entriesContainer.innerHTML = '<div id="entries-empty">Unable to load directory.</div>';
+      }
+    }
+
+    function renderStorage(storage) {
+      if (!storage || !('mounted' in storage)) {
+        storageEl.textContent = 'SD status unavailable.';
+        return;
+      }
+      if (!storage.mounted) {
+        storageEl.textContent = 'SD card not mounted.';
+        return;
+      }
+      storageEl.innerHTML = `
+        <div>Mounted: <strong>${storage.mounted ? 'yes' : 'no'}</strong></div>
+        <div>Used: <strong>${formatBytes(storage.used || 0)}</strong></div>
+        <div>Total: <strong>${formatBytes(storage.total || 0)}</strong></div>
+      `;
+    }
+
+    function downloadEntry(path) {
+      const url = `/api/fs/download?path=${encodeURIComponent(path)}`;
+      window.open(url, '_blank');
+    }
+
+    async function deleteEntry(path, isDir) {
+      const confirmDelete = confirm(`Delete ${isDir ? 'folder' : 'file'} ${path}?`);
+      if (!confirmDelete) return;
+      statusEl.textContent = 'Deleting…';
+      const res = await fetch('/api/fs/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path })
+      });
+      if (!res.ok) {
+        statusEl.textContent = 'Delete failed.';
+        return;
+      }
+      statusEl.textContent = 'Delete completed.';
+      loadDirectory(currentPath);
+    }
+
+    async function renameEntry(path, isDir) {
+      const basename = path.split('/').filter(Boolean).pop() || '';
+      const newName = validateName(prompt(`Rename ${isDir ? 'folder' : 'file'}:`, basename));
+      if (!newName) {
+        alert('Invalid name.');
+        return;
+      }
+      const parent = path.split('/').slice(0, -1).join('/') || '/';
+      const target = parent === '/' ? `/${newName}` : `${parent}/${newName}`;
+      statusEl.textContent = 'Renaming…';
+      const res = await fetch('/api/fs/rename', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ from: path, to: target })
+      });
+      if (!res.ok) {
+        statusEl.textContent = 'Rename failed.';
+        return;
+      }
+      statusEl.textContent = 'Rename completed.';
+      loadDirectory(currentPath);
+    }
+
+    async function createFolder() {
+      const name = validateName(prompt('Folder name:'));
+      if (!name) {
+        alert('Invalid folder name.');
+        return;
+      }
+      statusEl.textContent = 'Creating folder…';
+      const res = await fetch('/api/fs/mkdir', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: currentPath, name })
+      });
+      statusEl.textContent = res.ok ? 'Folder created.' : 'Failed to create folder.';
+      loadDirectory(currentPath);
+    }
+
+    async function handleUpload(fileList) {
+      if (!fileList || !fileList.length) return;
+      for (const file of fileList) {
+        statusEl.textContent = `Uploading ${file.name} (${formatBytes(file.size)})…`;
+        const formData = new FormData();
+        formData.append('file', file);
+        const res = await fetch(`/api/fs/upload?path=${encodeURIComponent(currentPath)}`, {
+          method: 'POST',
+          body: formData
+        });
+        if (!res.ok) {
+          statusEl.textContent = `Failed to upload ${file.name}`;
+          break;
+        }
+        const result = await res.json();
+        statusEl.textContent = result.message || 'Upload done';
+      }
+      fileInput.value = '';
+      loadDirectory(currentPath);
+    }
+
+    loadDirectory('/');
+  </script>
+</body>
+</html>

@@ -178,6 +178,41 @@ std::vector<SdCardEntry> SdCardDriver::listDirectory(const char* path, size_t ma
     return entries;
 }
 
+bool SdCardDriver::removePath(const char* path) {
+    if (!path || path[0] == '\0' || strcmp(path, "/") == 0) {
+        last_error_ = "Invalid path";
+        return false;
+    }
+    if (!ensureMounted()) {
+        last_error_ = "Card not mounted";
+        return false;
+    }
+
+    File entry = SD_MMC.open(path);
+    if (!entry) {
+        last_error_ = "Path not found";
+        return false;
+    }
+
+    bool success = true;
+    if (entry.isDirectory()) {
+        entry.close();
+        success = deleteRecursive(path);
+    } else {
+        entry.close();
+        success = SD_MMC.remove(path);
+    }
+
+    if (!success) {
+        last_error_ = "Delete failed";
+        return false;
+    }
+
+    refreshStats();
+    last_error_.clear();
+    return true;
+}
+
 bool SdCardDriver::formatCard() {
     if (!ensureMounted()) {
         return false;

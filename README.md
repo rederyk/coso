@@ -62,6 +62,21 @@ build_flags =
 - **[lvgl_buffer_analysis.md](docs/lvgl_buffer_analysis.md)** - Analisi tecnica
 - **[MEMORY_USAGE_AND_OPTIMIZATION.md](docs/MEMORY_USAGE_AND_OPTIMIZATION.md)** - Ottimizzazioni
 
+## 🌐 Interfacce Web integrate
+- **Command Console** → `http://<ESP_IP>/commands`
+  - Lista dinamica dei comandi esposti dal `CommandCenter` e form per esecuzione rapida.
+  - Usa le API già presenti `/api/commands` e `/api/commands/execute`.
+- **File Manager** → `http://<ESP_IP>/file-manager`
+  - Browser sicuro della microSD, con breadcrumb, anteprima storage, upload multi-file e azioni (download, rename, delete, mkdir).
+  - Tutte le richieste passano per API JSON con validazione path (anti-traversal) e mutex SD per evitare conflitti con altri task.
+  - Endpoints principali:
+    - `GET /api/fs/list?path=/` → Elenco directory + stats SD.
+    - `GET /api/fs/download?path=/foo/bar.wav` → Download chunked.
+    - `POST /api/fs/mkdir` `{ "path": "/foo", "name": "samples" }`
+    - `POST /api/fs/rename` `{ "from": "/foo/a.txt", "to": "/foo/b.txt" }`
+    - `POST /api/fs/delete` `{ "path": "/foo/old" }`
+    - `POST /api/fs/upload?path=/foo` + `multipart/form-data` → Upload stream sicuro, con overwrite controllata.
+
 ## 📈 Roadmap (Senza Date/Tempi)
 
 ### Fase 1: Interfaccia e Controlli Base ✅

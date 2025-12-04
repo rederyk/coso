@@ -2,8 +2,11 @@
 
 #include <ArduinoJson.h>
 #include <LittleFS.h>
+#include <SD_MMC.h>
 #include <WiFi.h>
 #include <esp_heap_caps.h>
+#include <algorithm>
+#include <cctype>
 #include <cstring>
 #include <vector>
 
@@ -19,6 +22,27 @@ namespace {
 constexpr const char* DEFAULT_ROOT = "/www/index.html";
 constexpr uint32_t SERVER_LOOP_DELAY_MS = 10;
 constexpr uint32_t ASSISTANT_RESPONSE_TIMEOUT_MS = 20000;
+constexpr uint32_t SD_MUTEX_TIMEOUT_MS = 2000;
+constexpr size_t MAX_FS_LIST_ENTRIES = 128;
+
+class SdMutexGuard {
+public:
+    explicit SdMutexGuard(SdCardDriver& driver, uint32_t timeout_ms = SD_MUTEX_TIMEOUT_MS)
+        : driver_(driver), locked_(driver_.acquireSdMutex(timeout_ms)) {
+    }
+
+    ~SdMutexGuard() {
+        if (locked_) {
+            driver_.releaseSdMutex();
+        }
+    }
+
+    bool locked() const { return locked_; }
+
+private:
+    SdCardDriver& driver_;
+    bool locked_;
+};
 }  // namespace
 
 WebServerManager& WebServerManager::getInstance() {
@@ -83,6 +107,7 @@ void WebServerManager::registerRoutes() {
 
     server_->on("/", HTTP_GET, [this]() { handleRoot(); });
     server_->on("/commands", HTTP_GET, [this]() { handleRoot(); });
+    server_->on("/file-manager", HTTP_GET, [this]() { handleFileManagerPage(); });
     server_->on("/api/commands", HTTP_GET, [this]() { handleApiCommands(); });
     server_->on("/api/commands/execute", HTTP_POST, [this]() { handleApiExecute(); });
     server_->on("/api/assistant/chat", HTTP_POST, [this]() { handleAssistantChat(); });
@@ -95,6 +120,16 @@ void WebServerManager::registerRoutes() {
     server_->on("/api/assistant/settings", HTTP_POST, [this]() { handleAssistantSettingsPost(); });
     server_->on("/api/assistant/models", HTTP_GET, [this]() { handleAssistantModels(); });
     server_->on("/api/health", HTTP_GET, [this]() { handleApiHealth(); });
+    server_->on("/api/fs/list", HTTP_GET, [this]() { handleFsList(); });
+    server_->on("/api/fs/download", HTTP_GET, [this]() { handleFsDownload(); });
+    server_->on("/api/fs/mkdir", HTTP_POST, [this]() { handleFsMkdir(); });
+    server_->on("/api/fs/rename", HTTP_POST, [this]() { handleFsRename(); });
+    server_->on("/api/fs/delete", HTTP_POST, [this]() { handleFsDelete(); });
+    server_->on(
+        "/api/fs/upload",
+        HTTP_POST,
+        [this]() { handleFsUploadComplete(); },
+        [this]() { handleFsUploadData(); });
     server_->onNotFound([this]() { handleNotFound(); });
 
     routes_registered_ = true;
@@ -563,6 +598,441 @@ void WebServerManager::handleApiHealth() {
     sendJson(200, response);
 }
 
+void WebServerManager::handleFileManagerPage() {
+    if (!serveFile("/www/file-manager.html")) {
+        server_->send(404, "text/plain", "file-manager.html not found");
+    }
+}
+
+void WebServerManager::handleFsList() {
+    SdCardDriver& sd = SdCardDriver::getInstance();
+    if (!sd.begin()) {
+        sendJson(503, "{\"status\":\"error\",\"message\":\"SD card unavailable\"}");
+        return;
+    }
+
+    const String requested_path = server_->hasArg("path") ? server_->arg("path") : "/";
+    std::string normalized_path;
+    if (!normalizeSdPath(requested_path, normalized_path)) {
+        sendJson(400, "{\"status\":\"error\",\"message\":\"Invalid path\"}");
+        return;
+    }
+
+    size_t limit = MAX_FS_LIST_ENTRIES;
+    if (server_->hasArg("limit")) {
+        int raw_limit = server_->arg("limit").toInt();
+        if (raw_limit > 0) {
+            limit = static_cast<size_t>(std::min<int>(raw_limit, MAX_FS_LIST_ENTRIES));
+        }
+    }
+
+    SdMutexGuard guard(sd);
+    if (!guard.locked()) {
+        sendJson(503, "{\"status\":\"error\",\"message\":\"SD card busy\"}");
+        return;
+    }
+
+    File dir = SD_MMC.open(normalized_path.c_str());
+    if (!dir || !dir.isDirectory()) {
+        if (dir) {
+            dir.close();
+        }
+        sendJson(404, "{\"status\":\"error\",\"message\":\"Directory not found\"}");
+        return;
+    }
+    dir.close();
+
+    auto entries = sd.listDirectory(normalized_path.c_str(), limit);
+
+    JsonDocument doc;
+    doc["status"] = "success";
+    doc["path"] = normalized_path.c_str();
+    doc["parent"] = parentPath(normalized_path).c_str();
+    doc["limit"] = static_cast<uint32_t>(limit);
+    doc["count"] = static_cast<uint32_t>(entries.size());
+    JsonArray arr = doc.createNestedArray("entries");
+    for (const auto& entry : entries) {
+        JsonObject obj = arr.add<JsonObject>();
+        obj["name"] = entry.name.c_str();
+        obj["directory"] = entry.isDirectory;
+        if (!entry.isDirectory) {
+            obj["size"] = static_cast<uint64_t>(entry.sizeBytes);
+        }
+    }
+    JsonObject storage = doc["storage"].to<JsonObject>();
+    storage["mounted"] = sd.isMounted();
+    storage["used"] = sd.usedBytes();
+    storage["total"] = sd.totalBytes();
+
+    String payload;
+    serializeJson(doc, payload);
+    sendJson(200, payload);
+}
+
+void WebServerManager::handleFsDownload() {
+    SdCardDriver& sd = SdCardDriver::getInstance();
+    if (!sd.begin()) {
+        sendJson(503, "{\"status\":\"error\",\"message\":\"SD card unavailable\"}");
+        return;
+    }
+    if (!server_->hasArg("path")) {
+        sendJson(400, "{\"status\":\"error\",\"message\":\"Missing path\"}");
+        return;
+    }
+    std::string normalized_path;
+    if (!normalizeSdPath(server_->arg("path"), normalized_path) || normalized_path == "/") {
+        sendJson(400, "{\"status\":\"error\",\"message\":\"Invalid file path\"}");
+        return;
+    }
+
+    SdMutexGuard guard(sd);
+    if (!guard.locked()) {
+        sendJson(503, "{\"status\":\"error\",\"message\":\"SD card busy\"}");
+        return;
+    }
+
+    File file = SD_MMC.open(normalized_path.c_str(), FILE_READ);
+    if (!file || file.isDirectory()) {
+        if (file) {
+            file.close();
+        }
+        sendJson(404, "{\"status\":\"error\",\"message\":\"File not found\"}");
+        return;
+    }
+
+    String filename = safeBasename(normalized_path);
+    server_->sendHeader("Cache-Control", "no-store");
+    server_->sendHeader("Content-Disposition", "attachment; filename=\"" + filename + "\"");
+    server_->streamFile(file, "application/octet-stream");
+    file.close();
+}
+
+void WebServerManager::handleFsMkdir() {
+    SdCardDriver& sd = SdCardDriver::getInstance();
+    if (!sd.begin()) {
+        sendJson(503, "{\"status\":\"error\",\"message\":\"SD card unavailable\"}");
+        return;
+    }
+
+    String body = server_->arg("plain");
+    if (body.isEmpty()) {
+        sendJson(400, "{\"status\":\"error\",\"message\":\"Empty body\"}");
+        return;
+    }
+
+    StaticJsonDocument<256> doc;
+    if (deserializeJson(doc, body)) {
+        sendJson(400, "{\"status\":\"error\",\"message\":\"Invalid JSON\"}");
+        return;
+    }
+
+    const char* parent_raw = doc["path"] | "/";
+    const char* name_raw = doc["name"] | "";
+    std::string parent_path;
+    std::string folder_name;
+    if (!normalizeSdPath(parent_raw, parent_path) || !sanitizeFilename(name_raw, folder_name)) {
+        sendJson(400, "{\"status\":\"error\",\"message\":\"Invalid directory name\"}");
+        return;
+    }
+
+    SdMutexGuard guard(sd);
+    if (!guard.locked()) {
+        sendJson(503, "{\"status\":\"error\",\"message\":\"SD card busy\"}");
+        return;
+    }
+
+    File parent = SD_MMC.open(parent_path.c_str());
+    if (!parent || !parent.isDirectory()) {
+        if (parent) {
+            parent.close();
+        }
+        sendJson(404, "{\"status\":\"error\",\"message\":\"Parent directory not found\"}");
+        return;
+    }
+    parent.close();
+
+    std::string full_path = joinPaths(parent_path, folder_name);
+    if (full_path == "/" || full_path.size() > 255) {
+        sendJson(400, "{\"status\":\"error\",\"message\":\"Invalid target path\"}");
+        return;
+    }
+
+    if (SD_MMC.exists(full_path.c_str())) {
+        sendJson(409, "{\"status\":\"error\",\"message\":\"Entry already exists\"}");
+        return;
+    }
+
+    if (!SD_MMC.mkdir(full_path.c_str())) {
+        sendJson(500, "{\"status\":\"error\",\"message\":\"Failed to create directory\"}");
+        return;
+    }
+
+    sd.refreshStats();
+    sendJson(200, "{\"status\":\"success\",\"message\":\"Directory created\"}");
+}
+
+void WebServerManager::handleFsRename() {
+    SdCardDriver& sd = SdCardDriver::getInstance();
+    if (!sd.begin()) {
+        sendJson(503, "{\"status\":\"error\",\"message\":\"SD card unavailable\"}");
+        return;
+    }
+
+    String body = server_->arg("plain");
+    if (body.isEmpty()) {
+        sendJson(400, "{\"status\":\"error\",\"message\":\"Empty body\"}");
+        return;
+    }
+
+    StaticJsonDocument<256> doc;
+    if (deserializeJson(doc, body)) {
+        sendJson(400, "{\"status\":\"error\",\"message\":\"Invalid JSON\"}");
+        return;
+    }
+
+    const char* from_raw = doc["from"] | "";
+    const char* to_raw = doc["to"] | "";
+
+    std::string from_path;
+    std::string to_path;
+    if (!normalizeSdPath(from_raw, from_path) || !normalizeSdPath(to_raw, to_path) ||
+        to_path == "/") {
+        sendJson(400, "{\"status\":\"error\",\"message\":\"Invalid rename paths\"}");
+        return;
+    }
+
+    SdMutexGuard guard(sd);
+    if (!guard.locked()) {
+        sendJson(503, "{\"status\":\"error\",\"message\":\"SD card busy\"}");
+        return;
+    }
+
+    if (!SD_MMC.exists(from_path.c_str())) {
+        sendJson(404, "{\"status\":\"error\",\"message\":\"Source path not found\"}");
+        return;
+    }
+
+    if (SD_MMC.exists(to_path.c_str())) {
+        sendJson(409, "{\"status\":\"error\",\"message\":\"Destination already exists\"}");
+        return;
+    }
+
+    if (!SD_MMC.rename(from_path.c_str(), to_path.c_str())) {
+        sendJson(500, "{\"status\":\"error\",\"message\":\"Rename failed\"}");
+        return;
+    }
+
+    sd.refreshStats();
+    JsonDocument response;
+    response["status"] = "success";
+    response["from"] = from_path.c_str();
+    response["to"] = to_path.c_str();
+
+    String payload;
+    serializeJson(response, payload);
+    sendJson(200, payload);
+}
+
+void WebServerManager::handleFsDelete() {
+    SdCardDriver& sd = SdCardDriver::getInstance();
+    if (!sd.begin()) {
+        sendJson(503, "{\"status\":\"error\",\"message\":\"SD card unavailable\"}");
+        return;
+    }
+
+    String body = server_->arg("plain");
+    if (body.isEmpty()) {
+        sendJson(400, "{\"status\":\"error\",\"message\":\"Empty body\"}");
+        return;
+    }
+
+    StaticJsonDocument<192> doc;
+    if (deserializeJson(doc, body)) {
+        sendJson(400, "{\"status\":\"error\",\"message\":\"Invalid JSON\"}");
+        return;
+    }
+
+    const char* path_raw = doc["path"] | "";
+    std::string path;
+    if (!normalizeSdPath(path_raw, path) || path == "/") {
+        sendJson(400, "{\"status\":\"error\",\"message\":\"Invalid path\"}");
+        return;
+    }
+
+    SdMutexGuard guard(sd);
+    if (!guard.locked()) {
+        sendJson(503, "{\"status\":\"error\",\"message\":\"SD card busy\"}");
+        return;
+    }
+
+    if (!SD_MMC.exists(path.c_str())) {
+        sendJson(404, "{\"status\":\"error\",\"message\":\"Path not found\"}");
+        return;
+    }
+
+    if (!sd.removePath(path.c_str())) {
+        std::string message = sd.lastError();
+        if (message.empty()) {
+            message = "Delete failed";
+        }
+        JsonDocument error;
+        error["status"] = "error";
+        error["message"] = message.c_str();
+        String payload;
+        serializeJson(error, payload);
+        sendJson(500, payload);
+        return;
+    }
+
+    JsonDocument response;
+    response["status"] = "success";
+    response["path"] = path.c_str();
+
+    String payload;
+    serializeJson(response, payload);
+    sendJson(200, payload);
+}
+
+void WebServerManager::handleFsUploadData() {
+    HTTPUpload& upload = server_->upload();
+    SdCardDriver& sd = SdCardDriver::getInstance();
+
+    auto fail = [&](const char* message) {
+        upload_state_.error = true;
+        upload_state_.message = message;
+        if (upload_state_.file) {
+            upload_state_.file.close();
+        }
+        if (upload_state_.lock_acquired) {
+            sd.releaseSdMutex();
+            upload_state_.lock_acquired = false;
+        }
+    };
+
+    switch (upload.status) {
+    case UPLOAD_FILE_START: {
+        upload_state_ = UploadState{};
+        upload_state_.active = true;
+        upload_state_.bytes_written = 0;
+
+        if (!sd.begin()) {
+            fail("SD card unavailable");
+            return;
+        }
+
+        std::string base_path;
+        const String base_arg = server_->hasArg("path") ? server_->arg("path") : "/";
+        if (!normalizeSdPath(base_arg, base_path)) {
+            fail("Invalid target path");
+            return;
+        }
+
+        std::string filename;
+        if (!sanitizeFilename(upload.filename, filename)) {
+            fail("Invalid file name");
+            return;
+        }
+
+        if (!sd.acquireSdMutex(SD_MUTEX_TIMEOUT_MS)) {
+            fail("SD card busy");
+            return;
+        }
+        upload_state_.lock_acquired = true;
+
+        File parent = SD_MMC.open(base_path.c_str());
+        if (!parent || !parent.isDirectory()) {
+            if (parent) {
+                parent.close();
+            }
+            fail("Target directory missing");
+            return;
+        }
+        parent.close();
+
+        std::string full_path = joinPaths(base_path, filename);
+        if (full_path.size() > 255) {
+            fail("Path too long");
+            return;
+        }
+
+        if (SD_MMC.exists(full_path.c_str())) {
+            if (!SD_MMC.remove(full_path.c_str())) {
+                fail("Cannot overwrite file");
+                return;
+            }
+        }
+
+        upload_state_.file = SD_MMC.open(full_path.c_str(), FILE_WRITE);
+        if (!upload_state_.file) {
+            fail("Open file failed");
+            return;
+        }
+        upload_state_.path = full_path;
+        upload_state_.message = "Receiving file";
+        break;
+    }
+    case UPLOAD_FILE_WRITE:
+        if (!upload_state_.error && upload_state_.file && upload.currentSize) {
+            size_t written = upload_state_.file.write(upload.buf, upload.currentSize);
+            if (written != upload.currentSize) {
+                fail("Write error");
+            } else {
+                upload_state_.bytes_written += written;
+            }
+        }
+        break;
+    case UPLOAD_FILE_END:
+        if (!upload_state_.error && upload_state_.file) {
+            upload_state_.file.flush();
+            upload_state_.file.close();
+            upload_state_.message = "Upload completed";
+            upload_state_.completed = true;
+            sd.refreshStats();
+        }
+        if (upload_state_.lock_acquired) {
+            sd.releaseSdMutex();
+            upload_state_.lock_acquired = false;
+        }
+        break;
+    case UPLOAD_FILE_ABORTED:
+        fail("Upload aborted");
+        break;
+    default:
+        break;
+    }
+}
+
+void WebServerManager::handleFsUploadComplete() {
+    JsonDocument doc;
+    if (!upload_state_.active) {
+        sendJson(400, "{\"status\":\"error\",\"message\":\"No upload in progress\"}");
+        return;
+    }
+
+    if (upload_state_.lock_acquired) {
+        SdCardDriver::getInstance().releaseSdMutex();
+        upload_state_.lock_acquired = false;
+    }
+
+    doc["status"] = upload_state_.error ? "error" : "success";
+    doc["message"] = upload_state_.message.length() ? upload_state_.message.c_str()
+                                                    : (upload_state_.error ? "Upload failed"
+                                                                           : "Upload completed");
+    if (!upload_state_.path.empty()) {
+        doc["path"] = upload_state_.path.c_str();
+    }
+    doc["bytes"] = static_cast<uint32_t>(upload_state_.bytes_written);
+
+    String payload;
+    serializeJson(doc, payload);
+    sendJson(upload_state_.error ? 400 : 200, payload);
+
+    if (upload_state_.file) {
+        upload_state_.file.close();
+    }
+    upload_state_ = UploadState{};
+}
+
 void WebServerManager::handleNotFound() {
     const String path = server_->uri();
     String static_path = path;
@@ -576,4 +1046,143 @@ void WebServerManager::handleNotFound() {
 
     Logger::getInstance().warnf("[WebServer] 404 %s", path.c_str());
     server_->send(404, "application/json", "{\"status\":\"error\",\"message\":\"Not found\"}");
+}
+
+bool WebServerManager::normalizeSdPath(const String& raw, std::string& out) const {
+    const std::string input = raw.c_str();
+    if (input.empty()) {
+        out = "/";
+        return true;
+    }
+
+    std::vector<std::string> segments;
+    size_t i = 0;
+    while (i < input.size()) {
+        while (i < input.size() && (input[i] == '/' || input[i] == '\\')) {
+            ++i;
+        }
+        size_t start = i;
+        while (i < input.size() && input[i] != '/' && input[i] != '\\') {
+            char ch = input[i];
+            if (ch < 32 || ch == ':' || ch == '*' || ch == '?' || ch == '|' || ch == '"' ||
+                ch == '<' || ch == '>' || ch == '\r' || ch == '\n') {
+                return false;
+            }
+            ++i;
+        }
+        if (start == i) {
+            continue;
+        }
+        std::string segment = input.substr(start, i - start);
+        if (segment == ".") {
+            continue;
+        }
+        if (segment == "..") {
+            if (segments.empty()) {
+                return false;
+            }
+            segments.pop_back();
+            continue;
+        }
+        segments.push_back(segment);
+    }
+
+    out.clear();
+    out.push_back('/');
+    for (size_t idx = 0; idx < segments.size(); ++idx) {
+        out += segments[idx];
+        if (idx + 1 < segments.size()) {
+            out.push_back('/');
+        }
+    }
+    if (out.size() > 1 && out.back() == '/') {
+        out.pop_back();
+    }
+    if (out.empty()) {
+        out = "/";
+    }
+    if (out.size() > 255) {
+        return false;
+    }
+    return true;
+}
+
+bool WebServerManager::sanitizeFilename(const String& raw, std::string& out) const {
+    std::string name = raw.c_str();
+    size_t slash = name.find_last_of("/\\");
+    if (slash != std::string::npos) {
+        name = name.substr(slash + 1);
+    }
+    if (name.empty() || name.size() > 96) {
+        return false;
+    }
+    size_t start = 0;
+    while (start < name.size() && name[start] == ' ') {
+        ++start;
+    }
+    size_t end = name.size();
+    while (end > start && name[end - 1] == ' ') {
+        --end;
+    }
+    name = name.substr(start, end - start);
+    if (name.empty()) {
+        return false;
+    }
+    for (char& ch : name) {
+        unsigned char c = static_cast<unsigned char>(ch);
+        if (!(std::isalnum(c) || ch == '.' || ch == '_' || ch == '-' || ch == ' ')) {
+            return false;
+        }
+    }
+    out = name;
+    return true;
+}
+
+std::string WebServerManager::joinPaths(const std::string& parent, const std::string& child) const {
+    if (child.empty()) {
+        return parent.empty() ? std::string("/") : parent;
+    }
+    if (parent.empty() || parent == "/") {
+        return "/" + child;
+    }
+    std::string result = parent;
+    if (result.back() != '/') {
+        result.push_back('/');
+    }
+    result += child;
+    return result;
+}
+
+std::string WebServerManager::parentPath(const std::string& path) const {
+    if (path.empty() || path == "/") {
+        return "/";
+    }
+    size_t pos = path.find_last_of('/');
+    if (pos == std::string::npos || pos == 0) {
+        return "/";
+    }
+    return path.substr(0, pos);
+}
+
+String WebServerManager::safeBasename(const std::string& path) const {
+    if (path.empty()) {
+        return "download.bin";
+    }
+    std::string name;
+    size_t pos = path.find_last_of('/');
+    if (pos == std::string::npos) {
+        name = path;
+    } else if (pos + 1 < path.size()) {
+        name = path.substr(pos + 1);
+    }
+    if (name.empty()) {
+        name = "download.bin";
+    }
+    for (char& ch : name) {
+        unsigned char c = static_cast<unsigned char>(ch);
+        if (c < 32 || ch == '"' || ch == '\\') {
+            ch = '_';
+        }
+    }
+    return String(name.c_str());
 }
