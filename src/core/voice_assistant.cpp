@@ -1127,6 +1127,16 @@ bool VoiceAssistant::parseGPTCommand(const std::string& response, VoiceCommand& 
         LOG_I("LLM didn't specify should_refine_output, will use heuristic");
     }
 
+    // Phase 2.1: Extract refinement_extract field (optional, defaults to "text")
+    cJSON* extract_field = cJSON_GetObjectItem(root, "refinement_extract");
+    if (extract_field && cJSON_IsString(extract_field)) {
+        cmd.refinement_extract_field = extract_field->valuestring;
+        LOG_I("LLM specified refinement_extract: %s", cmd.refinement_extract_field.c_str());
+    } else {
+        cmd.refinement_extract_field = "text"; // Default
+        LOG_I("LLM didn't specify refinement_extract, using default: text");
+    }
+
     cJSON_Delete(root);
 
     LOG_I("Parsed command: %s (args count: %d, text: %s, needs_refinement: %s)",
@@ -1378,22 +1388,51 @@ bool VoiceAssistant::refineCommandOutput(VoiceCommand& cmd) {
         return false;
     }
 
-    LOG_I("Refining command output (size: %zu bytes)", cmd.output.size());
+    LOG_I("Refining command output (size: %zu bytes, extract: %s)",
+          cmd.output.size(), cmd.refinement_extract_field.c_str());
 
     // Build refinement prompt
     std::string refinement_prompt = buildRefinementPrompt(cmd);
 
     // Call GPT to refine the output
-    std::string refined;
-    bool success = makeGPTRequest(refinement_prompt, refined);
+    std::string refined_raw;
+    bool success = makeGPTRequest(refinement_prompt, refined_raw);
 
-    if (success && !refined.empty()) {
-        cmd.refined_output = refined;
-        LOG_I("Output refined successfully: %s", refined.c_str());
-        return true;
-    } else {
+    if (!success || refined_raw.empty()) {
         LOG_E("Failed to refine output (GPT request failed or empty response)");
         return false;
+    }
+
+    // Decide what to extract based on refinement_extract_field
+    if (cmd.refinement_extract_field == "full" ||
+        cmd.refinement_extract_field == "json") {
+        // Return full JSON response
+        cmd.refined_output = refined_raw;
+        LOG_I("Using full JSON response as refined output");
+        return true;
+    }
+
+    // Default: Extract specific field (usually "text")
+    cJSON* root = cJSON_Parse(refined_raw.c_str());
+    if (!root) {
+        LOG_W("Failed to parse refinement JSON, using raw response as fallback");
+        cmd.refined_output = refined_raw;
+        return true;
+    }
+
+    cJSON* field = cJSON_GetObjectItem(root, cmd.refinement_extract_field.c_str());
+    if (field && cJSON_IsString(field)) {
+        cmd.refined_output = field->valuestring;
+        LOG_I("Extracted field '%s' from refinement: %s",
+              cmd.refinement_extract_field.c_str(), cmd.refined_output.c_str());
+        cJSON_Delete(root);
+        return true;
+    } else {
+        LOG_W("Field '%s' not found in refinement JSON, using raw response",
+              cmd.refinement_extract_field.c_str());
+        cmd.refined_output = refined_raw;
+        cJSON_Delete(root);
+        return true;
     }
 }
 
@@ -1519,9 +1558,33 @@ std::string VoiceAssistant::getSystemPrompt() const {
     prompt += "  (l'accesso ai file è limitato alle directory whitelist configurate; usa preferibilmente `/webdata` o `/memory` e lascia che venga eseguito `StorageAccessManager`)\n";
     prompt += "- Sistema: system.ping(), system.uptime(), system.heap(), system.sd_status(), system.status()\n";
     prompt += "- Timing: delay(ms)\n";
+    prompt += "\n**API METEO CONSIGLIATA PER L'ITALIA:**\n";
+    prompt += "Usa Open-Meteo API (gratuita, nessuna API key richiesta):\n";
+    prompt += "URL: https://api.open-meteo.com/v1/forecast?latitude=LAT&longitude=LON&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m&timezone=Europe/Rome\n\n";
+    prompt += "Coordinate città italiane principali:\n";
+    prompt += "- Milano: lat=45.4642, lon=9.1900\n";
+    prompt += "- Roma: lat=41.9028, lon=12.4964\n";
+    prompt += "- Napoli: lat=40.8518, lon=14.2681\n";
+    prompt += "- Torino: lat=45.0703, lon=7.6869\n";
+    prompt += "- Firenze: lat=43.7696, lon=11.2558\n";
+    prompt += "- Venezia: lat=45.4408, lon=12.3155\n";
+    prompt += "- Bologna: lat=44.4949, lon=11.3426\n";
+    prompt += "- Genova: lat=44.4056, lon=8.9463\n";
+    prompt += "- Palermo: lat=38.1157, lon=13.3615\n";
+    prompt += "- Bari: lat=41.1171, lon=16.8719\n";
+    prompt += "- Pisa: lat=43.7228, lon=10.4017\n";
+    prompt += "- Livorno: lat=43.5485, lon=10.3106\n";
+    prompt += "- Piombino: lat=42.9242, lon=10.5267\n\n";
+    prompt += "**Response JSON contiene:**\n";
+    prompt += "- current.temperature_2m: temperatura in °C\n";
+    prompt += "- current.relative_humidity_2m: umidità in %\n";
+    prompt += "- current.apparent_temperature: temperatura percepita in °C\n";
+    prompt += "- current.wind_speed_10m: velocità vento in km/h\n";
+    prompt += "- current.precipitation: precipitazioni in mm\n";
+    prompt += "- current.weather_code: codice meteo (0=sereno, 1-3=nuvoloso, 61-65=pioggia, 71-77=neve)\n\n";
     prompt += "Esempi:\n";
-    prompt += "- Scarica dati meteo: {\"command\": \"lua_script\", \"args\": [\"webData.fetch_once('https://api.open-meteo.com/v1/forecast?latitude=45.4642&longitude=9.1900&current_weather=true', 'weather.json')\"], \"text\": \"Dati meteo scaricati\"}\n";
-    prompt += "- Leggi dati salvati: {\"command\": \"lua_script\", \"args\": [\"local data = webData.read_data('weather.json'); println('Dati:', data)\"], \"text\": \"Dati letti\"}\n";
+    prompt += "- Meteo Milano: {\"command\": \"lua_script\", \"args\": [\"webData.fetch_once('https://api.open-meteo.com/v1/forecast?latitude=45.4642&longitude=9.1900&current=temperature_2m,relative_humidity_2m,wind_speed_10m&timezone=Europe/Rome', 'weather_milano.json')\"], \"text\": \"Sto scaricando i dati meteo di Milano\", \"should_refine_output\": true}\n";
+    prompt += "- Leggi meteo: {\"command\": \"lua_script\", \"args\": [\"println(webData.read_data('weather_milano.json'))\"], \"text\": \"Ecco il meteo\", \"should_refine_output\": true}\n";
     prompt += "- LED lampeggiante: {\"command\": \"lua_script\", \"args\": [\"gpio.write(23, true); delay(1000); gpio.write(23, false)\"], \"text\": \"LED lampeggiato\"}\n";
     prompt += "- Scrivi testo BLE: {\"command\": \"lua_script\", \"args\": [\"ble.type('AA:BB:CC:DD:EE:FF', 'Ciao mondo!')\"], \"text\": \"Testo inviato via BLE\"}\n";
     prompt += "- Sequenza complessa: {\"command\": \"lua_script\", \"args\": [\"gpio.write(23, true); ble.type('AA:BB:CC:DD:EE:FF', 'LED acceso'); delay(2000); gpio.write(23, false); audio.volume_up()\"], \"text\": \"Sequenza completata\"}";
@@ -1534,11 +1597,16 @@ std::string VoiceAssistant::getSystemPrompt() const {
     prompt += "  \"command\": \"comando_da_eseguire\",\n";
     prompt += "  \"args\": [\"arg1\", \"arg2\"],\n";
     prompt += "  \"text\": \"Risposta testuale user-friendly\",\n";
-    prompt += "  \"should_refine_output\": true/false\n";
+    prompt += "  \"should_refine_output\": true/false,\n";
+    prompt += "  \"refinement_extract\": \"text\"  // Opzionale: quale campo estrarre dal refinement\n";
     prompt += "}\n```\n\n";
     prompt += "**Campo should_refine_output:**\n";
     prompt += "Imposta questo campo a `true` se il comando produrrà output tecnico (JSON, log, dati grezzi) ";
     prompt += "che deve essere riformattato in modo user-friendly. Imposta a `false` se l'output è già comprensibile.\n\n";
+    prompt += "**Campo refinement_extract (opzionale):**\n";
+    prompt += "Specifica quale campo estrarre dal response di refinement. Valori possibili:\n";
+    prompt += "- \"text\" (default): Estrae solo il testo user-friendly dal campo 'text' del JSON\n";
+    prompt += "- \"full\" o \"json\": Restituisce l'intero JSON response per manipolazione dati strutturati\n\n";
     prompt += "**Quando usare should_refine_output=true:**\n";
     prompt += "- Comandi webData.fetch_once() o webData.read_data() (producono JSON)\n";
     prompt += "- Comandi memory.read_file() (potrebbero contenere dati grezzi)\n";
@@ -1549,9 +1617,14 @@ std::string VoiceAssistant::getSystemPrompt() const {
     prompt += "- Comandi conversazionali che non producono output tecnico\n";
     prompt += "- Se hai già formattato l'output nel campo 'text'\n\n";
     prompt += "**Esempi:**\n";
-    prompt += "Query meteo: {\"command\": \"lua_script\", \"args\": [\"webData.fetch_once(...)\"], \"text\": \"Sto recuperando i dati meteo\", \"should_refine_output\": true}\n";
-    prompt += "Volume up: {\"command\": \"volume_up\", \"args\": [], \"text\": \"Volume aumentato\", \"should_refine_output\": false}\n";
-    prompt += "Heap stats: {\"command\": \"heap\", \"args\": [], \"text\": \"Ecco le statistiche di memoria\", \"should_refine_output\": true}";
+    prompt += "Query meteo per utente:\n";
+    prompt += "{\"command\": \"lua_script\", \"args\": [\"webData.read_data('weather.json')\"], \"text\": \"Sto leggendo i dati meteo\", \"should_refine_output\": true, \"refinement_extract\": \"text\"}\n";
+    prompt += "→ Output: \"A Milano ci sono 9.5°C...\" (solo testo user-friendly)\n\n";
+    prompt += "Query meteo per elaborazione:\n";
+    prompt += "{\"command\": \"lua_script\", \"args\": [\"webData.read_data('weather.json')\"], \"text\": \"Sto leggendo i dati meteo\", \"should_refine_output\": true, \"refinement_extract\": \"full\"}\n";
+    prompt += "→ Output: {\"command\":\"none\",\"text\":\"...\",\"data\":{...}} (JSON completo per elaborazione)\n\n";
+    prompt += "Volume up (no refinement):\n";
+    prompt += "{\"command\": \"volume_up\", \"args\": [], \"text\": \"Volume aumentato\", \"should_refine_output\": false}";
 
     return prompt;
 }

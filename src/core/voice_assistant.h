@@ -37,15 +37,17 @@ public:
         // Output refinement fields (Phase 1: Output Refinement System)
         std::string refined_output; // Post-processed user-friendly output
         bool needs_refinement;      // Flag indicating if output should be refined
+        std::string refinement_extract_field; // Which field to extract from refinement JSON (Phase 2)
 
-        VoiceCommand() : needs_refinement(false) {}
+        VoiceCommand() : needs_refinement(false), refinement_extract_field("text") {}
         VoiceCommand(std::string cmd, std::vector<std::string> a, std::string txt = "", std::string speech = "", std::string out = "")
             : command(std::move(cmd)),
               args(std::move(a)),
               text(std::move(txt)),
               transcription(std::move(speech)),
               output(std::move(out)),
-              needs_refinement(false) {}
+              needs_refinement(false),
+              refinement_extract_field("text") {}
     };
 
     /** Audio buffer structure */

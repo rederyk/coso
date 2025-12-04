@@ -621,3 +621,47 @@ Con questa base, future estensioni diventano facili:
 **Versione**: 1.0
 **Autore**: Claude Code (Analisi Architettura ESP32 Voice Assistant)
 **Status**: Ready for Implementation ✅
+
+
+## 🌦️ BONUS: API Meteo Open-Meteo per Italia
+
+**Implementato**: 2025-12-04
+**Status**: ✅ Completato
+
+### Aggiunta al System Prompt
+Documentazione completa per Open-Meteo API inclusa nel system prompt.
+
+**Vantaggi rispetto a wttr.in:**
+- ✅ JSON strutturato invece di testo semplice
+- ✅ Nessuna API key richiesta  
+- ✅ Coordinate pre-configurate per 13 città italiane
+- ✅ Timezone Europe/Rome già impostato
+- ✅ Perfetto per refinement system
+
+**Documentazione completa:** `docs/WEATHER_API_GUIDE.md`
+
+**Coordinate Città Disponibili:**
+- Milano, Roma, Napoli, Torino, Firenze, Venezia, Bologna
+- Genova, Palermo, Bari, Pisa, Livorno, Piombino
+
+**Esempio Query LLM:**
+```json
+{
+  "command": "lua_script",
+  "args": ["webData.fetch_once('https://api.open-meteo.com/v1/forecast?latitude=42.9242&longitude=10.5267&current=temperature_2m,wind_speed_10m&timezone=Europe/Rome', 'weather_piombino.json'); println(webData.read_data('weather_piombino.json'))"],
+  "text": "Sto controllando il meteo a Piombino",
+  "should_refine_output": true,
+  "refinement_extract": "text"
+}
+```
+
+**Output Refinement trasforma:**
+```json
+{"current": {"temperature_2m": 12.5, "wind_speed_10m": 8.3}}
+```
+
+**In:**
+`A Piombino ci sono 12.5°C con vento a 8.3 km/h.`
+
+---
+
