@@ -153,6 +153,17 @@ std::vector<std::string> StorageAccessManager::listMemoryFiles() const {
     return listLittleFsDirectory(kMemoryDir);
 }
 
+bool StorageAccessManager::deleteMemory(const std::string& filename) const {
+    std::string path = getMemoryPath(filename);
+    if (path.empty() || !isAllowedLittleFsPath(path)) {
+        return false;
+    }
+    if (!LittleFS.exists(path.c_str())) {
+        return false;
+    }
+    return LittleFS.remove(path.c_str());
+}
+
 std::string StorageAccessManager::getMemoryPath(const std::string& filename) const {
     if (filename.empty()) {
         return {};

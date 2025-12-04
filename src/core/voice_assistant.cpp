@@ -6,6 +6,7 @@
 #include "core/conversation_buffer.h"
 #include "core/ble_hid_manager.h"
 #include "core/web_data_manager.h"
+#include "core/memory_manager.h"
 #include "peripheral/gpio_manager.h"
 #include "utils/logger.h"
 #include <esp_http_client.h>
@@ -1341,10 +1342,10 @@ std::string VoiceAssistant::getSystemPrompt() const {
     prompt += "- Display: display.brightness_up(), display.brightness_down()\n";
     prompt += "- LED: led.set_brightness(percentage)\n";
     prompt += "- WebData: webData.fetch_once(url, filename), webData.fetch_scheduled(url, filename, minutes), webData.read_data(filename), webData.list_files()\n";
+    prompt += "- Memory: memory.read_file(filename), memory.write_file(filename, data), memory.list_files(), memory.delete_file(filename)\n";
     prompt += "  (l'accesso ai file è limitato alle directory whitelist configurate; usa preferibilmente `/webdata` o `/memory` e lascia che venga eseguito `StorageAccessManager`)\n";
     prompt += "- Sistema: system.ping(), system.uptime(), system.heap(), system.sd_status(), system.status()\n";
     prompt += "- Timing: delay(ms)\n";
-    prompt += "  (non accedere direttamente ad altre directory; la sandbox segue la whitelist `/webdata` e `/memory` gestita da StorageAccessManager)\n";
     prompt += "Esempi:\n";
     prompt += "- Scarica dati meteo: {\"command\": \"lua_script\", \"args\": [\"webData.fetch_once('https://api.open-meteo.com/v1/forecast?latitude=45.4642&longitude=9.1900&current_weather=true', 'weather.json')\"], \"text\": \"Dati meteo scaricati\"}\n";
     prompt += "- Leggi dati salvati: {\"command\": \"lua_script\", \"args\": [\"local data = webData.read_data('weather.json'); println('Dati:', data)\"], \"text\": \"Dati letti\"}\n";
@@ -1481,6 +1482,22 @@ void VoiceAssistant::LuaSandbox::setupSandbox() {
                 return esp32_webdata_list_files()
             end
         }
+
+        -- Memory API
+        memory = {
+            read_file = function(filename)
+                return esp32_memory_read_file(filename)
+            end,
+            write_file = function(filename, data)
+                return esp32_memory_write_file(filename, data)
+            end,
+            list_files = function()
+                return esp32_memory_list_files()
+            end,
+            delete_file = function(filename)
+                return esp32_memory_delete_file(filename)
+            end
+        }
     )");
 
     // Register C functions
@@ -1518,6 +1535,12 @@ void VoiceAssistant::LuaSandbox::setupSandbox() {
     lua_register(L, "esp32_webdata_fetch_scheduled", lua_webdata_fetch_scheduled);
     lua_register(L, "esp32_webdata_read_data", lua_webdata_read_data);
     lua_register(L, "esp32_webdata_list_files", lua_webdata_list_files);
+
+    // Memory functions
+    lua_register(L, "esp32_memory_read_file", lua_memory_read_file);
+    lua_register(L, "esp32_memory_write_file", lua_memory_write_file);
+    lua_register(L, "esp32_memory_list_files", lua_memory_list_files);
+    lua_register(L, "esp32_memory_delete_file", lua_memory_delete_file);
 
     // Utility functions
     lua_register(L, "println", lua_println);
@@ -1664,6 +1687,66 @@ int VoiceAssistant::LuaSandbox::lua_gpio_write(lua_State* L) {
         lua_pushboolean(L, false);
     }
 
+    return 1;
+}
+
+// Memory functions
+int VoiceAssistant::LuaSandbox::lua_memory_read_file(lua_State* L) {
+    const char* filename = luaL_checkstring(L, 1);
+
+    auto& memory = MemoryManager::getInstance();
+    std::string data = memory.readData(filename);
+
+    if (data.empty()) {
+        lua_pushnil(L);
+        lua_pushstring(L, "File not found or empty");
+        return 2;
+    }
+
+    lua_pushstring(L, data.c_str());
+    return 1;
+}
+
+int VoiceAssistant::LuaSandbox::lua_memory_write_file(lua_State* L) {
+    const char* filename = luaL_checkstring(L, 1);
+    const char* data = luaL_checkstring(L, 2);
+
+    auto& memory = MemoryManager::getInstance();
+    bool success = memory.writeData(filename, data);
+
+    lua_pushboolean(L, success);
+    if (!success) {
+        lua_pushstring(L, "Failed to write file");
+        return 2;
+    }
+    return 1;
+}
+
+int VoiceAssistant::LuaSandbox::lua_memory_list_files(lua_State* L) {
+    auto& memory = MemoryManager::getInstance();
+    std::vector<std::string> files = memory.listFiles();
+
+    lua_newtable(L);
+    for (size_t i = 0; i < files.size(); ++i) {
+        lua_pushinteger(L, i + 1);  // Lua arrays are 1-indexed
+        lua_pushstring(L, files[i].c_str());
+        lua_settable(L, -3);
+    }
+
+    return 1;
+}
+
+int VoiceAssistant::LuaSandbox::lua_memory_delete_file(lua_State* L) {
+    const char* filename = luaL_checkstring(L, 1);
+
+    auto& memory = MemoryManager::getInstance();
+    bool success = memory.deleteData(filename);
+
+    lua_pushboolean(L, success);
+    if (!success) {
+        lua_pushstring(L, "Failed to delete file");
+        return 2;
+    }
     return 1;
 }
 

@@ -19,6 +19,7 @@
 #include "core/wifi_manager.h"
 #include "core/web_server_manager.h"
 #include "core/web_data_manager.h"
+#include "core/memory_manager.h"
 #include "core/system_tasks.h"
 #include "core/ble_hid_manager.h"
 #include "core/task_config.h"
@@ -357,6 +358,15 @@ void setup() {
         logger.info("[WebData] Web data manager ready");
     } else {
         logger.warn("[WebData] Web data manager initialization failed");
+    }
+
+    // Initialize Memory Manager
+    logger.info("[Memory] Initializing memory manager");
+    MemoryManager& memory_manager = MemoryManager::getInstance();
+    if (memory_manager.init()) {
+        logger.info("[Memory] Memory manager ready");
+    } else {
+        logger.warn("[Memory] Memory manager initialization failed");
     }
 
     // Initialize Voice Assistant (if enabled in settings)

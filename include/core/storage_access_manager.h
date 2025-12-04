@@ -17,6 +17,7 @@ public:
 
     bool readMemory(const std::string& filename, std::string& out) const;
     bool writeMemory(const std::string& filename, const std::string& data) const;
+    bool deleteMemory(const std::string& filename) const;
     std::vector<std::string> listMemoryFiles() const;
     std::string getMemoryPath(const std::string& filename) const;
 

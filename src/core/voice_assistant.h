@@ -142,6 +142,10 @@ public:
         static int lua_webdata_fetch_scheduled(lua_State* L);
         static int lua_webdata_read_data(lua_State* L);
         static int lua_webdata_list_files(lua_State* L);
+        static int lua_memory_read_file(lua_State* L);
+        static int lua_memory_write_file(lua_State* L);
+        static int lua_memory_list_files(lua_State* L);
+        static int lua_memory_delete_file(lua_State* L);
         static int lua_println(lua_State* L);
         void appendOutput(const std::string& text);
         std::string output_buffer_;
