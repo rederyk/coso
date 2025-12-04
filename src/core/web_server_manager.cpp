@@ -21,7 +21,7 @@
 namespace {
 constexpr const char* DEFAULT_ROOT = "/www/index.html";
 constexpr uint32_t SERVER_LOOP_DELAY_MS = 10;
-constexpr uint32_t ASSISTANT_RESPONSE_TIMEOUT_MS = 20000;
+constexpr uint32_t ASSISTANT_RESPONSE_TIMEOUT_MS = 50000;  // 50 seconds for first model load
 constexpr uint32_t SD_MUTEX_TIMEOUT_MS = 2000;
 constexpr size_t MAX_FS_LIST_ENTRIES = 128;
 

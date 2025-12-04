@@ -60,6 +60,26 @@
       color: var(--muted);
       min-width: 180px;
       text-align: right;
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+    #status::before {
+      content: '';
+      display: none;
+      width: 14px;
+      height: 14px;
+      border: 2px solid var(--primary);
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    #status.loading::before {
+      display: block;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
     }
     .panel {
       background: var(--panel);
@@ -476,6 +496,38 @@
     function setStatus(text, state = 'idle') {
       statusEl.textContent = text;
       statusEl.style.color = state === 'error' ? 'var(--danger)' : state === 'busy' ? 'var(--primary)' : 'var(--muted)';
+      if (state === 'busy') {
+        statusEl.classList.add('loading');
+      } else {
+        statusEl.classList.remove('loading');
+      }
+    }
+
+    // Animated dots for loading states
+    let statusDotInterval = null;
+    function setStatusAnimated(baseText, state = 'busy') {
+      if (statusDotInterval) {
+        clearInterval(statusDotInterval);
+        statusDotInterval = null;
+      }
+      statusEl.classList.add('loading');
+      let dots = 0;
+      const updateStatus = () => {
+        const dotStr = '.'.repeat((dots % 3) + 1);
+        statusEl.textContent = baseText + dotStr;
+        statusEl.style.color = state === 'error' ? 'var(--danger)' : state === 'busy' ? 'var(--primary)' : 'var(--muted)';
+        dots++;
+      };
+      updateStatus();
+      statusDotInterval = setInterval(updateStatus, 500);
+    }
+
+    function clearStatusAnimation() {
+      if (statusDotInterval) {
+        clearInterval(statusDotInterval);
+        statusDotInterval = null;
+      }
+      statusEl.classList.remove('loading');
     }
 
     function appendMessage(role, text, meta = '') {
@@ -535,7 +587,7 @@
 
     async function loadConversationHistory() {
       try {
-        const response = await fetch('/api/assistant/conversation');
+        const response = await fetchWithTimeout('/api/assistant/conversation', {}, 10000);
         const data = await response.json();
         if (!response.ok) {
           throw new Error(data.message || 'Impossibile caricare la conversazione');
@@ -547,17 +599,39 @@
         renderConversationHistory(messages);
         return true;
       } catch (err) {
-        setStatus(err.message, 'error');
+        console.error('Error loading conversation:', err);
+        // Don't show error in status if this is a background refresh
         return false;
       }
     }
 
-    async function postJson(url, payload) {
-      const res = await fetch(url, {
+    // Fetch with timeout and better error handling
+    async function fetchWithTimeout(url, options = {}, timeoutMs = 30000) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+      try {
+        const response = await fetch(url, {
+          ...options,
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        return response;
+      } catch (error) {
+        clearTimeout(timeoutId);
+        if (error.name === 'AbortError') {
+          throw new Error('Timeout: l\'API non risponde. Verifica la connessione.');
+        }
+        throw new Error('Errore di rete: impossibile contattare l\'API');
+      }
+    }
+
+    async function postJson(url, payload, timeoutMs = 30000) {
+      const res = await fetchWithTimeout(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
-      });
+      }, timeoutMs);
       const data = await res.json();
       if (!res.ok) {
         throw new Error(data.message || 'Errore del server');
@@ -570,12 +644,17 @@
         return;
       }
       resetMemoryBtn.disabled = true;
+      setStatusAnimated('Reset buffer in corso', 'busy');
       try {
-        await postJson('/api/assistant/conversation/reset', {});
-        setStatus('Buffer conversazione resettato');
+        await postJson('/api/assistant/conversation/reset', {}, 10000);
+        clearStatusAnimation();
+        setStatus('✓ Buffer conversazione resettato', 'idle');
+        setTimeout(() => setStatus('Pronto', 'idle'), 3000);
         await loadConversationHistory();
       } catch (err) {
-        setStatus(err.message, 'error');
+        clearStatusAnimation();
+        setStatus('✗ ' + err.message, 'error');
+        setTimeout(() => setStatus('Pronto', 'idle'), 5000);
       } finally {
         resetMemoryBtn.disabled = false;
       }
@@ -587,12 +666,14 @@
         return;
       }
       try {
-        const data = await postJson('/api/assistant/conversation/limit', { limit: desired });
+        const data = await postJson('/api/assistant/conversation/limit', { limit: desired }, 10000);
         conversationLimit = Number(data.limit) || desired;
-        setStatus('Limite conversazioni aggiornato');
+        setStatus('✓ Limite conversazioni aggiornato', 'idle');
+        setTimeout(() => setStatus('Pronto', 'idle'), 2000);
         await loadConversationHistory();
       } catch (err) {
-        setStatus(err.message, 'error');
+        setStatus('✗ ' + err.message, 'error');
+        setTimeout(() => setStatus('Pronto', 'idle'), 5000);
       }
     }
 
@@ -603,17 +684,36 @@
       }
       chatInput.value = '';
       appendMessage('user', text);
-      setStatus('Invio in corso…', 'busy');
+
+      // Show animated status
+      setStatusAnimated('AI sta elaborando la richiesta', 'busy');
       sendBtn.disabled = true;
+
       try {
-        const response = await postJson('/api/assistant/chat', { message: text });
+        // Use 60 second timeout for chat (first model load can take 30-45 seconds)
+        const response = await postJson('/api/assistant/chat', { message: text }, 60000);
+
+        clearStatusAnimation();
+
+        // Check if a command is being executed
+        if (response.command) {
+          setStatusAnimated(`Esecuzione comando: ${response.command}`, 'busy');
+          // Give visual feedback that command is running
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+
         const answer = response.text || response.message || 'Nessuna risposta';
         appendMessage('assistant', answer, buildMeta(response));
         await loadConversationHistory();
-        setStatus('Risposta ricevuta');
+
+        clearStatusAnimation();
+        setStatus('✓ Risposta ricevuta', 'idle');
+        setTimeout(() => setStatus('Pronto', 'idle'), 3000);
       } catch (err) {
+        clearStatusAnimation();
         appendMessage('assistant', err.message, 'error');
-        setStatus(err.message, 'error');
+        setStatus('✗ ' + err.message, 'error');
+        setTimeout(() => setStatus('Pronto', 'idle'), 5000);
       } finally {
         sendBtn.disabled = false;
       }
@@ -664,7 +764,7 @@
       refreshModelsBtn.disabled = true;
       refreshModelsBtn.textContent = 'Aggiorna…';
       try {
-        const response = await fetch('/api/assistant/models');
+        const response = await fetchWithTimeout('/api/assistant/models', {}, 10000);
         const data = await response.json();
         if (!response.ok) {
           throw new Error(data.message || 'Impossibile aggiornare i modelli');
@@ -673,10 +773,12 @@
         pendingModelSelection = data.activeModel || pendingModelSelection;
         populateModelSelect(models, data.activeModel);
         if (showStatus) {
-          setStatus('Lista modelli aggiornata');
+          setStatus('✓ Lista modelli aggiornata', 'idle');
+          setTimeout(() => setStatus('Pronto', 'idle'), 3000);
         }
       } catch (err) {
-        setStatus(err.message, 'error');
+        setStatus('✗ ' + err.message, 'error');
+        setTimeout(() => setStatus('Pronto', 'idle'), 5000);
       } finally {
         refreshModelsBtn.disabled = false;
         refreshModelsBtn.textContent = originalLabel;
@@ -685,7 +787,7 @@
 
     async function loadVoiceSettings() {
       try {
-        const response = await fetch('/api/assistant/settings');
+        const response = await fetchWithTimeout('/api/assistant/settings', {}, 10000);
         const data = await response.json();
         if (!response.ok) {
           throw new Error(data.message || 'Impossibile caricare le impostazioni');
@@ -703,16 +805,17 @@
         systemPromptTemplateEl.value = data.systemPromptTemplate || '';
         systemPromptPreviewEl.textContent = data.systemPrompt || '';
         updateActiveEndpoints();
-        setStatus('Impostazioni caricate');
+        setStatus('✓ Impostazioni caricate', 'idle');
         await refreshModels(false);
       } catch (err) {
-        setStatus(err.message, 'error');
+        setStatus('✗ ' + err.message, 'error');
+        setTimeout(() => setStatus('Pronto', 'idle'), 5000);
       }
     }
 
     async function saveVoiceSettings() {
       saveSettingsBtn.disabled = true;
-      setStatus('Salvataggio impostazioni…', 'busy');
+      setStatusAnimated('Salvataggio impostazioni', 'busy');
       const payload = {
         voiceAssistantEnabled: voiceEnabledToggle.checked,
         localApiMode: localApiToggle.checked,
@@ -727,19 +830,23 @@
         systemPromptTemplate: systemPromptTemplateEl.value.trim()
       };
       try {
-        const response = await fetch('/api/assistant/settings', {
+        const response = await fetchWithTimeout('/api/assistant/settings', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
-        });
+        }, 10000);
         const data = await response.json();
         if (!response.ok) {
           throw new Error(data.message || 'Salvataggio non riuscito');
         }
-        setStatus('Impostazioni salvate');
+        clearStatusAnimation();
+        setStatus('✓ Impostazioni salvate', 'idle');
+        setTimeout(() => setStatus('Pronto', 'idle'), 3000);
         await loadVoiceSettings();
       } catch (err) {
-        setStatus(err.message, 'error');
+        clearStatusAnimation();
+        setStatus('✗ ' + err.message, 'error');
+        setTimeout(() => setStatus('Pronto', 'idle'), 5000);
       } finally {
         saveSettingsBtn.disabled = false;
       }
@@ -748,53 +855,79 @@
     async function toggleRecording() {
       if (!recording) {
         try {
-          setStatus('In ascolto… premi di nuovo per interrompere', 'busy');
+          setStatusAnimated('In ascolto', 'busy');
           micBtn.classList.add('recording');
           micBtn.textContent = '❚❚ Ferma registrazione';
           micBtn.setAttribute('aria-pressed', 'true');
           recording = true;
           sendBtn.disabled = true;
-          const startRes = await fetch('/api/assistant/audio/start', { method: 'POST' });
+
+          const startRes = await fetchWithTimeout('/api/assistant/audio/start', { method: 'POST' }, 5000);
           const startPayload = await startRes.json();
           if (!startRes.ok) {
             throw new Error(startPayload.message || 'Impossibile avviare la registrazione');
           }
+
+          clearStatusAnimation();
+          setStatus('🎙️ Registrazione in corso - Premi di nuovo per fermare', 'busy');
         } catch (err) {
-          setStatus('Impossibile avviare il microfono', 'error');
+          clearStatusAnimation();
+          setStatus('✗ Impossibile avviare il microfono: ' + err.message, 'error');
           micBtn.classList.remove('recording');
           micBtn.textContent = '🎙️ Usa il microfono';
           micBtn.setAttribute('aria-pressed', 'false');
           recording = false;
           sendBtn.disabled = false;
+          setTimeout(() => setStatus('Pronto', 'idle'), 5000);
         }
         return;
       }
 
       // stop recording and await response
-      setStatus('Elaborazione audio…', 'busy');
+      setStatusAnimated('Elaborazione audio', 'busy');
       micBtn.classList.remove('recording');
       micBtn.textContent = '🎙️ Usa il microfono';
       micBtn.setAttribute('aria-pressed', 'false');
       recording = false;
+
       try {
-        const res = await fetch('/api/assistant/audio/stop', { method: 'POST' });
+        // Transcription + model loading can take time, use 60 second timeout
+        const res = await fetchWithTimeout('/api/assistant/audio/stop', { method: 'POST' }, 60000);
         const payload = await res.json();
+
         if (!res.ok) {
           throw new Error(payload.message || 'Errore durante la trascrizione');
         }
+
+        clearStatusAnimation();
+        setStatusAnimated('AI sta elaborando la trascrizione', 'busy');
+
         const transcription = payload.transcription || '';
         const hasTranscription = handleTranscription(transcription);
+
+        if (payload.command) {
+          clearStatusAnimation();
+          setStatusAnimated(`Esecuzione comando: ${payload.command}`, 'busy');
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+
         const answer = payload.text || payload.message || 'Nessuna risposta ricevuta';
         appendMessage('assistant', answer, buildMeta(payload));
         await loadConversationHistory();
+
+        clearStatusAnimation();
         if (!hasTranscription) {
-          setStatus('Trascrizione non disponibile', 'error');
+          setStatus('✗ Trascrizione non disponibile', 'error');
+          setTimeout(() => setStatus('Pronto', 'idle'), 5000);
         } else {
-          setStatus(autoSendCheckbox.checked ? 'Comando vocalizzato inviato' : 'Trascrizione pronta');
+          setStatus(autoSendCheckbox.checked ? '✓ Comando vocale eseguito' : '✓ Trascrizione pronta', 'idle');
+          setTimeout(() => setStatus('Pronto', 'idle'), 3000);
         }
       } catch (err) {
+        clearStatusAnimation();
         appendMessage('assistant', err.message, 'error');
-        setStatus(err.message, 'error');
+        setStatus('✗ ' + err.message, 'error');
+        setTimeout(() => setStatus('Pronto', 'idle'), 5000);
       } finally {
         sendBtn.disabled = false;
       }

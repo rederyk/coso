@@ -899,8 +899,9 @@ bool VoiceAssistant::makeGPTRequest(const std::string& prompt, std::string& resp
         config.method = HTTP_METHOD_POST;
         config.event_handler = http_event_handler;
         config.user_data = &response_buffer;
-        config.timeout_ms = 15000;  // 15 second timeout for LLM
-        config.buffer_size = 4096;
+        config.timeout_ms = 45000;  // 45 second timeout for LLM (first model load can take 30-40s)
+        config.buffer_size = 8192;  // Increased buffer for large responses
+        config.buffer_size_tx = 8192;
 
         esp_http_client_handle_t client = esp_http_client_init(&config);
         if (!client) {
