@@ -117,6 +117,7 @@ public:
     void clearSystemPromptVariable(const std::string& key);
     void clearSystemPromptVariables();
     std::unordered_map<std::string, std::string> getSystemPromptVariables() const;
+    bool executeAutoPopulateCommands(const std::string& raw_json, std::string& error);
 
     /** Fetch available models from Ollama API */
     bool fetchOllamaModels(const std::string& base_url, std::vector<std::string>& models);

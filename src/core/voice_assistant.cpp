@@ -160,6 +160,7 @@ bool prompt_definition_loaded = false;
 bool parsePromptDefinition(const std::string& raw, VoiceAssistantPromptDefinition& definition, std::string& error) {
     definition.prompt_template.clear();
     definition.sections.clear();
+    definition.auto_populate.clear();
 
     cJSON* root = cJSON_Parse(raw.c_str());
     if (!root) {
@@ -183,6 +184,34 @@ bool parsePromptDefinition(const std::string& raw, VoiceAssistantPromptDefinitio
         cJSON_ArrayForEach(item, sections) {
             if (item && cJSON_IsString(item) && item->valuestring) {
                 definition.sections.emplace_back(item->valuestring);
+            }
+        }
+    }
+
+    cJSON* auto_populate = cJSON_GetObjectItem(root, "auto_populate");
+    if (auto_populate && cJSON_IsArray(auto_populate)) {
+        cJSON* cmd_item = nullptr;
+        cJSON_ArrayForEach(cmd_item, auto_populate) {
+            if (!cmd_item || !cJSON_IsObject(cmd_item)) continue;
+
+            AutoPopulateCommand cmd;
+            cJSON* command = cJSON_GetObjectItem(cmd_item, "command");
+            if (command && cJSON_IsString(command) && command->valuestring) {
+                cmd.command = command->valuestring;
+            }
+
+            cJSON* args = cJSON_GetObjectItem(cmd_item, "args");
+            if (args && cJSON_IsArray(args)) {
+                cJSON* arg = nullptr;
+                cJSON_ArrayForEach(arg, args) {
+                    if (arg && cJSON_IsString(arg) && arg->valuestring) {
+                        cmd.args.emplace_back(arg->valuestring);
+                    }
+                }
+            }
+
+            if (!cmd.command.empty()) {
+                definition.auto_populate.push_back(std::move(cmd));
             }
         }
     }
@@ -1774,6 +1803,48 @@ void VoiceAssistant::captureCommandOutputVariables(const VoiceCommand& cmd) {
         setSystemPromptVariable("last_command_refined_output", cmd.refined_output);
         setSystemPromptVariable("command_" + sanitized + "_refined_output", cmd.refined_output);
     }
+}
+
+bool VoiceAssistant::executeAutoPopulateCommands(const std::string& raw_json, std::string& error) {
+    VoiceAssistantPromptDefinition definition;
+    if (!parsePromptDefinition(raw_json, definition, error)) {
+        return false;
+    }
+
+    if (definition.auto_populate.empty()) {
+        return true; // No commands to execute
+    }
+
+    CommandCenter& cc = CommandCenter::getInstance();
+
+    for (const auto& auto_cmd : definition.auto_populate) {
+        LOG_I("[VoiceAssistant] Auto-populating with command: %s", auto_cmd.command.c_str());
+
+        CommandResult result = cc.executeCommand(auto_cmd.command, auto_cmd.args);
+
+        if (result.success) {
+            // Create a VoiceCommand to capture variables
+            VoiceCommand cmd;
+            cmd.command = auto_cmd.command;
+            cmd.args = auto_cmd.args;
+            cmd.output = result.message;
+
+            // Check if output should be refined
+            if (shouldRefineOutput(cmd)) {
+                if (!refineCommandOutput(cmd)) {
+                    LOG_W("[VoiceAssistant] Failed to refine auto-populate command output");
+                }
+            }
+
+            captureCommandOutputVariables(cmd);
+            LOG_I("[VoiceAssistant] Auto-populate completed: %s", auto_cmd.command.c_str());
+        } else {
+            LOG_W("[VoiceAssistant] Auto-populate command failed: %s - %s",
+                  auto_cmd.command.c_str(), result.message.c_str());
+        }
+    }
+
+    return true;
 }
 
 // LuaSandbox implementation
