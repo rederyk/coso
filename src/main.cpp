@@ -48,6 +48,7 @@
 #include "core/audio_manager.h"
 #include "core/microphone_manager.h"
 #include "core/conversation_buffer.h"
+#include "core/time_scheduler.h"
 // #include "core/voice_assistant.h"  // Temporarily disabled due to include issues
 #include "ui/ui_symbols.h"
 #include "utils/logger.h"
@@ -367,6 +368,15 @@ void setup() {
         logger.info("[Memory] Memory manager ready");
     } else {
         logger.warn("[Memory] Memory manager initialization failed");
+    }
+
+    // Initialize Time Scheduler (Calendar/Alarms)
+    logger.info("[Scheduler] Initializing time scheduler");
+    TimeScheduler& time_scheduler = TimeScheduler::getInstance();
+    if (time_scheduler.begin()) {
+        logger.info("[Scheduler] Time scheduler ready");
+    } else {
+        logger.warn("[Scheduler] Time scheduler initialization failed");
     }
 
     // Initialize Voice Assistant (if enabled in settings)

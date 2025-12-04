@@ -22,6 +22,13 @@
       match: (path) => path.includes('file-manager'),
     },
     {
+      id: 'calendar',
+      label: 'Calendar',
+      href: '/calendar.html',
+      icon: '⏰',
+      match: (path) => path.includes('calendar'),
+    },
+    {
       id: 'settings',
       label: 'Settings',
       href: '#',

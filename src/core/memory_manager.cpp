@@ -76,6 +76,86 @@ std::vector<std::string> MemoryManager::listFiles(const std::string& directory) 
     return StorageAccessManager::getInstance().listMemoryFiles();
 }
 
+bool MemoryManager::appendData(const std::string& filename, const std::string& data) {
+    if (!initialized_) return false;
+
+    std::string directory = "/memory";
+    if (!isPathAllowed(directory, "write")) {
+        ESP_LOGE("MemoryManager", "Write access denied for directory: %s", directory.c_str());
+        return false;
+    }
+
+    // Read existing content
+    std::string existing = readData(filename);
+
+    // Append new data
+    std::string combined = existing + data;
+
+    return StorageAccessManager::getInstance().writeMemory(filename, combined);
+}
+
+bool MemoryManager::prependData(const std::string& filename, const std::string& data) {
+    if (!initialized_) return false;
+
+    std::string directory = "/memory";
+    if (!isPathAllowed(directory, "write")) {
+        ESP_LOGE("MemoryManager", "Write access denied for directory: %s", directory.c_str());
+        return false;
+    }
+
+    // Read existing content
+    std::string existing = readData(filename);
+
+    // Prepend new data
+    std::string combined = data + existing;
+
+    return StorageAccessManager::getInstance().writeMemory(filename, combined);
+}
+
+std::vector<std::string> MemoryManager::grepFiles(const std::string& pattern, const std::string& directory) {
+    if (!initialized_) return {};
+
+    std::string dir = directory.empty() ? "/memory" : directory;
+    if (!isPathAllowed(dir, "read")) {
+        ESP_LOGE("MemoryManager", "Read access denied for directory: %s", dir.c_str());
+        return {};
+    }
+
+    std::vector<std::string> results;
+    std::vector<std::string> files = listFiles(dir);
+
+    for (const auto& filename : files) {
+        std::string content = readData(filename);
+        if (content.empty()) continue;
+
+        // Simple substring search (case-sensitive)
+        // Split content by lines
+        size_t pos = 0;
+        size_t lineNum = 1;
+        std::string line;
+
+        while (pos < content.length()) {
+            size_t endPos = content.find('\n', pos);
+            if (endPos == std::string::npos) {
+                line = content.substr(pos);
+                pos = content.length();
+            } else {
+                line = content.substr(pos, endPos - pos);
+                pos = endPos + 1;
+            }
+
+            // Check if pattern exists in line
+            if (line.find(pattern) != std::string::npos) {
+                // Format: filename:lineNumber:line
+                results.push_back(filename + ":" + std::to_string(lineNum) + ":" + line);
+            }
+            lineNum++;
+        }
+    }
+
+    return results;
+}
+
 bool MemoryManager::setDirectoryPermissions(const std::string& path, bool can_read, bool can_write, bool can_delete) {
     directory_permissions_[path] = {path, can_read, can_write, can_delete};
     // TODO: Persist to settings

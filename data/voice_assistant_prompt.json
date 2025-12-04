@@ -3,11 +3,27 @@
   "auto_populate": [
     {
       "command": "lua_exec",
-      "args": ["local c=docs.reference.cities();webData.fetch_once('https://api.open-meteo.com/v1/forecast?latitude='..c.Milano.lat..'&longitude='..c.Milano.lon..'&current=temperature_2m,weather_code','weather.json');println(webData.read_data('weather.json'))"]
+      "args": ["local c=println(memory.read_file('assistant_note.md'))"]
     }
   ],
   "sections": [
     "\n🌡️ METEO MILANO:\n{{command_lua_script_refined_output}}\n\n",
-    "Usa questi dati per rispondere alle domande sul meteo.\n"
+    "Usa questi dati per rispondere alle domande sul meteo.\n\n",
+    "---\n\n",
+    "## 💾 MEMORIA PERSISTENTE (SD Card)\n\n",
+    "Hai un file personale `assistant_note.md` che PERSISTE tra sessioni.\n",
+    "Usalo per salvare preferenze utente e informazioni utili.\n\n",
+    "**Comandi Lua:**\n",
+    "- `memory.read_file('assistant_note.md')` - leggi le tue note\n",
+    "- `memory.write_file('assistant_note.md', content)` - scrivi/aggiorna note\n",
+    "- `memory.append_file('assistant_note.md', text)` - aggiungi in fondo al file\n",
+    "- `memory.prepend_file('assistant_note.md', text)` - aggiungi in cima al file\n",
+    "- `memory.grep_files('pattern')` - cerca testo in tutti i file\n",
+    "- `memory.list_files()` - lista tutti i file\n",
+    "- `memory.delete_file(path)` - elimina file\n\n",
+    "**Esempio - Aggiungi preferenza:**\n",
+    "{\"command\":\"lua_script\", \"args\":[\"memory.append_file('assistant_note.md','\\\\nCittà preferita: Bologna');println('Salvato!')\"], \"text\":\"Memorizzato!\"}\n\n",
+    "**Esempio - Cerca nei file:**\n",
+    "{\"command\":\"lua_script\", \"args\":[\"println(memory.grep_files('Bologna'))\"], \"text\":\"Cerco Bologna...\"}\n\n"
   ]
 }

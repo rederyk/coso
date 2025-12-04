@@ -2055,6 +2055,15 @@ void VoiceAssistant::LuaSandbox::setupSandbox() {
             end,
             delete_file = function(filename)
                 return esp32_memory_delete_file(filename)
+            end,
+            append_file = function(filename, data)
+                return esp32_memory_append_file(filename, data)
+            end,
+            prepend_file = function(filename, data)
+                return esp32_memory_prepend_file(filename, data)
+            end,
+            grep_files = function(pattern)
+                return esp32_memory_grep_files(pattern)
             end
         }
 
@@ -2125,6 +2134,9 @@ void VoiceAssistant::LuaSandbox::setupSandbox() {
     lua_register(L, "esp32_memory_write_file", lua_memory_write_file);
     lua_register(L, "esp32_memory_list_files", lua_memory_list_files);
     lua_register(L, "esp32_memory_delete_file", lua_memory_delete_file);
+    lua_register(L, "esp32_memory_append_file", lua_memory_append_file);
+    lua_register(L, "esp32_memory_prepend_file", lua_memory_prepend_file);
+    lua_register(L, "esp32_memory_grep_files", lua_memory_grep_files);
 
     // Utility functions
     lua_register(L, "println", lua_println);
@@ -2346,6 +2358,67 @@ int VoiceAssistant::LuaSandbox::lua_memory_delete_file(lua_State* L) {
         lua_pushstring(L, "Failed to delete file");
         return 2;
     }
+    return 1;
+}
+
+int VoiceAssistant::LuaSandbox::lua_memory_append_file(lua_State* L) {
+    const char* filename = luaL_checkstring(L, 1);
+    const char* data = luaL_checkstring(L, 2);
+
+    auto& memory = MemoryManager::getInstance();
+    bool success = memory.appendData(filename, data);
+
+    lua_pushboolean(L, success);
+    if (!success) {
+        lua_pushstring(L, "Failed to append to file");
+        return 2;
+    }
+    return 1;
+}
+
+int VoiceAssistant::LuaSandbox::lua_memory_prepend_file(lua_State* L) {
+    const char* filename = luaL_checkstring(L, 1);
+    const char* data = luaL_checkstring(L, 2);
+
+    auto& memory = MemoryManager::getInstance();
+    bool success = memory.prependData(filename, data);
+
+    lua_pushboolean(L, success);
+    if (!success) {
+        lua_pushstring(L, "Failed to prepend to file");
+        return 2;
+    }
+    return 1;
+}
+
+int VoiceAssistant::LuaSandbox::lua_memory_grep_files(lua_State* L) {
+    const char* pattern = luaL_checkstring(L, 1);
+
+    auto& memory = MemoryManager::getInstance();
+    std::vector<std::string> results = memory.grepFiles(pattern);
+
+    std::ostringstream oss;
+    if (results.empty()) {
+        oss << "No matches found for pattern: " << pattern;
+    } else {
+        oss << "Found " << results.size() << " match(es):";
+        for (const auto& result : results) {
+            oss << "\n" << result;
+        }
+    }
+    const std::string output = oss.str();
+    Serial.println(output.c_str());
+    if (s_active_lua_sandbox) {
+        s_active_lua_sandbox->appendOutput(output);
+    }
+
+    lua_newtable(L);
+    for (size_t i = 0; i < results.size(); ++i) {
+        lua_pushinteger(L, i + 1);  // Lua arrays are 1-indexed
+        lua_pushstring(L, results[i].c_str());
+        lua_settable(L, -3);
+    }
+
     return 1;
 }
 

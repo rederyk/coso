@@ -15,6 +15,7 @@
 #include "core/audio_manager.h"
 #include "core/backlight_manager.h"
 #include "core/time_manager.h"
+#include "core/time_scheduler.h"
 #include "core/voice_assistant.h"
 #include "screens/ble_manager.h"
 #include "utils/logger.h"
@@ -841,5 +842,179 @@ void CommandCenter::registerBuiltins() {
             CommandResult result = va.executeLuaScript(args[0]);
 
             return result;
+        });
+
+    // ============ CALENDAR / SCHEDULER COMMANDS ============
+
+    registerCommand("calendar_list", "List all calendar events",
+        [](const std::vector<std::string>& args) {
+            auto& scheduler = TimeScheduler::getInstance();
+            auto events = scheduler.listEvents();
+
+            if (events.empty()) {
+                return CommandResult{true, "No calendar events"};
+            }
+
+            std::string output = "Calendar Events:\n";
+            for (const auto& evt : events) {
+                output += "- [" + evt.id + "] " + evt.name;
+                output += " (" + std::to_string(evt.hour) + ":" +
+                          (evt.minute < 10 ? "0" : "") + std::to_string(evt.minute) + ")";
+                output += evt.enabled ? " [ENABLED]" : " [DISABLED]";
+                output += "\n";
+            }
+
+            return CommandResult{true, output};
+        });
+
+    registerCommand("calendar_create_alarm", "Create alarm (one-shot event)",
+        [](const std::vector<std::string>& args) {
+            // Args: name, YYYY-MM-DD, HH:MM, lua_script
+            if (args.size() < 4) {
+                return CommandResult{false,
+                    "Usage: calendar_create_alarm <name> <YYYY-MM-DD> <HH:MM> <lua_script>\n"
+                    "Example: calendar_create_alarm 'Wake Up' 2025-12-05 07:00 'println(\"Good morning!\")'"};
+            }
+
+            TimeScheduler::CalendarEvent event;
+            event.name = args[0];
+            event.type = TimeScheduler::EventType::OneShot;
+            event.enabled = true;
+
+            // Parse date (YYYY-MM-DD)
+            if (sscanf(args[1].c_str(), "%hu-%hhu-%hhu",
+                      &event.year, &event.month, &event.day) != 3) {
+                return CommandResult{false, "Invalid date format. Use YYYY-MM-DD"};
+            }
+
+            // Parse time (HH:MM)
+            int hour, minute;
+            if (sscanf(args[2].c_str(), "%d:%d", &hour, &minute) != 2) {
+                return CommandResult{false, "Invalid time format. Use HH:MM"};
+            }
+            event.hour = hour;
+            event.minute = minute;
+            event.weekdays = 0; // Not used for one-shot
+
+            event.lua_script = args[3];
+
+            auto& scheduler = TimeScheduler::getInstance();
+            std::string id = scheduler.createEvent(event);
+
+            if (id.empty()) {
+                return CommandResult{false, "Failed to create alarm"};
+            }
+
+            return CommandResult{true, "Alarm created: " + id};
+        });
+
+    registerCommand("calendar_create_recurring", "Create recurring event (weekdays)",
+        [](const std::vector<std::string>& args) {
+            // Args: name, HH:MM, weekdays_mask, lua_script
+            // weekdays_mask: 0=Sun, 1=Mon, ..., 6=Sat
+            // Example: 62 = 0b0111110 = Mon-Fri
+            if (args.size() < 4) {
+                return CommandResult{false,
+                    "Usage: calendar_create_recurring <name> <HH:MM> <weekdays> <lua_script>\n"
+                    "Weekdays: bit mask (1=Mon,2=Tue,4=Wed,8=Thu,16=Fri,32=Sat,64=Sun)\n"
+                    "Example Mon-Fri: 62 (0b0111110)\n"
+                    "Example: calendar_create_recurring 'Morning Coffee' 07:00 62 'println(\"Coffee time!\")'"};
+            }
+
+            TimeScheduler::CalendarEvent event;
+            event.name = args[0];
+            event.type = TimeScheduler::EventType::Recurring;
+            event.enabled = true;
+
+            // Parse time (HH:MM)
+            int hour, minute;
+            if (sscanf(args[1].c_str(), "%d:%d", &hour, &minute) != 2) {
+                return CommandResult{false, "Invalid time format. Use HH:MM"};
+            }
+            event.hour = hour;
+            event.minute = minute;
+
+            // Parse weekdays mask
+            event.weekdays = std::strtoul(args[2].c_str(), nullptr, 10);
+            if (event.weekdays == 0 || event.weekdays > 127) {
+                return CommandResult{false, "Invalid weekdays mask (1-127)"};
+            }
+
+            // One-shot fields not used
+            event.year = 0;
+            event.month = 0;
+            event.day = 0;
+
+            event.lua_script = args[3];
+
+            auto& scheduler = TimeScheduler::getInstance();
+            std::string id = scheduler.createEvent(event);
+
+            if (id.empty()) {
+                return CommandResult{false, "Failed to create event"};
+            }
+
+            return CommandResult{true, "Recurring event created: " + id};
+        });
+
+    registerCommand("calendar_delete", "Delete calendar event",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                return CommandResult{false, "Usage: calendar_delete <event_id>"};
+            }
+
+            auto& scheduler = TimeScheduler::getInstance();
+            bool ok = scheduler.deleteEvent(args[0]);
+
+            return CommandResult{ok, ok ? "Event deleted" : "Event not found"};
+        });
+
+    registerCommand("calendar_enable", "Enable or disable event",
+        [](const std::vector<std::string>& args) {
+            if (args.size() < 2) {
+                return CommandResult{false, "Usage: calendar_enable <event_id> <true|false>"};
+            }
+
+            bool enable = (args[1] == "true" || args[1] == "1");
+            auto& scheduler = TimeScheduler::getInstance();
+            bool ok = scheduler.enableEvent(args[0], enable);
+
+            return CommandResult{ok, ok ? "Event updated" : "Event not found"};
+        });
+
+    registerCommand("calendar_run", "Execute event immediately",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                return CommandResult{false, "Usage: calendar_run <event_id>"};
+            }
+
+            auto& scheduler = TimeScheduler::getInstance();
+            bool ok = scheduler.executeEventNow(args[0]);
+
+            return CommandResult{ok, ok ? "Event executed" : "Event not found or failed"};
+        });
+
+    registerCommand("calendar_history", "Get execution history",
+        [](const std::vector<std::string>& args) {
+            auto& scheduler = TimeScheduler::getInstance();
+            std::string event_id = args.empty() ? "" : args[0];
+            auto history = scheduler.getHistory(event_id, 10);
+
+            if (history.empty()) {
+                return CommandResult{true, "No execution history"};
+            }
+
+            std::string output = "Execution History:\n";
+            for (const auto& record : history) {
+                output += "- Event: " + record.event_id;
+                output += " | " + std::string(record.success ? "SUCCESS" : "FAILED");
+                output += " | " + std::to_string(record.duration_ms) + "ms";
+                if (!record.error.empty()) {
+                    output += " | Error: " + record.error;
+                }
+                output += "\n";
+            }
+
+            return CommandResult{true, output};
         });
 }

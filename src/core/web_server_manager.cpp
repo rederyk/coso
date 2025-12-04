@@ -4,9 +4,12 @@
 #include <LittleFS.h>
 #include <SD_MMC.h>
 #include <WiFi.h>
+#include <cJSON.h>
 #include <esp_heap_caps.h>
+#include <uri/UriBraces.h>
 #include <algorithm>
 #include <cctype>
+#include <cstdlib>
 #include <cstring>
 #include <vector>
 
@@ -14,9 +17,10 @@
 #include "core/conversation_buffer.h"
 #include "core/settings_manager.h"
 #include "core/task_config.h"
+#include "core/time_scheduler.h"
+#include "core/voice_assistant.h"
 #include "drivers/sd_card_driver.h"
 #include "utils/logger.h"
-#include "core/voice_assistant.h"
 
 namespace {
 constexpr const char* DEFAULT_ROOT = "/www/index.html";
@@ -43,6 +47,38 @@ private:
     SdCardDriver& driver_;
     bool locked_;
 };
+
+void sendCalendarJsonResponse(WebServer& server, cJSON* obj, int status_code = 200) {
+    if (!obj) {
+        server.send(500, "application/json", "{\"success\":false,\"error\":\"Internal error\"}");
+        return;
+    }
+
+    char* json_str = cJSON_PrintUnformatted(obj);
+    if (json_str) {
+        server.send(status_code, "application/json", json_str);
+        free(json_str);
+    } else {
+        server.send(500, "application/json", "{\"success\":false,\"error\":\"Failed to build JSON\"}");
+    }
+
+    cJSON_Delete(obj);
+}
+
+void sendCalendarError(WebServer& server, const char* message, int status_code = 400) {
+    cJSON* response = cJSON_CreateObject();
+    if (!response) {
+        server.send(500, "application/json", "{\"success\":false,\"error\":\"Internal error\"}");
+        return;
+    }
+
+    cJSON_AddBoolToObject(response, "success", false);
+    if (message && message[0] != '\0') {
+        cJSON_AddStringToObject(response, "error", message);
+    }
+
+    sendCalendarJsonResponse(server, response, status_code);
+}
 }  // namespace
 
 WebServerManager& WebServerManager::getInstance() {
@@ -126,6 +162,17 @@ void WebServerManager::registerRoutes() {
     server_->on("/api/assistant/prompt/resolve-and-save", HTTP_POST, [this]() { handleAssistantPromptResolveAndSave(); });
     server_->on("/api/assistant/prompt/variables", HTTP_GET, [this]() { handleAssistantPromptVariables(); });
     server_->on("/api/assistant/models", HTTP_GET, [this]() { handleAssistantModels(); });
+
+    // ========== CALENDAR / SCHEDULER ENDPOINTS ==========
+    server_->on("/calendar", HTTP_GET, [this]() { handleCalendarPage(); });
+    server_->on("/api/calendar/events", HTTP_GET, [this]() { handleCalendarEventsList(); });
+    server_->on("/api/calendar/events", HTTP_POST, [this]() { handleCalendarEventsCreate(); });
+    server_->on(UriBraces("/api/calendar/events/{}"), HTTP_DELETE, [this]() { handleCalendarEventsDelete(); });
+    server_->on(UriBraces("/api/calendar/events/{}/enable"), HTTP_POST, [this]() { handleCalendarEventsEnable(); });
+    server_->on(UriBraces("/api/calendar/events/{}/execute"), HTTP_POST, [this]() { handleCalendarEventsExecute(); });
+    server_->on("/api/calendar/settings", HTTP_GET, [this]() { handleCalendarSettingsGet(); });
+    server_->on("/api/calendar/settings", HTTP_POST, [this]() { handleCalendarSettingsPost(); });
+
     server_->on("/api/health", HTTP_GET, [this]() { handleApiHealth(); });
     server_->on("/api/fs/list", HTTP_GET, [this]() { handleFsList(); });
     server_->on("/api/fs/download", HTTP_GET, [this]() { handleFsDownload(); });
@@ -1388,4 +1435,304 @@ String WebServerManager::safeBasename(const std::string& path) const {
         }
     }
     return String(name.c_str());
+}
+
+void WebServerManager::handleCalendarPage() {
+    if (!serveFile("/www/calendar.html")) {
+        server_->send(404, "text/plain", "calendar.html not found");
+    }
+}
+
+void WebServerManager::handleCalendarEventsList() {
+    auto& scheduler = TimeScheduler::getInstance();
+    auto events = scheduler.listEvents();
+
+    cJSON* root = cJSON_CreateObject();
+    if (!root) {
+        sendCalendarError(*server_, "Failed to allocate response", 500);
+        return;
+    }
+
+    cJSON_AddBoolToObject(root, "success", true);
+    cJSON* events_array = cJSON_CreateArray();
+    if (!events_array) {
+        cJSON_Delete(root);
+        sendCalendarError(*server_, "Failed to allocate events array", 500);
+        return;
+    }
+
+    for (const auto& event : events) {
+        cJSON* event_obj = cJSON_CreateObject();
+        if (!event_obj) {
+            cJSON_Delete(events_array);
+            cJSON_Delete(root);
+            sendCalendarError(*server_, "Failed to build event entry", 500);
+            return;
+        }
+
+        cJSON_AddStringToObject(event_obj, "id", event.id.c_str());
+        cJSON_AddStringToObject(event_obj, "name", event.name.c_str());
+        cJSON_AddStringToObject(event_obj, "description", event.description.c_str());
+        cJSON_AddNumberToObject(event_obj, "type", static_cast<int>(event.type));
+        cJSON_AddBoolToObject(event_obj, "enabled", event.enabled);
+        cJSON_AddNumberToObject(event_obj, "hour", event.hour);
+        cJSON_AddNumberToObject(event_obj, "minute", event.minute);
+        cJSON_AddNumberToObject(event_obj, "weekdays", event.weekdays);
+        cJSON_AddNumberToObject(event_obj, "year", event.year);
+        cJSON_AddNumberToObject(event_obj, "month", event.month);
+        cJSON_AddNumberToObject(event_obj, "day", event.day);
+        cJSON_AddStringToObject(event_obj, "lua_script", event.lua_script.c_str());
+        cJSON_AddNumberToObject(event_obj, "created_at", event.created_at);
+        cJSON_AddNumberToObject(event_obj, "last_run", event.last_run);
+        cJSON_AddNumberToObject(event_obj, "next_run", event.next_run);
+        cJSON_AddNumberToObject(event_obj, "execution_count", event.execution_count);
+        cJSON_AddNumberToObject(event_obj, "status", static_cast<int>(event.status));
+        cJSON_AddStringToObject(event_obj, "last_error", event.last_error.c_str());
+
+        cJSON_AddItemToArray(events_array, event_obj);
+    }
+
+    cJSON_AddItemToObject(root, "events", events_array);
+    sendCalendarJsonResponse(*server_, root);
+}
+
+void WebServerManager::handleCalendarEventsCreate() {
+    if (!server_->hasArg("plain")) {
+        sendCalendarError(*server_, "Missing request body");
+        return;
+    }
+
+    String body = server_->arg("plain");
+    if (body.isEmpty()) {
+        sendCalendarError(*server_, "Missing request body");
+        return;
+    }
+
+    cJSON* json = cJSON_Parse(body.c_str());
+    if (!json) {
+        sendCalendarError(*server_, "Invalid JSON");
+        return;
+    }
+
+    TimeScheduler::CalendarEvent event{};
+
+    cJSON* name = cJSON_GetObjectItem(json, "name");
+    cJSON* type = cJSON_GetObjectItem(json, "type");
+    cJSON* hour = cJSON_GetObjectItem(json, "hour");
+    cJSON* minute = cJSON_GetObjectItem(json, "minute");
+    cJSON* lua = cJSON_GetObjectItem(json, "lua_script");
+
+    if (!name || !cJSON_IsString(name) || !name->valuestring || !type || !cJSON_IsNumber(type) ||
+        !hour || !cJSON_IsNumber(hour) || !minute || !cJSON_IsNumber(minute) || !lua ||
+        !cJSON_IsString(lua) || !lua->valuestring) {
+        cJSON_Delete(json);
+        sendCalendarError(*server_, "Missing mandatory fields");
+        return;
+    }
+
+    event.name = name->valuestring;
+    cJSON* desc = cJSON_GetObjectItem(json, "description");
+    if (desc && cJSON_IsString(desc) && desc->valuestring) {
+        event.description = desc->valuestring;
+    }
+
+    int type_value = type->valueint;
+    event.type = (type_value == 0) ? TimeScheduler::EventType::OneShot
+                                   : TimeScheduler::EventType::Recurring;
+
+    cJSON* enabled_item = cJSON_GetObjectItem(json, "enabled");
+    event.enabled = enabled_item ? cJSON_IsTrue(enabled_item) : true;
+    event.hour = static_cast<uint8_t>(hour->valueint);
+    event.minute = static_cast<uint8_t>(minute->valueint);
+
+    cJSON* weekdays = cJSON_GetObjectItem(json, "weekdays");
+    event.weekdays = weekdays && cJSON_IsNumber(weekdays) ? static_cast<uint8_t>(weekdays->valueint) : 0;
+
+    cJSON* year = cJSON_GetObjectItem(json, "year");
+    event.year = year && cJSON_IsNumber(year) ? static_cast<uint16_t>(year->valueint) : 0;
+
+    cJSON* month = cJSON_GetObjectItem(json, "month");
+    event.month = month && cJSON_IsNumber(month) ? static_cast<uint8_t>(month->valueint) : 0;
+
+    cJSON* day = cJSON_GetObjectItem(json, "day");
+    event.day = day && cJSON_IsNumber(day) ? static_cast<uint8_t>(day->valueint) : 0;
+
+    event.lua_script = lua->valuestring;
+
+    cJSON_Delete(json);
+
+    auto& scheduler = TimeScheduler::getInstance();
+    std::string id = scheduler.createEvent(event);
+    if (id.empty()) {
+        sendCalendarError(*server_, "Failed to create event", 500);
+        return;
+    }
+
+    cJSON* response = cJSON_CreateObject();
+    if (!response) {
+        sendCalendarError(*server_, "Failed to allocate response", 500);
+        return;
+    }
+    cJSON_AddBoolToObject(response, "success", true);
+    cJSON_AddStringToObject(response, "id", id.c_str());
+    sendCalendarJsonResponse(*server_, response);
+}
+
+void WebServerManager::handleCalendarEventsDelete() {
+    String event_id = server_->pathArg(0);
+    if (event_id.isEmpty()) {
+        sendCalendarError(*server_, "Missing event ID");
+        return;
+    }
+
+    auto& scheduler = TimeScheduler::getInstance();
+    bool success = scheduler.deleteEvent(event_id.c_str());
+
+    cJSON* response = cJSON_CreateObject();
+    if (!response) {
+        sendCalendarError(*server_, "Failed to allocate response", 500);
+        return;
+    }
+
+    cJSON_AddBoolToObject(response, "success", success);
+    if (!success) {
+        cJSON_AddStringToObject(response, "error", "Event not found");
+    }
+
+    sendCalendarJsonResponse(*server_, response);
+}
+
+void WebServerManager::handleCalendarEventsEnable() {
+    String event_id = server_->pathArg(0);
+    if (event_id.isEmpty()) {
+        sendCalendarError(*server_, "Missing event ID");
+        return;
+    }
+
+    if (!server_->hasArg("plain")) {
+        sendCalendarError(*server_, "Missing request body");
+        return;
+    }
+
+    String body = server_->arg("plain");
+    if (body.isEmpty()) {
+        sendCalendarError(*server_, "Missing request body");
+        return;
+    }
+
+    cJSON* json = cJSON_Parse(body.c_str());
+    if (!json) {
+        sendCalendarError(*server_, "Invalid JSON");
+        return;
+    }
+
+    cJSON* enabled_item = cJSON_GetObjectItem(json, "enabled");
+    if (!enabled_item || !(cJSON_IsBool(enabled_item) || cJSON_IsNumber(enabled_item))) {
+        cJSON_Delete(json);
+        sendCalendarError(*server_, "Missing 'enabled' flag");
+        return;
+    }
+
+    bool enabled = cJSON_IsBool(enabled_item) ? cJSON_IsTrue(enabled_item)
+                                              : (enabled_item->valueint != 0);
+    cJSON_Delete(json);
+
+    auto& scheduler = TimeScheduler::getInstance();
+    bool success = scheduler.enableEvent(event_id.c_str(), enabled);
+
+    cJSON* response = cJSON_CreateObject();
+    if (!response) {
+        sendCalendarError(*server_, "Failed to allocate response", 500);
+        return;
+    }
+
+    cJSON_AddBoolToObject(response, "success", success);
+    if (!success) {
+        cJSON_AddStringToObject(response, "error", "Event not found");
+    }
+
+    sendCalendarJsonResponse(*server_, response);
+}
+
+void WebServerManager::handleCalendarEventsExecute() {
+    String event_id = server_->pathArg(0);
+    if (event_id.isEmpty()) {
+        sendCalendarError(*server_, "Missing event ID");
+        return;
+    }
+
+    auto& scheduler = TimeScheduler::getInstance();
+    bool success = scheduler.executeEventNow(event_id.c_str());
+
+    cJSON* response = cJSON_CreateObject();
+    if (!response) {
+        sendCalendarError(*server_, "Failed to allocate response", 500);
+        return;
+    }
+
+    cJSON_AddBoolToObject(response, "success", success);
+    if (!success) {
+        cJSON_AddStringToObject(response, "error", "Event not found or execution failed");
+    }
+
+    sendCalendarJsonResponse(*server_, response);
+}
+
+void WebServerManager::handleCalendarSettingsGet() {
+    auto& scheduler = TimeScheduler::getInstance();
+
+    cJSON* response = cJSON_CreateObject();
+    if (!response) {
+        sendCalendarError(*server_, "Failed to allocate response", 500);
+        return;
+    }
+
+    cJSON_AddBoolToObject(response, "success", true);
+    cJSON_AddBoolToObject(response, "enabled", scheduler.isEnabled());
+
+    sendCalendarJsonResponse(*server_, response);
+}
+
+void WebServerManager::handleCalendarSettingsPost() {
+    if (!server_->hasArg("plain")) {
+        sendCalendarError(*server_, "Missing request body");
+        return;
+    }
+
+    String body = server_->arg("plain");
+    if (body.isEmpty()) {
+        sendCalendarError(*server_, "Missing request body");
+        return;
+    }
+
+    cJSON* json = cJSON_Parse(body.c_str());
+    if (!json) {
+        sendCalendarError(*server_, "Invalid JSON");
+        return;
+    }
+
+    cJSON* enabled_item = cJSON_GetObjectItem(json, "enabled");
+    if (!enabled_item || !(cJSON_IsBool(enabled_item) || cJSON_IsNumber(enabled_item))) {
+        cJSON_Delete(json);
+        sendCalendarError(*server_, "Missing 'enabled' flag");
+        return;
+    }
+
+    bool enabled = cJSON_IsBool(enabled_item) ? cJSON_IsTrue(enabled_item)
+                                              : (enabled_item->valueint != 0);
+    cJSON_Delete(json);
+
+    auto& scheduler = TimeScheduler::getInstance();
+    scheduler.setEnabled(enabled);
+
+    cJSON* response = cJSON_CreateObject();
+    if (!response) {
+        sendCalendarError(*server_, "Failed to allocate response", 500);
+        return;
+    }
+
+    cJSON_AddBoolToObject(response, "success", true);
+    cJSON_AddBoolToObject(response, "enabled", enabled);
+
+    sendCalendarJsonResponse(*server_, response);
 }

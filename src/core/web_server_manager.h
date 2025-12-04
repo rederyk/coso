@@ -54,6 +54,17 @@ private:
     void handleFsUploadData();
     void handleFsUploadComplete();
     void handleNotFound();
+
+    // Calendar / Scheduler handlers
+    void handleCalendarPage();
+    void handleCalendarEventsList();
+    void handleCalendarEventsCreate();
+    void handleCalendarEventsDelete();
+    void handleCalendarEventsEnable();
+    void handleCalendarEventsExecute();
+    void handleCalendarSettingsGet();
+    void handleCalendarSettingsPost();
+
     bool normalizeSdPath(const String& raw, std::string& out) const;
     bool sanitizeFilename(const String& raw, std::string& out) const;
     std::string joinPaths(const std::string& parent, const std::string& child) const;

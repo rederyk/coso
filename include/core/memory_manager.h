@@ -25,6 +25,11 @@ public:
     bool deleteData(const std::string& filename);
     std::vector<std::string> listFiles(const std::string& directory = "");
 
+    // Advanced file operations
+    bool appendData(const std::string& filename, const std::string& data);
+    bool prependData(const std::string& filename, const std::string& data);
+    std::vector<std::string> grepFiles(const std::string& pattern, const std::string& directory = "");
+
     // Configuration and permissions
     bool setDirectoryPermissions(const std::string& path, bool can_read, bool can_write, bool can_delete);
     DirectoryPermissions getDirectoryPermissions(const std::string& path);
