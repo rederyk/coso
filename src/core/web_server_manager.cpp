@@ -251,7 +251,23 @@ void WebServerManager::handleAssistantChat() {
 }
 
 void WebServerManager::handleAssistantAudioStart() {
+    SettingsManager& settings = SettingsManager::getInstance();
     VoiceAssistant& assistant = VoiceAssistant::getInstance();
+
+    if (!settings.getVoiceAssistantEnabled()) {
+        sendJson(403, "{\"status\":\"error\",\"message\":\"Voice assistant is disabled\"}");
+        return;
+    }
+
+    if (!assistant.isInitialized()) {
+        Logger::getInstance().info("[VoiceAssistant] Initializing before web recording");
+        if (!assistant.begin()) {
+            Logger::getInstance().warn("[VoiceAssistant] Initialization failed before recording");
+            sendJson(503, "{\"status\":\"error\",\"message\":\"Voice assistant unavailable\"}");
+            return;
+        }
+    }
+
     assistant.startRecording();
     sendJson(200, "{\"status\":\"success\",\"message\":\"Recording started\"}");
 }
@@ -292,7 +308,8 @@ void WebServerManager::handleAssistantSettingsGet() {
         snapshot.localApiMode ? snapshot.whisperLocalEndpoint : snapshot.whisperCloudEndpoint;
     doc["activeLlmEndpoint"] =
         snapshot.localApiMode ? snapshot.llmLocalEndpoint : snapshot.llmCloudEndpoint;
-    doc["systemPrompt"] = VOICE_ASSISTANT_SYSTEM_PROMPT;
+    doc["systemPromptTemplate"] = snapshot.voiceAssistantSystemPromptTemplate;
+    doc["systemPrompt"] = VoiceAssistant::getInstance().getSystemPrompt();
 
     String response;
     serializeJson(doc, response);
@@ -314,9 +331,14 @@ void WebServerManager::handleAssistantSettingsPost() {
     }
 
     SettingsManager& settings = SettingsManager::getInstance();
+    bool previous_voice_assistant_enabled = settings.getVoiceAssistantEnabled();
+    bool voice_assistant_settings_updated = false;
+    bool requested_voice_assistant_enabled = previous_voice_assistant_enabled;
 
     if (doc.containsKey("voiceAssistantEnabled")) {
-        settings.setVoiceAssistantEnabled(doc["voiceAssistantEnabled"] | false);
+        voice_assistant_settings_updated = true;
+        requested_voice_assistant_enabled = doc["voiceAssistantEnabled"] | false;
+        settings.setVoiceAssistantEnabled(requested_voice_assistant_enabled);
     }
     if (doc.containsKey("localApiMode")) {
         settings.setLocalApiMode(doc["localApiMode"] | false);
@@ -356,6 +378,23 @@ void WebServerManager::handleAssistantSettingsPost() {
     JsonVariant llm_model = doc["llmModel"];
     if (llm_model && !llm_model.isNull()) {
         settings.setLlmModel(llm_model.as<const char*>());
+    }
+    JsonVariant system_prompt = doc["systemPromptTemplate"];
+    if (system_prompt && !system_prompt.isNull()) {
+        settings.setVoiceAssistantSystemPromptTemplate(system_prompt.as<const char*>());
+    }
+
+    if (voice_assistant_settings_updated) {
+        VoiceAssistant& assistant = VoiceAssistant::getInstance();
+        if (requested_voice_assistant_enabled && !previous_voice_assistant_enabled) {
+            Logger::getInstance().info("[VoiceAssistant] Initializing after remote enable");
+            if (!assistant.begin()) {
+                Logger::getInstance().warn("[VoiceAssistant] Initialization after remote enable failed");
+            }
+        } else if (!requested_voice_assistant_enabled && previous_voice_assistant_enabled) {
+            Logger::getInstance().info("[VoiceAssistant] Deinitializing after remote disable");
+            assistant.end();
+        }
     }
 
     sendJson(200, "{\"status\":\"success\",\"message\":\"Impostazioni aggiornate\"}");

@@ -56,6 +56,7 @@ void fillJsonFromSnapshot(const SettingsSnapshot& snapshot, JsonDocument& doc) {
     voiceAssistant["llmCloudEndpoint"] = snapshot.llmCloudEndpoint;
     voiceAssistant["llmLocalEndpoint"] = snapshot.llmLocalEndpoint;
     voiceAssistant["llmModel"] = snapshot.llmModel;
+    voiceAssistant["systemPromptTemplate"] = snapshot.voiceAssistantSystemPromptTemplate;
 
     // Theme palette
     JsonObject palette = doc["palette"].to<JsonObject>();
@@ -116,6 +117,8 @@ void fillSnapshotFromJson(SettingsSnapshot& snapshot, const JsonDocument& doc) {
     snapshot.llmCloudEndpoint = doc["voiceAssistant"]["llmCloudEndpoint"] | snapshot.llmCloudEndpoint;
     snapshot.llmLocalEndpoint = doc["voiceAssistant"]["llmLocalEndpoint"] | snapshot.llmLocalEndpoint;
     snapshot.llmModel = doc["voiceAssistant"]["llmModel"] | snapshot.llmModel;
+    snapshot.voiceAssistantSystemPromptTemplate =
+        doc["voiceAssistant"]["systemPromptTemplate"] | snapshot.voiceAssistantSystemPromptTemplate;
 
     // Theme palette
     snapshot.primaryColor = doc["palette"]["primary"] | snapshot.primaryColor;

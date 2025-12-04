@@ -397,8 +397,10 @@
       </div>
       <article class="setting-card prompt-card">
         <div class="card-title">Prompt della voce</div>
-        <p class="helper-text">Il prompt system JSON resta coerente con i campi Docker/Ollama gestiti dal backend.</p>
-        <pre id="system-prompt">Caricamento in corso…</pre>
+        <p class="helper-text">Il prompt system JSON resta coerente con i campi Docker/Ollama gestiti dal backend e può essere personalizzato.</p>
+        <textarea id="system-prompt-template" rows="6" placeholder="Usa {{COMMAND_LIST}} per inserire automaticamente la lista comandi"></textarea>
+        <div class="helper-text" style="margin-top:0.5rem;">Anteprima con i comandi disponibili:</div>
+        <pre id="system-prompt-preview">Caricamento in corso…</pre>
       </article>
     </section>
   </main>
@@ -424,7 +426,8 @@
     const activeLlmEl = document.getElementById('active-llm-endpoint');
     const saveSettingsBtn = document.getElementById('save-settings');
     const refreshModelsBtn = document.getElementById('refresh-models');
-    const systemPromptEl = document.getElementById('system-prompt');
+    const systemPromptTemplateEl = document.getElementById('system-prompt-template');
+    const systemPromptPreviewEl = document.getElementById('system-prompt-preview');
     let pendingModelSelection = '';
 
     function setStatus(text, state = 'idle') {
@@ -575,7 +578,8 @@
         llmCloudInput.value = data.llmCloudEndpoint || '';
         llmLocalInput.value = data.llmLocalEndpoint || '';
         pendingModelSelection = data.llmModel || '';
-        systemPromptEl.textContent = data.systemPrompt || '';
+        systemPromptTemplateEl.value = data.systemPromptTemplate || '';
+        systemPromptPreviewEl.textContent = data.systemPrompt || '';
         updateActiveEndpoints();
         setStatus('Impostazioni caricate');
         await refreshModels(false);
@@ -597,7 +601,8 @@
         whisperLocalEndpoint: whisperLocalInput.value.trim(),
         llmCloudEndpoint: llmCloudInput.value.trim(),
         llmLocalEndpoint: llmLocalInput.value.trim(),
-        llmModel: llmModelSelect.value
+        llmModel: llmModelSelect.value,
+        systemPromptTemplate: systemPromptTemplateEl.value.trim()
       };
       try {
         const response = await fetch('/api/assistant/settings', {

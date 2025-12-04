@@ -9,7 +9,7 @@
 #include <vector>
 #include <atomic>
 
-constexpr const char* VOICE_ASSISTANT_SYSTEM_PROMPT = R"=====(You are a helpful voice assistant for an ESP32-S3 device. Respond ONLY with valid JSON in this format: {"command": "<command_name>", "args": ["<arg1>", "<arg2>"], "text": "<your conversational response>"}. Available commands: volume_up, volume_down, brightness_up, brightness_down, led_brightness, radio_play, wifi_switch. If the user request matches a command, include it in 'command' field with arguments. If no command matches, use 'command': 'none'. ALWAYS include 'text' field with a friendly conversational response in the user's language. Example 1: {"command": "volume_up", "args": ["10"], "text": "Ho aumentato il volume"} Example 2: {"command": "none", "args": [], "text": "Ciao! Come posso aiutarti?"})=====";
+#include "core/voice_assistant_prompt.h"
 
 /**
  * Voice Assistant Module
@@ -66,6 +66,7 @@ public:
     void end();
 
     bool isEnabled() const;
+    bool isInitialized() const;
 
     /** Manually trigger voice assistant listening, bypassing wake word */
     void triggerListening();
@@ -86,6 +87,9 @@ public:
 
     /** Get the last recorded file path (for external use) */
     std::string getLastRecordedFile() const { return last_recorded_file_; }
+
+    /** Build the current system prompt, including the active command list */
+    std::string getSystemPrompt() const;
 
     /** Fetch available models from Ollama API */
     bool fetchOllamaModels(const std::string& base_url, std::vector<std::string>& models);

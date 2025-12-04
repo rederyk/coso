@@ -341,6 +341,7 @@ void SettingsManager::loadDefaults() {
     current_.openAiApiKey.clear();
     current_.openAiEndpoint = "https://api.openai.com/v1";
     current_.voiceAssistantEnabled = false;
+    current_.voiceAssistantSystemPromptTemplate = VOICE_ASSISTANT_PROMPT_TEMPLATE;
 
     // Theme
     current_.theme = DEFAULT_THEME;
@@ -798,6 +799,15 @@ void SettingsManager::setLlmModel(const std::string& model) {
     current_.llmModel = model;
     persistSnapshot();
     notify(SettingKey::LlmModel);
+}
+
+void SettingsManager::setVoiceAssistantSystemPromptTemplate(const std::string& prompt) {
+    if (!initialized_ || prompt == current_.voiceAssistantSystemPromptTemplate) {
+        return;
+    }
+    current_.voiceAssistantSystemPromptTemplate = prompt;
+    persistSnapshot();
+    notify(SettingKey::VoiceAssistantSystemPrompt);
 }
 
 void SettingsManager::notify(SettingKey key) {

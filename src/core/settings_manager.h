@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/theme_palette.h"
+#include "core/voice_assistant_prompt.h"
 #include <cstdint>
 #include <functional>
 #include <string>
@@ -41,6 +42,7 @@ struct SettingsSnapshot {
     bool voiceAssistantEnabled = false;
     bool localApiMode = false;  // Toggle between cloud and local Docker APIs
     std::string dockerHostIp = "192.168.1.51";  // IP of Docker host for local APIs
+    std::string voiceAssistantSystemPromptTemplate = VOICE_ASSISTANT_PROMPT_TEMPLATE;
 
     // Whisper STT endpoints
     std::string whisperCloudEndpoint = "https://api.openai.com/v1/audio/transcriptions";
@@ -110,6 +112,7 @@ public:
         LlmCloudEndpoint,
         LlmLocalEndpoint,
         LlmModel,
+        VoiceAssistantSystemPrompt,
 
         // Theme
         Theme,
@@ -218,6 +221,11 @@ public:
 
     bool getAudioEnabled() const { return current_.audioEnabled; }
     void setAudioEnabled(bool enabled);
+
+    const std::string& getVoiceAssistantSystemPromptTemplate() const {
+        return current_.voiceAssistantSystemPromptTemplate;
+    }
+    void setVoiceAssistantSystemPromptTemplate(const std::string& prompt);
 
     // Voice Assistant
     const std::string& getOpenAiApiKey() const { return current_.openAiApiKey; }

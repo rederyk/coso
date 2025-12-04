@@ -143,6 +143,10 @@ bool VoiceAssistant::isEnabled() const {
     return SettingsManager::getInstance().getVoiceAssistantEnabled();
 }
 
+bool VoiceAssistant::isInitialized() const {
+    return initialized_;
+}
+
 void VoiceAssistant::triggerListening() {
     LOG_I("Voice assistant manually triggered (bypass wake word)");
     // TODO: Signal the capture task to start listening
@@ -629,7 +633,8 @@ bool VoiceAssistant::makeGPTRequest(const std::string& prompt, std::string& resp
     // System message: Define the assistant's role
     cJSON* system_msg = cJSON_CreateObject();
     cJSON_AddStringToObject(system_msg, "role", "system");
-    cJSON_AddStringToObject(system_msg, "content", VOICE_ASSISTANT_SYSTEM_PROMPT);
+    std::string system_prompt = getSystemPrompt();
+    cJSON_AddStringToObject(system_msg, "content", system_prompt.c_str());
     cJSON_AddItemToArray(messages, system_msg);
 
     // User message: The transcribed text
@@ -1015,4 +1020,35 @@ bool VoiceAssistant::getLastResponse(VoiceCommand& response, uint32_t timeout_ms
     }
 
     return false;
+}
+
+std::string VoiceAssistant::getSystemPrompt() const {
+    const SettingsSnapshot& settings = SettingsManager::getInstance().getSnapshot();
+    std::string prompt_template = settings.voiceAssistantSystemPromptTemplate.empty()
+        ? VOICE_ASSISTANT_PROMPT_TEMPLATE
+        : settings.voiceAssistantSystemPromptTemplate;
+
+    auto commands = CommandCenter::getInstance().listCommands();
+    std::string command_list;
+    for (size_t i = 0; i < commands.size(); ++i) {
+        if (i > 0) {
+            command_list += ", ";
+        }
+        command_list += commands[i].name;
+    }
+
+    if (command_list.empty()) {
+        command_list = "none";
+    }
+
+    std::string prompt = prompt_template;
+    const std::string placeholder = VOICE_ASSISTANT_COMMAND_LIST_PLACEHOLDER;
+    const size_t pos = prompt.find(placeholder);
+    if (pos != std::string::npos) {
+        prompt.replace(pos, placeholder.length(), command_list);
+    } else {
+        prompt += " Available commands: " + command_list;
+    }
+
+    return prompt;
 }
