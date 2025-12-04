@@ -1,9 +1,10 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-page="assistant">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ESP32 Voice Assistant</title>
+  <link rel="stylesheet" href="app-nav.css">
   <style>
     :root {
       --bg: #05060d;
@@ -308,6 +309,7 @@
 </head>
 <body>
   <main>
+    <div data-app-nav></div>
     <header>
       <div>
         <p class="eyebrow">ESP32 Voice Assistant</p>
@@ -439,6 +441,7 @@
       </article>
     </section>
   </main>
+  <script src="app-nav.js" defer></script>
   <script>
     const statusEl = document.getElementById('status');
     const chatEl = document.getElementById('chat');

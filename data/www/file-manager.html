@@ -1,9 +1,10 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-page="files">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ESP32-S3 File Manager</title>
+  <link rel="stylesheet" href="app-nav.css">
   <style>
     :root {
       --bg: #05060f;
@@ -223,6 +224,7 @@
 </head>
 <body>
   <main>
+    <div data-app-nav></div>
     <header>
       <h1>ESP32-S3 File Manager</h1>
       <p class="breadcrumbs" id="breadcrumbs"></p>
@@ -245,6 +247,7 @@
     </section>
   </main>
 
+  <script src="app-nav.js" defer></script>
   <script>
     let currentPath = '/';
     const entriesContainer = document.getElementById('entries-container');
