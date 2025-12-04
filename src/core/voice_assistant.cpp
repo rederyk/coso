@@ -17,7 +17,10 @@
 #include <LittleFS.h>
 #include <SD_MMC.h>
 #include <cJSON.h>
+#include <cctype>
 #include <mutex>
+
+const char VOICE_ASSISTANT_PROMPT_JSON_PATH[] = "/voice_assistant_prompt.json";
 
 namespace {
 thread_local VoiceAssistant::LuaSandbox* s_active_lua_sandbox = nullptr;
@@ -106,16 +109,28 @@ std::string formatConversationEntry(const ConversationEntry& entry) {
     return content;
 }
 
-constexpr const char* VOICE_ASSISTANT_PROMPT_JSON_PATH = "/voice_assistant_prompt.json";
+std::string sanitizePlaceholderName(const std::string& raw) {
+    std::string normalized;
+    normalized.reserve(raw.size());
+    for (unsigned char ch : raw) {
+        if (std::isalnum(ch)) {
+            normalized.push_back(static_cast<char>(std::tolower(ch)));
+        } else {
+            normalized.push_back('_');
+        }
+    }
+    if (normalized.empty()) {
+        normalized = "value";
+    } else if (std::isdigit(static_cast<unsigned char>(normalized.front()))) {
+        normalized.insert(normalized.begin(), '_');
+    }
+    return normalized;
+}
+
 constexpr const char* VOICE_ASSISTANT_FALLBACK_PROMPT_TEMPLATE =
     "You are a helpful voice assistant for an ESP32-S3 device. Respond ONLY with valid JSON in this exact format: "
     "{\"command\": \"<command_name>\", \"args\": [\"<arg1>\", \"<arg2>\", ...], \"text\": \"<your conversational response>\"}. "
     "Available commands: {{COMMAND_LIST}}. Bonded BLE hosts: {{BLE_HOSTS}}.";
-
-struct VoiceAssistantPromptDefinition {
-    std::string prompt_template;
-    std::vector<std::string> sections;
-};
 
 std::string readFileToString(const char* path) {
     File file = LittleFS.open(path, FILE_READ);
@@ -138,17 +153,23 @@ std::string readFileToString(const char* path) {
     return result;
 }
 
-VoiceAssistantPromptDefinition loadPromptDefinitionFromJson() {
-    VoiceAssistantPromptDefinition definition;
-    const std::string raw = readFileToString(VOICE_ASSISTANT_PROMPT_JSON_PATH);
-    if (raw.empty()) {
-        return definition;
-    }
+std::mutex prompt_definition_mutex;
+VoiceAssistantPromptDefinition prompt_definition_cache;
+bool prompt_definition_loaded = false;
+
+bool parsePromptDefinition(const std::string& raw, VoiceAssistantPromptDefinition& definition, std::string& error) {
+    definition.prompt_template.clear();
+    definition.sections.clear();
 
     cJSON* root = cJSON_Parse(raw.c_str());
     if (!root) {
-        LOG_W("Failed to parse system prompt JSON at %s", VOICE_ASSISTANT_PROMPT_JSON_PATH);
-        return definition;
+        const char* error_ptr = cJSON_GetErrorPtr();
+        if (error_ptr != nullptr) {
+            error = error_ptr;
+        } else {
+            error = "Invalid JSON";
+        }
+        return false;
     }
 
     cJSON* prompt_item = cJSON_GetObjectItem(root, "prompt_template");
@@ -167,17 +188,30 @@ VoiceAssistantPromptDefinition loadPromptDefinitionFromJson() {
     }
 
     cJSON_Delete(root);
+    return true;
+}
+
+VoiceAssistantPromptDefinition loadPromptDefinitionFromJson() {
+    VoiceAssistantPromptDefinition definition;
+    const std::string raw = readFileToString(VOICE_ASSISTANT_PROMPT_JSON_PATH);
+    if (raw.empty()) {
+        return definition;
+    }
+
+    std::string error;
+    if (!parsePromptDefinition(raw, definition, error)) {
+        LOG_W("Failed to parse system prompt JSON at %s: %s", VOICE_ASSISTANT_PROMPT_JSON_PATH, error.c_str());
+    }
     return definition;
 }
 
-const VoiceAssistantPromptDefinition& getPromptDefinition() {
-    static VoiceAssistantPromptDefinition cached;
-    static bool loaded = false;
-    if (!loaded) {
-        cached = loadPromptDefinitionFromJson();
-        loaded = true;
+VoiceAssistantPromptDefinition getPromptDefinition(bool force_reload = false) {
+    std::lock_guard<std::mutex> lock(prompt_definition_mutex);
+    if (!prompt_definition_loaded || force_reload) {
+        prompt_definition_cache = loadPromptDefinitionFromJson();
+        prompt_definition_loaded = true;
     }
-    return cached;
+    return prompt_definition_cache;
 }
 
 } // namespace
@@ -587,6 +621,7 @@ void VoiceAssistant::aiProcessingTask(void* param) {
                             }
                         }
 
+                        va->captureCommandOutputVariables(cmd);
                         const std::string response_text = cmd.text.empty() ? std::string("Comando elaborato") : cmd.text;
                         ConversationBuffer::getInstance().addAssistantMessage(response_text,
                                                                              cmd.command,
@@ -1563,11 +1598,15 @@ std::string VoiceAssistant::getLastRecordedFile() const {
 
 std::string VoiceAssistant::getSystemPrompt() const {
     const SettingsSnapshot& settings = SettingsManager::getInstance().getSnapshot();
-    const VoiceAssistantPromptDefinition& prompt_definition = getPromptDefinition();
-    const std::string& saved_template = settings.voiceAssistantSystemPromptTemplate;
-    std::string prompt_template = !saved_template.empty()
-        ? saved_template
-        : prompt_definition.prompt_template;
+    const VoiceAssistantPromptDefinition prompt_definition = getPromptDefinition();
+    return composeSystemPrompt(settings.voiceAssistantSystemPromptTemplate, prompt_definition);
+}
+
+std::string VoiceAssistant::composeSystemPrompt(const std::string& override_template,
+                                              const VoiceAssistantPromptDefinition& prompt_definition) const {
+    std::string prompt_template = override_template.empty()
+        ? prompt_definition.prompt_template
+        : override_template;
     if (prompt_template.empty()) {
         prompt_template = VOICE_ASSISTANT_FALLBACK_PROMPT_TEMPLATE;
     }
@@ -1628,7 +1667,113 @@ std::string VoiceAssistant::getSystemPrompt() const {
         prompt += section;
     }
 
+    return resolvePromptVariables(std::move(prompt));
+}
+
+void VoiceAssistant::reloadPromptDefinition() {
+    getPromptDefinition(true);
+}
+
+bool VoiceAssistant::buildPromptFromJson(const std::string& raw_json, std::string& error, std::string& output) const {
+    VoiceAssistantPromptDefinition definition;
+    if (!parsePromptDefinition(raw_json, definition, error)) {
+        return false;
+    }
+    output = composeSystemPrompt(definition.prompt_template, definition);
+    return true;
+}
+
+bool VoiceAssistant::savePromptDefinition(const std::string& raw_json, std::string& error) {
+    VoiceAssistantPromptDefinition definition;
+    if (!parsePromptDefinition(raw_json, definition, error)) {
+        return false;
+    }
+
+    LittleFS.remove(VOICE_ASSISTANT_PROMPT_JSON_PATH);
+    File file = LittleFS.open(VOICE_ASSISTANT_PROMPT_JSON_PATH, FILE_WRITE);
+    if (!file) {
+        error = "Unable to open prompt file for writing";
+        return false;
+    }
+
+    size_t written = file.write(reinterpret_cast<const uint8_t*>(raw_json.data()), raw_json.size());
+    file.flush();
+    file.close();
+
+    if (written != raw_json.size()) {
+        error = "Failed to write prompt file";
+        return false;
+    }
+
+    reloadPromptDefinition();
+    return true;
+}
+
+void VoiceAssistant::setSystemPromptVariable(const std::string& key, const std::string& value) {
+    if (key.empty()) {
+        return;
+    }
+    std::lock_guard<std::mutex> lock(prompt_variables_mutex_);
+    prompt_variables_[key] = value;
+}
+
+void VoiceAssistant::clearSystemPromptVariable(const std::string& key) {
+    if (key.empty()) {
+        return;
+    }
+    std::lock_guard<std::mutex> lock(prompt_variables_mutex_);
+    prompt_variables_.erase(key);
+}
+
+void VoiceAssistant::clearSystemPromptVariables() {
+    std::lock_guard<std::mutex> lock(prompt_variables_mutex_);
+    prompt_variables_.clear();
+}
+
+std::unordered_map<std::string, std::string> VoiceAssistant::getSystemPromptVariables() const {
+    std::lock_guard<std::mutex> lock(prompt_variables_mutex_);
+    return prompt_variables_;
+}
+
+std::string VoiceAssistant::resolvePromptVariables(std::string prompt) const {
+    std::lock_guard<std::mutex> lock(prompt_variables_mutex_);
+    for (const auto& pair : prompt_variables_) {
+        const std::string& key = pair.first;
+        const std::string& value = pair.second;
+        if (key.empty()) {
+            continue;
+        }
+        const std::string placeholder = "{{" + key + "}}";
+        size_t pos = 0;
+        while ((pos = prompt.find(placeholder, pos)) != std::string::npos) {
+            prompt.replace(pos, placeholder.length(), value);
+            pos += value.length();
+        }
+    }
     return prompt;
+}
+
+void VoiceAssistant::captureCommandOutputVariables(const VoiceCommand& cmd) {
+    if (cmd.command.empty()) {
+        return;
+    }
+
+    setSystemPromptVariable("last_command_name", cmd.command);
+
+    if (!cmd.text.empty()) {
+        setSystemPromptVariable("last_command_text", cmd.text);
+    }
+
+    const std::string sanitized = sanitizePlaceholderName(cmd.command);
+    if (!cmd.output.empty()) {
+        setSystemPromptVariable("last_command_raw_output", cmd.output);
+        setSystemPromptVariable("command_" + sanitized + "_output", cmd.output);
+    }
+
+    if (!cmd.refined_output.empty()) {
+        setSystemPromptVariable("last_command_refined_output", cmd.refined_output);
+        setSystemPromptVariable("command_" + sanitized + "_refined_output", cmd.refined_output);
+    }
 }
 
 // LuaSandbox implementation

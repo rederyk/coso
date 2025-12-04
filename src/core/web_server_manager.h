@@ -38,6 +38,10 @@ private:
     void handleAssistantConversationLimit();
     void handleAssistantSettingsGet();
     void handleAssistantSettingsPost();
+    void handleAssistantPromptGet();
+    void handleAssistantPromptPost();
+    void handleAssistantPromptPreview();
+    void handleAssistantPromptVariables();
     void handleAssistantModels();
     void handleApiHealth();
     void handleFileManagerPage();

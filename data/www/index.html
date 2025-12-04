@@ -275,6 +275,70 @@
       white-space: pre-wrap;
       word-break: break-word;
     }
+    .variables-container {
+      margin-top: 16px;
+      padding: 14px;
+      border-radius: 12px;
+      background: rgba(126, 231, 192, 0.05);
+      border: 1px solid rgba(126, 231, 192, 0.15);
+    }
+    .variables-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--primary);
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .variables-title::before {
+      content: '⚡';
+      font-size: 14px;
+    }
+    .variable-item {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      padding: 10px;
+      margin-bottom: 8px;
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      font-family: "JetBrains Mono", "Space Mono", "Fira Code", monospace;
+      font-size: 12px;
+    }
+    .variable-key {
+      color: var(--primary-deep);
+      font-weight: 600;
+      cursor: pointer;
+      user-select: all;
+    }
+    .variable-key:hover {
+      color: var(--primary);
+      text-decoration: underline;
+    }
+    .variable-value {
+      color: var(--muted);
+      white-space: pre-wrap;
+      word-break: break-word;
+      max-height: 120px;
+      overflow: auto;
+      padding-left: 12px;
+      border-left: 2px solid rgba(126, 231, 192, 0.2);
+    }
+    .variable-empty {
+      font-style: italic;
+      color: rgba(159, 176, 198, 0.5);
+    }
+    .highlight-variable {
+      background: rgba(255, 235, 59, 0.15);
+      color: #ffd54f;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-weight: 600;
+    }
     button {
       border: none;
       border-radius: 12px;
@@ -461,10 +525,18 @@
       </div>
       <article class="setting-card prompt-card">
         <div class="card-title">Prompt della voce</div>
-        <p class="helper-text">Il prompt system JSON resta coerente con i campi Docker/Ollama gestiti dal backend e può essere personalizzato.</p>
-        <textarea id="system-prompt-template" rows="6" placeholder="Usa {{COMMAND_LIST}} per inserire automaticamente la lista comandi"></textarea>
-        <div class="helper-text" style="margin-top:0.5rem;">Anteprima con i comandi disponibili:</div>
+        <p class="helper-text">Il prompt system viene ora definito da un JSON completo. Modificalo direttamente e controlla l'anteprima risolta.</p>
+        <div class="card-actions">
+          <button id="reload-prompt-json" class="secondary">Ricarica JSON</button>
+          <button id="save-prompt-json">Salva prompt</button>
+        </div>
+        <textarea id="system-prompt-editor" rows="10" placeholder="Inserisci il JSON del prompt..."></textarea>
+        <div class="helper-text" style="margin-top:0.5rem;">Anteprima risolta:</div>
         <pre id="system-prompt-preview">Caricamento in corso…</pre>
+        <div id="variables-display" class="variables-container" style="display: none;">
+          <div class="variables-title">Variabili Dinamiche Attive</div>
+          <div id="variables-list"></div>
+        </div>
       </article>
     </section>
   </main>
@@ -491,14 +563,19 @@
     const activeLlmEl = document.getElementById('active-llm-endpoint');
     const saveSettingsBtn = document.getElementById('save-settings');
     const refreshModelsBtn = document.getElementById('refresh-models');
-    const systemPromptTemplateEl = document.getElementById('system-prompt-template');
+    const systemPromptEditor = document.getElementById('system-prompt-editor');
+    const promptReloadBtn = document.getElementById('reload-prompt-json');
+    const promptSaveBtn = document.getElementById('save-prompt-json');
     const systemPromptPreviewEl = document.getElementById('system-prompt-preview');
+    const variablesDisplayEl = document.getElementById('variables-display');
+    const variablesListEl = document.getElementById('variables-list');
     const memoryUsageEl = document.getElementById('memory-usage');
     const resetMemoryBtn = document.getElementById('reset-memory');
     const shrinkMemoryBtn = document.getElementById('shrink-memory');
     const expandMemoryBtn = document.getElementById('expand-memory');
     let pendingModelSelection = '';
     let conversationLimit = 0;
+    let promptPreviewTimer = null;
 
     function setStatus(text, state = 'idle') {
       statusEl.textContent = text;
@@ -720,6 +797,11 @@
         appendMessage('assistant', answer, buildMeta(response), response.output || '');
         await loadConversationHistory();
 
+        // Refresh variables after command execution
+        if (response.command && response.command !== 'none') {
+          await refreshPromptVariables();
+        }
+
         clearStatusAnimation();
         setStatus('✓ Risposta ricevuta', 'idle');
         setTimeout(() => setStatus('Pronto', 'idle'), 3000);
@@ -816,11 +898,11 @@
         llmCloudInput.value = data.llmCloudEndpoint || '';
         llmLocalInput.value = data.llmLocalEndpoint || '';
         pendingModelSelection = data.llmModel || '';
-        systemPromptTemplateEl.value = data.systemPromptTemplate || '';
-        systemPromptPreviewEl.textContent = data.systemPrompt || '';
+        systemPromptPreviewEl.textContent = data.systemPrompt || 'Caricamento in corso…';
         updateActiveEndpoints();
         setStatus('✓ Impostazioni caricate', 'idle');
         await refreshModels(false);
+        await loadPromptDefinition(false);
       } catch (err) {
         setStatus('✗ ' + err.message, 'error');
         setTimeout(() => setStatus('Pronto', 'idle'), 5000);
@@ -840,8 +922,7 @@
         whisperLocalEndpoint: whisperLocalInput.value.trim(),
         llmCloudEndpoint: llmCloudInput.value.trim(),
         llmLocalEndpoint: llmLocalInput.value.trim(),
-        llmModel: llmModelSelect.value,
-        systemPromptTemplate: systemPromptTemplateEl.value.trim()
+        llmModel: llmModelSelect.value
       };
       try {
         const response = await fetchWithTimeout('/api/assistant/settings', {
@@ -863,6 +944,175 @@
         setTimeout(() => setStatus('Pronto', 'idle'), 5000);
       } finally {
         saveSettingsBtn.disabled = false;
+      }
+    }
+
+    function highlightVariablesInPrompt(promptText, variables) {
+      if (!variables || Object.keys(variables).length === 0) {
+        return promptText;
+      }
+
+      let highlighted = promptText;
+      for (const key in variables) {
+        const placeholder = `{{${key}}}`;
+        const regex = new RegExp(placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
+        highlighted = highlighted.replace(regex, `<span class="highlight-variable">${placeholder}</span>`);
+      }
+      return highlighted;
+    }
+
+    function displayVariables(variables) {
+      if (!variables || Object.keys(variables).length === 0) {
+        variablesDisplayEl.style.display = 'none';
+        return;
+      }
+
+      variablesDisplayEl.style.display = 'block';
+      variablesListEl.innerHTML = '';
+
+      for (const [key, value] of Object.entries(variables)) {
+        const item = document.createElement('div');
+        item.className = 'variable-item';
+
+        const keyEl = document.createElement('div');
+        keyEl.className = 'variable-key';
+        keyEl.textContent = `{{${key}}}`;
+        keyEl.title = 'Clicca per copiare';
+        keyEl.onclick = () => {
+          navigator.clipboard.writeText(`{{${key}}}`);
+          keyEl.style.color = 'var(--primary)';
+          setTimeout(() => keyEl.style.color = '', 1000);
+        };
+
+        const valueEl = document.createElement('div');
+        valueEl.className = value ? 'variable-value' : 'variable-value variable-empty';
+        valueEl.textContent = value || '(vuota)';
+
+        item.appendChild(keyEl);
+        item.appendChild(valueEl);
+        variablesListEl.appendChild(item);
+      }
+    }
+
+    async function refreshPromptVariables() {
+      try {
+        const response = await fetchWithTimeout('/api/assistant/prompt/variables', {}, 5000);
+        const data = await response.json();
+        if (response.ok && data.variables) {
+          displayVariables(data.variables);
+          // Also update the preview if available
+          const currentPrompt = systemPromptEditor.value;
+          if (currentPrompt && currentPrompt.trim()) {
+            await updatePromptPreview(currentPrompt);
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to refresh variables:', err);
+      }
+    }
+
+    async function updatePromptPreview(payload) {
+      systemPromptPreviewEl.textContent = 'Calcolo anteprima…';
+      if (!payload || !payload.trim()) {
+        systemPromptPreviewEl.textContent = 'Prompt vuoto';
+        variablesDisplayEl.style.display = 'none';
+        return;
+      }
+
+      try {
+        const response = await fetchWithTimeout('/api/assistant/prompt/preview', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: payload
+        }, 10000);
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.message || 'Anteprima non disponibile');
+        }
+
+        const promptText = data.resolvedPrompt || '';
+        const variables = data.variables || {};
+
+        // Highlight variables in prompt preview
+        const highlightedPrompt = highlightVariablesInPrompt(promptText, variables);
+        systemPromptPreviewEl.innerHTML = highlightedPrompt;
+
+        // Display variables section
+        displayVariables(variables);
+      } catch (err) {
+        systemPromptPreviewEl.textContent = 'Errore anteprima: ' + err.message;
+        variablesDisplayEl.style.display = 'none';
+      }
+    }
+
+    async function loadPromptDefinition(showStatus = true) {
+      if (showStatus) {
+        setStatusAnimated('Caricamento prompt', 'busy');
+      }
+      systemPromptPreviewEl.textContent = 'Caricamento in corso…';
+
+      try {
+        const response = await fetchWithTimeout('/api/assistant/prompt', {}, 10000);
+        const raw = await response.text();
+        if (!response.ok) {
+          let message = 'Impossibile caricare il prompt';
+          try {
+            const parsed = JSON.parse(raw);
+            message = parsed.message || message;
+          } catch {
+            message = raw || message;
+          }
+          throw new Error(message);
+        }
+
+        let formatted = raw;
+        try {
+          const parsed = JSON.parse(raw);
+          formatted = JSON.stringify(parsed, null, 2);
+        } catch {
+          // leave raw formatting
+        }
+
+        systemPromptEditor.value = formatted;
+        await updatePromptPreview(raw);
+
+        if (showStatus) {
+          clearStatusAnimation();
+          setStatus('✓ Prompt caricato', 'idle');
+          setTimeout(() => setStatus('Pronto', 'idle'), 3000);
+        }
+      } catch (err) {
+        systemPromptPreviewEl.textContent = 'Errore caricamento: ' + err.message;
+        if (showStatus) {
+          clearStatusAnimation();
+          setStatus('✗ ' + err.message, 'error');
+          setTimeout(() => setStatus('Pronto', 'idle'), 5000);
+        }
+      }
+    }
+
+    async function savePromptDefinition() {
+      promptSaveBtn.disabled = true;
+      setStatusAnimated('Salvataggio prompt', 'busy');
+      try {
+        const response = await fetchWithTimeout('/api/assistant/prompt', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: systemPromptEditor.value
+        }, 10000);
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.message || 'Salvataggio non riuscito');
+        }
+        clearStatusAnimation();
+        setStatus('✓ Prompt salvato', 'idle');
+        await loadPromptDefinition(false);
+      } catch (err) {
+        clearStatusAnimation();
+        setStatus('✗ ' + err.message, 'error');
+        setTimeout(() => setStatus('Pronto', 'idle'), 5000);
+      } finally {
+        promptSaveBtn.disabled = false;
       }
     }
 
@@ -929,6 +1179,11 @@
         appendMessage('assistant', answer, buildMeta(payload), payload.output || '');
         await loadConversationHistory();
 
+        // Refresh variables after command execution
+        if (payload.command && payload.command !== 'none') {
+          await refreshPromptVariables();
+        }
+
         clearStatusAnimation();
         if (!hasTranscription) {
           setStatus('✗ Trascrizione non disponibile', 'error');
@@ -964,6 +1219,17 @@
     });
     saveSettingsBtn.addEventListener('click', saveVoiceSettings);
     refreshModelsBtn.addEventListener('click', () => refreshModels());
+    promptReloadBtn.addEventListener('click', () => loadPromptDefinition());
+    promptSaveBtn.addEventListener('click', savePromptDefinition);
+    systemPromptEditor.addEventListener('input', () => {
+      if (promptPreviewTimer) {
+        clearTimeout(promptPreviewTimer);
+      }
+      promptPreviewTimer = setTimeout(() => {
+        updatePromptPreview(systemPromptEditor.value);
+        promptPreviewTimer = null;
+      }, 600);
+    });
     resetMemoryBtn.addEventListener('click', resetConversationBuffer);
     shrinkMemoryBtn.addEventListener('click', () => adjustConversationLimit(-5));
     expandMemoryBtn.addEventListener('click', () => adjustConversationLimit(5));

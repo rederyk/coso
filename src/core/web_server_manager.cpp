@@ -120,6 +120,10 @@ void WebServerManager::registerRoutes() {
     server_->on("/api/assistant/conversation/limit", HTTP_POST, [this]() { handleAssistantConversationLimit(); });
     server_->on("/api/assistant/settings", HTTP_GET, [this]() { handleAssistantSettingsGet(); });
     server_->on("/api/assistant/settings", HTTP_POST, [this]() { handleAssistantSettingsPost(); });
+    server_->on("/api/assistant/prompt", HTTP_GET, [this]() { handleAssistantPromptGet(); });
+    server_->on("/api/assistant/prompt", HTTP_POST, [this]() { handleAssistantPromptPost(); });
+    server_->on("/api/assistant/prompt/preview", HTTP_POST, [this]() { handleAssistantPromptPreview(); });
+    server_->on("/api/assistant/prompt/variables", HTTP_GET, [this]() { handleAssistantPromptVariables(); });
     server_->on("/api/assistant/models", HTTP_GET, [this]() { handleAssistantModels(); });
     server_->on("/api/health", HTTP_GET, [this]() { handleApiHealth(); });
     server_->on("/api/fs/list", HTTP_GET, [this]() { handleFsList(); });
@@ -579,6 +583,113 @@ void WebServerManager::handleAssistantSettingsPost() {
     }
 
     sendJson(200, "{\"status\":\"success\",\"message\":\"Impostazioni aggiornate\"}");
+}
+
+void WebServerManager::handleAssistantPromptGet() {
+    File file = LittleFS.open(VOICE_ASSISTANT_PROMPT_JSON_PATH, FILE_READ);
+    if (!file) {
+        sendJson(500, "{\"status\":\"error\",\"message\":\"Impossibile leggere il prompt\"}");
+        return;
+    }
+
+    String payload;
+    while (file.available()) {
+        payload += file.readString();
+    }
+    file.close();
+
+    if (payload.isEmpty()) {
+        sendJson(500, "{\"status\":\"error\",\"message\":\"Prompt vuoto\"}");
+        return;
+    }
+
+    sendJson(200, payload);
+}
+
+void WebServerManager::handleAssistantPromptPost() {
+    String body = server_->arg("plain");
+    if (body.isEmpty()) {
+        sendJson(400, "{\"status\":\"error\",\"message\":\"Empty body\"}");
+        return;
+    }
+
+    VoiceAssistant& assistant = VoiceAssistant::getInstance();
+    std::string error;
+    if (!assistant.savePromptDefinition(std::string(body.c_str()), error)) {
+        StaticJsonDocument<256> response;
+        response["status"] = "error";
+        response["message"] = error.empty() ? "Salvataggio non riuscito" : error.c_str();
+        String payload;
+        serializeJson(response, payload);
+        sendJson(400, payload);
+        return;
+    }
+
+    sendJson(200, "{\"status\":\"success\",\"message\":\"Prompt aggiornato\"}");
+}
+
+void WebServerManager::handleAssistantPromptPreview() {
+    String body = server_->arg("plain");
+    if (body.isEmpty()) {
+        sendJson(400, "{\"status\":\"error\",\"message\":\"Empty body\"}");
+        return;
+    }
+
+    VoiceAssistant& assistant = VoiceAssistant::getInstance();
+    std::string error;
+    std::string rendered;
+    if (!assistant.buildPromptFromJson(std::string(body.c_str()), error, rendered)) {
+        StaticJsonDocument<256> response;
+        response["status"] = "error";
+        response["message"] = error.empty() ? "Anteprima non disponibile" : error.c_str();
+        String payload;
+        serializeJson(response, payload);
+        sendJson(400, payload);
+        return;
+    }
+
+    // Get active variables to show in preview
+    auto variables = assistant.getSystemPromptVariables();
+
+    DynamicJsonDocument response(4096);
+    response["status"] = "success";
+    response["resolvedPrompt"] = rendered.c_str();
+
+    // Add variables info
+    JsonObject vars = response.createNestedObject("variables");
+    for (const auto& pair : variables) {
+        std::string value = pair.second;
+        if (value.length() > 500) {
+            value = value.substr(0, 497) + "...";
+        }
+        vars[pair.first.c_str()] = value.c_str();
+    }
+
+    String payload;
+    serializeJson(response, payload);
+    sendJson(200, payload);
+}
+
+void WebServerManager::handleAssistantPromptVariables() {
+    VoiceAssistant& assistant = VoiceAssistant::getInstance();
+    auto variables = assistant.getSystemPromptVariables();
+
+    DynamicJsonDocument doc(4096);
+    doc["status"] = "success";
+    JsonObject vars = doc.createNestedObject("variables");
+
+    for (const auto& pair : variables) {
+        // Truncate very long values for display
+        std::string value = pair.second;
+        if (value.length() > 500) {
+            value = value.substr(0, 497) + "...";
+        }
+        vars[pair.first.c_str()] = value.c_str();
+    }
+
+    String payload;
+    serializeJson(doc, payload);
+    sendJson(200, payload);
 }
 
 void WebServerManager::handleAssistantModels() {

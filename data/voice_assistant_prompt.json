@@ -24,6 +24,7 @@
     "**Quando false:** comandi semplici (volume_up, brightness_down) o risposte gia formattate.\n",
     "**Esempi:**\n",
     "{\"command\": \"lua_script\", \"args\": [\"webData.read_data('weather.json')\"], \"text\": \"Sto leggendo i dati meteo\", \"should_refine_output\": true, \"refinement_extract\": \"text\"}\n",
-    "{\"command\": \"volume_up\", \"args\": [], \"text\": \"Volume aumentato\", \"should_refine_output\": false}"
+    "{\"command\": \"volume_up\", \"args\": [], \"text\": \"Volume aumentato\", \"should_refine_output\": false}\n",
+    "**VARIABILI DINAMICHE:** Rispondi con un template che può includere `{{last_command_name}}`, `{{last_command_text}}`, `{{last_command_raw_output}}`, `{{last_command_refined_output}}` o `{{command_<nome_comando>_output}}` / `{{command_<nome_comando>_refined_output}}`. Queste variabili vengono aggiornate automaticamente dopo ogni comando che restituisce testo (es. lettura memoria o fetch web) per poter incollare file di memoria o lo stato del dispositivo direttamente nel system prompt.\n"
   ]
 }

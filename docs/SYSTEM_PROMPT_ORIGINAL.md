@@ -11,3 +11,9 @@ Durante l'esecuzione `VoiceAssistant::getSystemPrompt()` segue questi passi:
 4. Appende tutti i blocchi testuali contenuti in `sections`.
 
 Aggiorna la descrizione del prompt modificando `data/voice_assistant_prompt.json` e caricandolo su LittleFS; il sistema userà sempre la versione più recente salvata sul filesystem.
+
+Puoi anche inserire variabili dinamiche richiamando `VoiceAssistant::setSystemPromptVariable()` (es. da un comando custom) oppure sfruttare i placeholder già aggiornati automaticamente:
+- `{{last_command_name}}` e `{{last_command_text}}` riportano rispettivamente il nome del comando appena eseguito e la risposta conversazionale dell'assistente.
+- `{{last_command_raw_output}}` / `{{last_command_refined_output}}` contengono l'ultimo output tecnico grezzo e la versione raffinata, se disponibile.
+- `{{command_<nome_comando>_output}}` / `{{command_<nome_comando>_refined_output}}` permettono di riutilizzare l'output (grezzo o raffinato) di uno specifico comando: il nome viene normalizzato in minuscolo e i caratteri non alfanumerici sono sostituiti con `_`.
+Queste variabili sono aggiornate automaticamente dopo ogni comando che restituisce testo (es. lettura di file di memoria, fetch web o status system) e permettono di incollare queste informazioni direttamente nel system prompt prima di inviare la richiesta all'LLM.

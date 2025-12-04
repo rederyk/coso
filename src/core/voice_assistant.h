@@ -10,6 +10,7 @@
 #include <atomic>
 #include <mutex>
 #include <queue>
+#include <unordered_map>
 
 #include "core/voice_assistant_prompt.h"
 #include "core/command_center.h"
@@ -109,6 +110,13 @@ public:
 
     /** Build the current system prompt, including the active command list */
     std::string getSystemPrompt() const;
+    void reloadPromptDefinition();
+    bool buildPromptFromJson(const std::string& raw_json, std::string& error, std::string& output) const;
+    bool savePromptDefinition(const std::string& raw_json, std::string& error);
+    void setSystemPromptVariable(const std::string& key, const std::string& value);
+    void clearSystemPromptVariable(const std::string& key);
+    void clearSystemPromptVariables();
+    std::unordered_map<std::string, std::string> getSystemPromptVariables() const;
 
     /** Fetch available models from Ollama API */
     bool fetchOllamaModels(const std::string& base_url, std::vector<std::string>& models);
@@ -206,4 +214,11 @@ private:
 
     LuaSandbox lua_sandbox_;  // Lua scripting engine
     std::mutex lua_mutex_;
+    std::unordered_map<std::string, std::string> prompt_variables_;
+    mutable std::mutex prompt_variables_mutex_;
+
+    void captureCommandOutputVariables(const VoiceCommand& cmd);
+    std::string composeSystemPrompt(const std::string& override_template,
+                                    const VoiceAssistantPromptDefinition& prompt_definition) const;
+    std::string resolvePromptVariables(std::string prompt) const;
 };
