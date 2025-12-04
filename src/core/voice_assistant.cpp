@@ -45,6 +45,61 @@ constexpr uint32_t RECORDING_DURATION_SECONDS = 0;
 // Assistant recordings directory (separate from test recordings)
 constexpr const char* ASSISTANT_RECORDINGS_DIR = "/assistant_recordings";
 
+std::string joinArgs(const std::vector<std::string>& args) {
+    std::string joined;
+    for (size_t i = 0; i < args.size(); ++i) {
+        if (i > 0) {
+            joined += ", ";
+        }
+        joined += args[i];
+    }
+    return joined;
+}
+
+std::string formatConversationEntry(const ConversationEntry& entry) {
+    std::string content;
+    if (!entry.text.empty()) {
+        content = entry.text;
+    } else if (!entry.transcription.empty()) {
+        content = entry.transcription;
+    }
+
+    const bool is_assistant = entry.role == "assistant";
+    const bool is_user = entry.role == "user";
+
+    if (is_assistant && !entry.command.empty()) {
+        if (!content.empty()) {
+            content += "\n";
+        }
+        content += "Command: " + entry.command;
+        if (!entry.args.empty()) {
+            content += " (";
+            content += joinArgs(entry.args);
+            content += ")";
+        }
+    } else if (is_user && !entry.transcription.empty() && entry.transcription != entry.text) {
+        if (!content.empty()) {
+            content += "\n";
+        }
+        content += "Transcript: " + entry.transcription;
+    }
+
+    if (content.empty() && !entry.command.empty()) {
+        content = "Command: " + entry.command;
+        if (!entry.args.empty()) {
+            content += " (";
+            content += joinArgs(entry.args);
+            content += ")";
+        }
+    }
+
+    if (content.empty()) {
+        content = entry.transcription;
+    }
+
+    return content;
+}
+
 } // namespace
 
 VoiceAssistant& VoiceAssistant::getInstance() {
@@ -372,6 +427,23 @@ void VoiceAssistant::aiProcessingTask(void* param) {
                         }
                     } else {
                         LOG_E("Failed to parse command from LLM response");
+                        // Fallback: use raw LLM response as text if JSON parsing fails
+                        cmd.command = "none";
+                        cmd.text = llm_response;
+                        cmd.args.clear();
+
+                        LOG_I("Using raw LLM response as fallback text");
+                        ConversationBuffer::getInstance().addAssistantMessage(llm_response,
+                                                                             "none",
+                                                                             std::vector<std::string>(),
+                                                                             cmd.transcription);
+
+                        // Send fallback response to queue
+                        VoiceCommand* cmd_copy = new VoiceCommand(cmd);
+                        if (xQueueSend(va->voiceCommandQueue_, &cmd_copy, pdMS_TO_TICKS(100)) != pdPASS) {
+                            LOG_W("Voice command queue full");
+                            delete cmd_copy;
+                        }
                     }
                 } else {
                     LOG_E("LLM request failed or empty response");
@@ -672,6 +744,20 @@ bool VoiceAssistant::makeGPTRequest(const std::string& prompt, std::string& resp
     }
 
     const std::string system_prompt = getSystemPrompt();
+    const std::vector<ConversationEntry> conversation_history = ConversationBuffer::getInstance().getEntries();
+    const bool prompt_recorded = [&]() {
+        if (conversation_history.empty()) {
+            return false;
+        }
+        const ConversationEntry& last = conversation_history.back();
+        if (last.role != "user") {
+            return false;
+        }
+        if (!last.text.empty()) {
+            return last.text == prompt;
+        }
+        return last.transcription == prompt;
+    }();
 
     auto buildRequestBody = [&](const std::string& model, std::string& out) -> bool {
         // Build JSON request body using cJSON
@@ -695,10 +781,37 @@ bool VoiceAssistant::makeGPTRequest(const std::string& prompt, std::string& resp
         cJSON_AddStringToObject(system_msg, "content", system_prompt.c_str());
         cJSON_AddItemToArray(messages, system_msg);
 
-        cJSON* user_msg = cJSON_CreateObject();
-        cJSON_AddStringToObject(user_msg, "role", "user");
-        cJSON_AddStringToObject(user_msg, "content", prompt.c_str());
-        cJSON_AddItemToArray(messages, user_msg);
+        auto append_message = [&](const std::string& role, const std::string& content) -> bool {
+            if (content.empty()) {
+                return true;
+            }
+            cJSON* msg = cJSON_CreateObject();
+            if (!msg) {
+                return false;
+            }
+            cJSON_AddStringToObject(msg, "role", role.c_str());
+            cJSON_AddStringToObject(msg, "content", content.c_str());
+            cJSON_AddItemToArray(messages, msg);
+            return true;
+        };
+
+        for (const auto& entry : conversation_history) {
+            const std::string role = entry.role == "assistant" ? "assistant" : "user";
+            const std::string content = formatConversationEntry(entry);
+            if (!append_message(role, content)) {
+                LOG_E("Failed to append conversation entry to request");
+                cJSON_Delete(root);
+                return false;
+            }
+        }
+
+        if (!prompt_recorded) {
+            if (!append_message("user", prompt)) {
+                LOG_E("Failed to append fallback user prompt");
+                cJSON_Delete(root);
+                return false;
+            }
+        }
 
         cJSON_AddItemToObject(root, "messages", messages);
         cJSON_AddNumberToObject(root, "temperature", 0.7);

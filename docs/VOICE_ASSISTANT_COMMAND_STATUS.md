@@ -33,6 +33,10 @@ Legenda stato:
 - Il system prompt ora descrive ogni comando con la relativa descrizione e inserisce dinamicamente l'elenco degli host BLE accoppiati, così l'LLM può usare direttamente i MAC corretti (`src/core/voice_assistant.cpp:1116-1169`).
 - Il template guida il modello nell'uso dei nuovi comandi `bt_type`, `bt_send_key`, `bt_mouse_move` e `bt_click`, accettando combo stile `ctrl+alt+delete` e alias per i pulsanti del mouse (`src/core/voice_assistant_prompt.h:4-13`).
 
+### Memoria conversazionale
+- Il `ConversationBuffer` persiste gli ultimi turni (utente/assistant) e viene ora serializzato nel payload `messages` inviato alla GPT/Ollama chat API, includendo testo e metadata dei comandi eseguiti (`src/core/voice_assistant.cpp:729-813`).
+- Se per qualche motivo l'ultimo turno utente non è ancora stato salvato, il prompt corrente viene aggiunto come fallback, così il modello riceve sempre l'input più recente anche in presenza di errori di storage (`src/core/voice_assistant.cpp:729-797`).
+
 ## Funzionalità generali del dispositivo
 
 | Funzione | Stato | Dettagli / Fonte |
