@@ -104,10 +104,10 @@ public:
     void startDirectedAdvertising(const NimBLEAddress& address, uint32_t timeout_seconds = 15);
 
     // HID convenience methods
-    void sendKey(uint8_t keycode, uint8_t modifier = 0, BleHidTarget target = BleHidTarget::ALL, const std::string& specific_mac = "");
-    void sendText(const std::string& text, BleHidTarget target = BleHidTarget::ALL, const std::string& specific_mac = "");
-    void sendMouseMove(int8_t dx, int8_t dy, int8_t wheel = 0, uint8_t buttons = 0, BleHidTarget target = BleHidTarget::ALL, const std::string& specific_mac = "");
-    void mouseClick(uint8_t buttons, BleHidTarget target = BleHidTarget::ALL, const std::string& specific_mac = "");
+    bool sendKey(uint8_t keycode, uint8_t modifier = 0, BleHidTarget target = BleHidTarget::ALL, const std::string& specific_mac = "");
+    bool sendText(const std::string& text, BleHidTarget target = BleHidTarget::ALL, const std::string& specific_mac = "");
+    bool sendMouseMove(int8_t dx, int8_t dy, int8_t wheel = 0, uint8_t buttons = 0, BleHidTarget target = BleHidTarget::ALL, const std::string& specific_mac = "");
+    bool mouseClick(uint8_t buttons, BleHidTarget target = BleHidTarget::ALL, const std::string& specific_mac = "");
 
     // Client/Central convenience methods
     void startScan(uint32_t duration_ms = 5000);

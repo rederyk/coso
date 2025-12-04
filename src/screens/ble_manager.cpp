@@ -314,7 +314,7 @@ void BleManager::startDirectedAdvertising(const NimBLEAddress& address, uint32_t
     postCommand(cmd);
 }
 
-void BleManager::sendKey(uint8_t keycode, uint8_t modifier, BleHidTarget target, const std::string& specific_mac) {
+bool BleManager::sendKey(uint8_t keycode, uint8_t modifier, BleHidTarget target, const std::string& specific_mac) {
     BleCommand cmd;
     cmd.type = BleCommandType::SEND_KEY;
     cmd.uint8_param = keycode;
@@ -324,10 +324,10 @@ void BleManager::sendKey(uint8_t keycode, uint8_t modifier, BleHidTarget target,
         strncpy(cmd.target_mac, specific_mac.c_str(), sizeof(cmd.target_mac) - 1);
         cmd.target_mac[sizeof(cmd.target_mac) - 1] = '\0';
     }
-    postCommand(cmd);
+    return postCommand(cmd);
 }
 
-void BleManager::sendText(const std::string& text, BleHidTarget target, const std::string& specific_mac) {
+bool BleManager::sendText(const std::string& text, BleHidTarget target, const std::string& specific_mac) {
     BleCommand cmd;
     cmd.type = BleCommandType::SEND_TEXT;
     strncpy(cmd.str_param, text.c_str(), sizeof(cmd.str_param) - 1);
@@ -337,10 +337,10 @@ void BleManager::sendText(const std::string& text, BleHidTarget target, const st
         strncpy(cmd.target_mac, specific_mac.c_str(), sizeof(cmd.target_mac) - 1);
         cmd.target_mac[sizeof(cmd.target_mac) - 1] = '\0';
     }
-    postCommand(cmd);
+    return postCommand(cmd);
 }
 
-void BleManager::sendMouseMove(int8_t dx, int8_t dy, int8_t wheel, uint8_t buttons, BleHidTarget target, const std::string& specific_mac) {
+bool BleManager::sendMouseMove(int8_t dx, int8_t dy, int8_t wheel, uint8_t buttons, BleHidTarget target, const std::string& specific_mac) {
     BleCommand cmd;
     cmd.type = BleCommandType::SEND_MOUSE_MOVE;
     cmd.int8_param = dx;
@@ -352,10 +352,10 @@ void BleManager::sendMouseMove(int8_t dx, int8_t dy, int8_t wheel, uint8_t butto
         strncpy(cmd.target_mac, specific_mac.c_str(), sizeof(cmd.target_mac) - 1);
         cmd.target_mac[sizeof(cmd.target_mac) - 1] = '\0';
     }
-    postCommand(cmd);
+    return postCommand(cmd);
 }
 
-void BleManager::mouseClick(uint8_t buttons, BleHidTarget target, const std::string& specific_mac) {
+bool BleManager::mouseClick(uint8_t buttons, BleHidTarget target, const std::string& specific_mac) {
     BleCommand cmd;
     cmd.type = BleCommandType::MOUSE_CLICK;
     cmd.uint8_param = buttons;
@@ -364,7 +364,7 @@ void BleManager::mouseClick(uint8_t buttons, BleHidTarget target, const std::str
         strncpy(cmd.target_mac, specific_mac.c_str(), sizeof(cmd.target_mac) - 1);
         cmd.target_mac[sizeof(cmd.target_mac) - 1] = '\0';
     }
-    postCommand(cmd);
+    return postCommand(cmd);
 }
 
 // Client/Central convenience methods

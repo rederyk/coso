@@ -1,6 +1,7 @@
 #include "core/command_center.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cstdlib>
 #include <utility>
 
@@ -10,12 +11,187 @@
 
 #include "drivers/sd_card_driver.h"
 #include "drivers/rgb_led_driver.h"
+#include "core/ble_hid_manager.h"
 #include "core/audio_manager.h"
 #include "core/backlight_manager.h"
+#include "screens/ble_manager.h"
 #include "utils/logger.h"
 
 namespace {
 constexpr size_t LOG_TAIL_LINES = 10;
+
+std::string joinArgs(const std::vector<std::string>& args, size_t start) {
+    if (start >= args.size()) {
+        return {};
+    }
+
+    std::string out;
+    for (size_t i = start; i < args.size(); ++i) {
+        if (!out.empty()) {
+            out.push_back(' ');
+        }
+        out += args[i];
+    }
+    return out;
+}
+
+std::string normalizeMacAddress(const std::string& raw) {
+    std::string hex;
+    hex.reserve(12);
+
+    for (char c : raw) {
+        const unsigned char uc = static_cast<unsigned char>(c);
+        if (std::isxdigit(uc)) {
+            hex.push_back(static_cast<char>(std::toupper(uc)));
+        } else if (uc == ':' || uc == '-' || std::isspace(uc)) {
+            continue;
+        } else {
+            return {};
+        }
+    }
+
+    if (hex.size() != 12) {
+        return {};
+    }
+
+    std::string normalized;
+    normalized.reserve(17);
+    for (size_t i = 0; i < 6; ++i) {
+        if (i > 0) {
+            normalized.push_back(':');
+        }
+        normalized.push_back(hex[i * 2]);
+        normalized.push_back(hex[i * 2 + 1]);
+    }
+    return normalized;
+}
+
+CommandResult validateBleTargetHost(const std::string& raw_mac, std::string& normalized_mac) {
+    BleHidManager& ble = BleHidManager::getInstance();
+
+    if (!ble.isInitialized()) {
+        return {false, "BLE stack not initialized"};
+    }
+    if (!ble.isEnabled()) {
+        return {false, "BLE disabled"};
+    }
+
+    normalized_mac = normalizeMacAddress(raw_mac);
+    if (normalized_mac.empty()) {
+        return {false, "Invalid MAC address"};
+    }
+
+    const auto bonded = ble.getBondedPeers();
+    if (bonded.empty()) {
+        return {false, "No bonded BLE hosts"};
+    }
+
+    auto match = std::find_if(bonded.begin(), bonded.end(),
+        [&](const BleHidManager::BondedPeer& peer) {
+            const std::string candidate = normalizeMacAddress(peer.address.toString());
+            return !candidate.empty() && candidate == normalized_mac;
+        });
+
+    if (match == bonded.end()) {
+        return {false, "Host " + normalized_mac + " not bonded"};
+    }
+
+    if (!match->isConnected) {
+        return {false, "Host " + normalized_mac + " not connected"};
+    }
+
+    normalized_mac = match->address.toString();
+    return {true, ""};
+}
+
+bool parseByteToken(const std::string& token, uint8_t& value) {
+    if (token.empty()) {
+        return false;
+    }
+    char* end = nullptr;
+    unsigned long parsed = std::strtoul(token.c_str(), &end, 0);
+    if (!end || *end != '\0') {
+        return false;
+    }
+    if (parsed > 0xFF) {
+        return false;
+    }
+    value = static_cast<uint8_t>(parsed);
+    return true;
+}
+
+bool parseInt8Token(const std::string& token, int8_t& value) {
+    if (token.empty()) {
+        return false;
+    }
+    char* end = nullptr;
+    long parsed = std::strtol(token.c_str(), &end, 10);
+    if (!end || *end != '\0') {
+        return false;
+    }
+    if (parsed < -128 || parsed > 127) {
+        return false;
+    }
+    value = static_cast<int8_t>(parsed);
+    return true;
+}
+
+bool parseMouseButtonsToken(const std::string& token, uint8_t& mask) {
+    if (parseByteToken(token, mask)) {
+        return true;
+    }
+
+    std::string lower;
+    lower.reserve(token.size());
+    for (char c : token) {
+        const unsigned char uc = static_cast<unsigned char>(c);
+        if (std::isspace(uc)) {
+            continue;
+        }
+        lower.push_back(static_cast<char>(std::tolower(uc)));
+    }
+
+    if (lower.empty()) {
+        return false;
+    }
+
+    auto decode = [](const std::string& part, uint8_t& bit) -> bool {
+        if (part == "left" || part == "l" || part == "primary") {
+            bit = 0x01;
+            return true;
+        }
+        if (part == "right" || part == "r" || part == "secondary") {
+            bit = 0x02;
+            return true;
+        }
+        if (part == "middle" || part == "m" || part == "wheel") {
+            bit = 0x04;
+            return true;
+        }
+        return false;
+    };
+
+    size_t start = 0;
+    mask = 0;
+    while (start < lower.size()) {
+        size_t pos = lower.find('+', start);
+        std::string part = lower.substr(start, pos - start);
+        if (part.empty()) {
+            return false;
+        }
+        uint8_t bit = 0;
+        if (!decode(part, bit)) {
+            return false;
+        }
+        mask |= bit;
+        if (pos == std::string::npos) {
+            break;
+        }
+        start = pos + 1;
+    }
+
+    return mask != 0;
+}
 }  // namespace
 
 CommandCenter& CommandCenter::getInstance() {
@@ -205,6 +381,141 @@ void CommandCenter::registerBuiltins() {
             std::string msg = "Pairing with '" + device_name + "' (placeholder)";
             // TODO: Implement BT pairing logic
             return CommandResult{true, msg};
+        });
+
+    registerCommand("bt_type", "Send text to a bonded BLE host",
+        [](const std::vector<std::string>& args) {
+            if (args.size() < 2) {
+                return CommandResult{false, "Usage: bt_type <host_mac> <text>"};
+            }
+
+            std::string normalized_mac;
+            CommandResult validation = validateBleTargetHost(args[0], normalized_mac);
+            if (!validation.success) {
+                return validation;
+            }
+
+            std::string text = joinArgs(args, 1);
+            if (text.empty()) {
+                return CommandResult{false, "Text payload required"};
+            }
+
+            std::string preview = text;
+            constexpr size_t kPreviewLen = 48;
+            if (preview.size() > kPreviewLen) {
+                preview = preview.substr(0, kPreviewLen) + "...";
+            }
+
+            if (!BleManager::getInstance().sendText(text, BleHidTarget::ALL, normalized_mac)) {
+                return CommandResult{false, "BLE queue busy, try again"};
+            }
+
+            Logger::getInstance().infof("[CommandCenter] bt_type -> %s : %s",
+                normalized_mac.c_str(), preview.c_str());
+            return CommandResult{true, "Text sent to " + normalized_mac};
+        });
+
+    registerCommand("bt_send_key", "Send HID keycode to bonded BLE host",
+        [](const std::vector<std::string>& args) {
+            if (args.size() < 2) {
+                return CommandResult{false, "Usage: bt_send_key <host_mac> <keycode> [modifier]"};
+            }
+
+            std::string normalized_mac;
+            CommandResult validation = validateBleTargetHost(args[0], normalized_mac);
+            if (!validation.success) {
+                return validation;
+            }
+
+            uint8_t keycode = 0;
+            if (!parseByteToken(args[1], keycode)) {
+                return CommandResult{false, "Invalid keycode (use decimal or 0xNN)"};
+            }
+
+            uint8_t modifier = 0;
+            if (args.size() >= 3) {
+                if (!parseByteToken(args[2], modifier)) {
+                    return CommandResult{false, "Invalid modifier (use decimal or 0xNN)"};
+                }
+            }
+
+            if (!BleManager::getInstance().sendKey(keycode, modifier, BleHidTarget::ALL, normalized_mac)) {
+                return CommandResult{false, "BLE queue busy, try again"};
+            }
+
+            Logger::getInstance().infof("[CommandCenter] bt_send_key -> %s key=0x%02X mod=0x%02X",
+                normalized_mac.c_str(), keycode, modifier);
+            return CommandResult{true, "Key sent to " + normalized_mac};
+        });
+
+    registerCommand("bt_mouse_move", "Send relative mouse movement to BLE host",
+        [](const std::vector<std::string>& args) {
+            if (args.size() < 3) {
+                return CommandResult{false, "Usage: bt_mouse_move <host_mac> <dx> <dy> [wheel] [buttons]"};
+            }
+
+            std::string normalized_mac;
+            CommandResult validation = validateBleTargetHost(args[0], normalized_mac);
+            if (!validation.success) {
+                return validation;
+            }
+
+            int8_t dx = 0;
+            int8_t dy = 0;
+            if (!parseInt8Token(args[1], dx) || !parseInt8Token(args[2], dy)) {
+                return CommandResult{false, "dx/dy must be integers between -128 and 127"};
+            }
+
+            int8_t wheel = 0;
+            if (args.size() >= 4) {
+                if (!parseInt8Token(args[3], wheel)) {
+                    return CommandResult{false, "wheel must be integer between -128 and 127"};
+                }
+            }
+
+            uint8_t buttons = 0;
+            if (args.size() >= 5) {
+                if (!parseMouseButtonsToken(args[4], buttons)) {
+                    return CommandResult{false, "Invalid mouse buttons (use 0xNN or left/right/middle)"};
+                }
+            }
+
+            if (!BleManager::getInstance().sendMouseMove(dx, dy, wheel, buttons, BleHidTarget::ALL, normalized_mac)) {
+                return CommandResult{false, "BLE queue busy, try again"};
+            }
+
+            Logger::getInstance().infof("[CommandCenter] bt_mouse_move -> %s dx=%d dy=%d wheel=%d btn=%u",
+                normalized_mac.c_str(), dx, dy, wheel, buttons);
+            return CommandResult{true, "Mouse event sent to " + normalized_mac};
+        });
+
+    registerCommand("bt_click", "Send mouse click to BLE host",
+        [](const std::vector<std::string>& args) {
+            if (args.size() < 2) {
+                return CommandResult{false, "Usage: bt_click <host_mac> <buttons>"};
+            }
+
+            std::string normalized_mac;
+            CommandResult validation = validateBleTargetHost(args[0], normalized_mac);
+            if (!validation.success) {
+                return validation;
+            }
+
+            uint8_t buttons = 0;
+            if (!parseMouseButtonsToken(args[1], buttons)) {
+                return CommandResult{false, "Invalid buttons (use 0xNN or left/right/middle)"};
+            }
+            if (buttons == 0) {
+                return CommandResult{false, "Button mask must be > 0"};
+            }
+
+            if (!BleManager::getInstance().mouseClick(buttons, BleHidTarget::ALL, normalized_mac)) {
+                return CommandResult{false, "BLE queue busy, try again"};
+            }
+
+            Logger::getInstance().infof("[CommandCenter] bt_click -> %s buttons=0x%02X",
+                normalized_mac.c_str(), buttons);
+            return CommandResult{true, "Click sent to " + normalized_mac};
         });
 
     // Volume control
