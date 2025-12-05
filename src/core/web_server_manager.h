@@ -71,6 +71,7 @@ private:
     void handleTtsSettingsPost();
     void handleTtsSettingsExport();
     void handleTtsSettingsImport();
+    void handleTtsOptions();
 
     bool normalizeSdPath(const String& raw, std::string& out) const;
     bool sanitizeFilename(const String& raw, std::string& out) const;

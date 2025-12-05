@@ -6,6 +6,8 @@
 #include <WiFi.h>
 #include <cJSON.h>
 #include <esp_heap_caps.h>
+#include <esp_http_client.h>
+#include <esp_timer.h>
 #include <uri/UriBraces.h>
 #include <algorithm>
 #include <cctype>
@@ -28,6 +30,155 @@ constexpr uint32_t SERVER_LOOP_DELAY_MS = 10;
 constexpr uint32_t ASSISTANT_RESPONSE_TIMEOUT_MS = 50000;  // 50 seconds for first model load
 constexpr uint32_t SD_MUTEX_TIMEOUT_MS = 2000;
 constexpr size_t MAX_FS_LIST_ENTRIES = 128;
+constexpr uint32_t TTS_OPTIONS_HTTP_TIMEOUT_MS = 10000;
+constexpr const char* TTS_RESPONSE_FORMATS[] = {"mp3", "opus", "aac", "flac", "wav", "pcm"};
+constexpr uint64_t TTS_OPTIONS_CACHE_TTL_MS = 60000;  // 60 seconds
+
+std::string trimString(std::string value) {
+    const auto first = value.find_first_not_of(" \t\r\n");
+    if (first == std::string::npos) {
+        return {};
+    }
+    const auto last = value.find_last_not_of(" \t\r\n");
+    return value.substr(first, last - first + 1);
+}
+
+std::string deriveTtsAudioBase(const std::string& endpoint) {
+    if (endpoint.empty()) {
+        return {};
+    }
+    std::string normalized = trimString(endpoint);
+    while (normalized.length() > 1 && normalized.back() == '/') {
+        normalized.pop_back();
+    }
+    const size_t last_slash = normalized.rfind('/');
+    if (last_slash == std::string::npos) {
+        return normalized;
+    }
+    return normalized.substr(0, last_slash);
+}
+
+bool httpGetToString(const std::string& url, std::string& out) {
+    out.clear();
+
+    esp_http_client_config_t config = {};
+    config.url = url.c_str();
+    config.method = HTTP_METHOD_GET;
+    config.timeout_ms = TTS_OPTIONS_HTTP_TIMEOUT_MS;
+    config.buffer_size = 2048;
+    config.buffer_size_tx = 1024;
+    config.skip_cert_common_name_check = true;
+
+    esp_http_client_handle_t client = esp_http_client_init(&config);
+    if (!client) {
+        Logger::getInstance().warnf("[WebServer][TTS] Failed to init HTTP client for %s", url.c_str());
+        return false;
+    }
+
+    esp_http_client_set_header(client, "Accept", "application/json");
+
+    esp_err_t err = esp_http_client_perform(client);
+    if (err != ESP_OK) {
+        Logger::getInstance().warnf("[WebServer][TTS] HTTP GET %s failed: %s", url.c_str(), esp_err_to_name(err));
+        esp_http_client_cleanup(client);
+        return false;
+    }
+
+    const int status_code = esp_http_client_get_status_code(client);
+    if (status_code != 200) {
+        Logger::getInstance().warnf("[WebServer][TTS] HTTP GET %s returned %d", url.c_str(), status_code);
+        esp_http_client_cleanup(client);
+        return false;
+    }
+
+    char buffer[512];
+    int read_len = 0;
+    while ((read_len = esp_http_client_read(client, buffer, sizeof(buffer))) > 0) {
+        out.append(buffer, read_len);
+    }
+
+    esp_http_client_cleanup(client);
+    return !out.empty();
+}
+
+uint64_t currentTimeMs() {
+    return static_cast<uint64_t>(esp_timer_get_time() / 1000ULL);
+}
+
+struct TtsOptionsCacheEntry {
+    bool valid = false;
+    bool partial = false;
+    uint64_t last_fetch_ms = 0;
+    std::string endpoint_used;
+    std::string models_error;
+    std::string voices_error;
+    std::vector<std::pair<std::string, std::string>> models;
+    std::vector<std::pair<std::string, std::string>> voices;
+};
+
+TtsOptionsCacheEntry g_tts_options_cache;
+
+void fillDocWithCachedOptions(const TtsOptionsCacheEntry& cache, DynamicJsonDocument& doc) {
+    doc["success"] = true;
+    doc["needsRefresh"] = false;
+    doc["partial"] = cache.partial;
+    doc["endpointUsed"] = cache.endpoint_used.c_str();
+    doc["modelsError"] = cache.models_error.c_str();
+    doc["voicesError"] = cache.voices_error.c_str();
+    doc["cacheAgeMs"] = currentTimeMs() - cache.last_fetch_ms;
+
+    JsonArray models_arr = doc.createNestedArray("models");
+    for (const auto& model : cache.models) {
+        JsonObject obj = models_arr.createNestedObject();
+        obj["id"] = model.first.c_str();
+        obj["name"] = model.second.c_str();
+    }
+
+    JsonArray voices_arr = doc.createNestedArray("voices");
+    for (const auto& voice : cache.voices) {
+        JsonObject obj = voices_arr.createNestedObject();
+        obj["id"] = voice.first.c_str();
+        obj["name"] = voice.second.c_str();
+    }
+}
+
+void updateTtsOptionsCache(const DynamicJsonDocument& doc) {
+    if (!doc["success"] || doc["needsRefresh"]) {
+        return;
+    }
+
+    TtsOptionsCacheEntry updated;
+    updated.valid = true;
+    updated.partial = doc["partial"] | false;
+    updated.last_fetch_ms = currentTimeMs();
+    updated.endpoint_used = doc["endpointUsed"] | "";
+    updated.models_error = doc["modelsError"] | "";
+    updated.voices_error = doc["voicesError"] | "";
+
+    JsonArrayConst models = doc["models"].as<JsonArrayConst>();
+    if (!models.isNull()) {
+        for (JsonVariantConst item : models) {
+            const char* id = item["id"] | nullptr;
+            const char* name = item["name"] | id;
+            if (id && id[0] != '\0') {
+                updated.models.emplace_back(id, (name && name[0] != '\0') ? name : id);
+            }
+        }
+    }
+
+    JsonArrayConst voices = doc["voices"].as<JsonArrayConst>();
+    if (!voices.isNull()) {
+        for (JsonVariantConst item : voices) {
+            const char* id = item["id"] | nullptr;
+            const char* name = item["name"] | id;
+            if (id && id[0] != '\0') {
+                updated.voices.emplace_back(id, (name && name[0] != '\0') ? name : id);
+            }
+        }
+    }
+
+    g_tts_options_cache = std::move(updated);
+}
 
 class SdMutexGuard {
 public:
@@ -179,6 +330,7 @@ void WebServerManager::registerRoutes() {
     server_->on("/api/tts/settings", HTTP_POST, [this]() { handleTtsSettingsPost(); });
     server_->on("/api/tts/settings/export", HTTP_GET, [this]() { handleTtsSettingsExport(); });
     server_->on("/api/tts/settings/import", HTTP_POST, [this]() { handleTtsSettingsImport(); });
+    server_->on("/api/tts/options", HTTP_GET, [this]() { handleTtsOptions(); });
 
     server_->on("/api/health", HTTP_GET, [this]() { handleApiHealth(); });
     server_->on("/api/fs/list", HTTP_GET, [this]() { handleFsList(); });
@@ -1924,4 +2076,182 @@ void WebServerManager::handleTtsSettingsImport() {
     }
 
     sendJson(200, "{\"success\":true,\"message\":\"TTS settings imported successfully\"}");
+}
+
+void WebServerManager::handleTtsOptions() {
+    SettingsManager& settings = SettingsManager::getInstance();
+    const SettingsSnapshot& snapshot = settings.getSnapshot();
+
+    DynamicJsonDocument doc(4096);
+    doc["success"] = false;
+    doc["localApiMode"] = snapshot.localApiMode;
+    doc["configuredLocalEndpoint"] = snapshot.ttsLocalEndpoint.c_str();
+
+    JsonArray formats_arr = doc.createNestedArray("formats");
+    for (const char* fmt : TTS_RESPONSE_FORMATS) {
+        formats_arr.add(fmt);
+    }
+    JsonArray models_arr;
+    JsonArray voices_arr;
+
+    const bool refresh_requested =
+        server_ && server_->hasArg("refresh") &&
+        (server_->arg("refresh").equalsIgnoreCase("1") || server_->arg("refresh").equalsIgnoreCase("true"));
+    doc["refreshRequested"] = refresh_requested;
+
+    const uint64_t now = currentTimeMs();
+    const bool cache_valid =
+        g_tts_options_cache.valid && (now - g_tts_options_cache.last_fetch_ms) <= TTS_OPTIONS_CACHE_TTL_MS;
+
+    if (!refresh_requested) {
+        if (cache_valid) {
+            fillDocWithCachedOptions(g_tts_options_cache, doc);
+            doc["message"] = "Opzioni TTS da cache recente";
+        } else {
+            doc["success"] = true;
+            doc["partial"] = true;
+            doc["needsRefresh"] = true;
+            doc["message"] = "Premi \"Aggiorna elenco\" per interrogare l'API locale.";
+            doc["endpointUsed"] = snapshot.ttsLocalEndpoint.c_str();
+        }
+
+        String response;
+        serializeJson(doc, response);
+        sendJson(200, response);
+        return;
+    }
+
+    if (WiFi.status() != WL_CONNECTED) {
+        doc["message"] = "WiFi non connesso";
+        doc["needsRefresh"] = true;
+        String response;
+        serializeJson(doc, response);
+        sendJson(503, response);
+        return;
+    }
+
+    if (snapshot.ttsLocalEndpoint.empty()) {
+        doc["message"] = "Endpoint TTS locale non configurato";
+        doc["needsRefresh"] = true;
+        String response;
+        serializeJson(doc, response);
+        sendJson(400, response);
+        return;
+    }
+
+    const std::string audio_base = deriveTtsAudioBase(snapshot.ttsLocalEndpoint);
+    if (audio_base.empty()) {
+        doc["message"] = "Impossibile derivare il percorso /v1/audio dall'endpoint configurato";
+        doc["needsRefresh"] = true;
+        String response;
+        serializeJson(doc, response);
+        sendJson(400, response);
+        return;
+    }
+
+    doc["apiBase"] = audio_base.c_str();
+    doc["endpointUsed"] = snapshot.ttsLocalEndpoint.c_str();
+
+    bool models_ok = false;
+    bool voices_ok = false;
+
+    models_arr = doc.createNestedArray("models");
+    voices_arr = doc.createNestedArray("voices");
+
+    {
+        std::string models_body;
+        const std::string models_url = audio_base + "/models";
+        if (httpGetToString(models_url, models_body)) {
+            DynamicJsonDocument models_doc(4096);
+            auto err = deserializeJson(models_doc, models_body);
+            if (!err) {
+                JsonArrayConst src = models_doc["models"].as<JsonArrayConst>();
+                if (!src.isNull()) {
+                    for (JsonVariantConst item : src) {
+                        const char* id = nullptr;
+                        if (item.is<JsonObjectConst>()) {
+                            id = item["id"] | nullptr;
+                            const char* name = item["name"] | id;
+                            if (id && id[0] != '\0') {
+                                JsonObject model_obj = models_arr.createNestedObject();
+                                model_obj["id"] = id;
+                                model_obj["name"] = (name && name[0] != '\0') ? name : id;
+                            }
+                        } else if (item.is<const char*>()) {
+                            id = item.as<const char*>();
+                            if (id && id[0] != '\0') {
+                                JsonObject model_obj = models_arr.createNestedObject();
+                                model_obj["id"] = id;
+                                model_obj["name"] = id;
+                            }
+                        }
+                    }
+                }
+                models_ok = true;
+            } else {
+                Logger::getInstance().warnf("[WebServer][TTS] Invalid JSON from %s: %s", models_url.c_str(), err.c_str());
+                doc["modelsError"] = "JSON /models non valido";
+            }
+        } else {
+            doc["modelsError"] = "Richiesta /models fallita";
+        }
+    }
+
+    {
+        std::string voices_body;
+        const std::string voices_url = audio_base + "/voices";
+        if (httpGetToString(voices_url, voices_body)) {
+            DynamicJsonDocument voices_doc(16384);
+            auto err = deserializeJson(voices_doc, voices_body);
+            if (!err) {
+                JsonArrayConst src = voices_doc["voices"].as<JsonArrayConst>();
+                if (!src.isNull()) {
+                    for (JsonVariantConst item : src) {
+                        if (!item.is<JsonObjectConst>()) {
+                            continue;
+                        }
+                        const char* id = item["id"] | nullptr;
+                        const char* name = item["name"] | id;
+                        if (id && id[0] != '\0') {
+                            JsonObject voice_obj = voices_arr.createNestedObject();
+                            voice_obj["id"] = id;
+                            voice_obj["name"] = (name && name[0] != '\0') ? name : id;
+                        }
+                    }
+                }
+                voices_ok = true;
+            } else {
+                Logger::getInstance().warnf("[WebServer][TTS] Invalid JSON from %s: %s", voices_url.c_str(), err.c_str());
+                doc["voicesError"] = "JSON /voices non valido";
+            }
+        } else {
+            doc["voicesError"] = "Richiesta /voices fallita";
+        }
+    }
+
+    if (!models_ok && !voices_ok) {
+        if (!doc.containsKey("message")) {
+            doc["message"] = "Impossibile recuperare modelli e voci dal server TTS locale";
+        }
+        doc["needsRefresh"] = true;
+        String response;
+        serializeJson(doc, response);
+        sendJson(502, response);
+        return;
+    }
+
+    doc["success"] = true;
+    doc["needsRefresh"] = false;
+    doc["partial"] = !(models_ok && voices_ok);
+    if (doc["partial"]) {
+        doc["message"] = "Alcuni dati TTS non sono disponibili (controlla models/voices)";
+    } else {
+        doc["message"] = "Opzioni TTS locali aggiornate";
+    }
+
+    updateTtsOptionsCache(doc);
+
+    String response;
+    serializeJson(doc, response);
+    sendJson(200, response);
 }

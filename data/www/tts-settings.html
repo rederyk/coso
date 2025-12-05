@@ -111,6 +111,16 @@
       opacity: 0.5;
       cursor: not-allowed;
     }
+    .ghost-button {
+      background: transparent;
+      color: var(--text);
+      border: 1px solid var(--panel-border);
+      margin-top: 10px;
+    }
+    .ghost-button:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
     #status {
       margin-top: 12px;
       padding: 10px 12px;
@@ -138,6 +148,16 @@
       font-size: 13px;
       color: var(--muted);
       line-height: 1.5;
+    }
+    .info-box.success {
+      border-color: var(--success);
+      color: var(--success);
+      background: rgba(126,231,192,0.12);
+    }
+    .info-box.error {
+      border-color: var(--danger);
+      color: var(--danger);
+      background: rgba(255,123,123,0.12);
     }
     .voice-presets {
       display: grid;
@@ -216,12 +236,19 @@
     </div>
 
     <div class="panel">
+      <div class="info-box" id="optionsStatus">
+        I modelli e le voci disponibili verranno caricati automaticamente dall'API locale (es. TTS WebUI).
+      </div>
+      <button type="button" id="refreshOptionsBtn" class="ghost-button">↻ Aggiorna elenco da API locale</button>
+
       <div class="form-group">
         <label>
           Voice
           <div class="label-desc">TTS voice for synthesis</div>
         </label>
-        <input type="text" id="ttsVoice" placeholder="alloy">
+        <input type="text" id="ttsVoice" placeholder="alloy" list="ttsVoiceOptions">
+        <datalist id="ttsVoiceOptions"></datalist>
+        <div class="label-desc" id="voiceListMeta">Voci locali non caricate</div>
 
         <div class="label-desc" style="margin-top: 10px; margin-bottom: 4px;">OpenAI Voices:</div>
         <div class="voice-presets">
@@ -240,7 +267,9 @@
             Model
             <div class="label-desc">TTS model (e.g., tts-1, tts-1-hd)</div>
           </label>
-          <input type="text" id="ttsModel" placeholder="tts-1">
+          <input type="text" id="ttsModel" placeholder="tts-1" list="ttsModelOptions">
+          <datalist id="ttsModelOptions"></datalist>
+          <div class="label-desc" id="modelListMeta">Modelli locali non caricati</div>
         </div>
 
         <div class="form-group">
@@ -253,6 +282,8 @@
             <option value="opus">Opus</option>
             <option value="aac">AAC</option>
             <option value="flac">FLAC</option>
+            <option value="wav">WAV</option>
+            <option value="pcm">PCM</option>
           </select>
         </div>
       </div>
@@ -286,6 +317,7 @@
 
   <script src="app-nav.js" defer></script>
   <script>
+    const defaultFormats = ["mp3", "opus", "aac", "flac", "wav", "pcm"];
     let settings = {};
 
     async function loadSettings() {
@@ -322,6 +354,119 @@
       });
     }
 
+    function setOptionsStatus(message, type = 'info', tooltip = '') {
+      const statusEl = document.getElementById('optionsStatus');
+      if (!statusEl) return;
+      statusEl.textContent = message;
+      statusEl.title = tooltip || '';
+      statusEl.classList.remove('success', 'error');
+      if (type === 'success') {
+        statusEl.classList.add('success');
+      } else if (type === 'error') {
+        statusEl.classList.add('error');
+      }
+    }
+
+    function populateModelOptions(models = []) {
+      const datalist = document.getElementById('ttsModelOptions');
+      const meta = document.getElementById('modelListMeta');
+      if (!datalist || !meta) return;
+      datalist.innerHTML = '';
+      (models || []).forEach(model => {
+        if (!model || !model.id) return;
+        const option = document.createElement('option');
+        option.value = model.id;
+        option.label = model.name || model.id;
+        datalist.appendChild(option);
+      });
+      meta.textContent = (models && models.length)
+        ? `Modelli locali: ${models.length}`
+        : 'Nessun modello rilevato';
+    }
+
+    function populateVoiceOptions(voices = []) {
+      const datalist = document.getElementById('ttsVoiceOptions');
+      const meta = document.getElementById('voiceListMeta');
+      if (!datalist || !meta) return;
+      datalist.innerHTML = '';
+      (voices || []).forEach(voice => {
+        if (!voice || !voice.id) return;
+        const option = document.createElement('option');
+        option.value = voice.id;
+        option.label = voice.name || voice.id;
+        datalist.appendChild(option);
+      });
+      meta.textContent = (voices && voices.length)
+        ? `Voci locali: ${voices.length}`
+        : 'Nessuna voce rilevata';
+    }
+
+    function populateFormatOptions(formats = defaultFormats) {
+      const select = document.getElementById('ttsOutputFormat');
+      if (!select) return;
+      const list = Array.isArray(formats) && formats.length ? formats : defaultFormats;
+      const unique = [...new Set(list)];
+      const current = settings.ttsOutputFormat || select.value || 'mp3';
+      select.innerHTML = '';
+      unique.forEach(fmt => {
+        if (!fmt) return;
+        const option = document.createElement('option');
+        option.value = fmt;
+        option.textContent = fmt.toUpperCase();
+        if (fmt === current) {
+          option.selected = true;
+        }
+        select.appendChild(option);
+      });
+    }
+
+    async function loadTtsOptions(options = {}) {
+      const { refresh = false, showToast = false } = options;
+      setOptionsStatus(refresh ? 'Aggiornamento elenco TTS locale...' : 'In attesa di aggiornamento manuale...');
+      populateFormatOptions(defaultFormats);
+      try {
+        const url = refresh ? '/api/tts/options?refresh=1' : '/api/tts/options';
+        const response = await fetch(url);
+        const data = await response.json();
+
+        populateFormatOptions(data.formats || defaultFormats);
+
+        if (Array.isArray(data.models)) {
+          populateModelOptions(data.models);
+        }
+        if (Array.isArray(data.voices)) {
+          populateVoiceOptions(data.voices);
+        }
+
+        const tooltip = [data.modelsError, data.voicesError].filter(Boolean).join(' · ');
+        if (!data.success) {
+          const msg = data.message || 'Richiesta non riuscita';
+          setOptionsStatus(msg, 'error', tooltip);
+          if (showToast) {
+            showStatus(msg, 'error');
+          }
+          return;
+        }
+
+        if (data.needsRefresh) {
+          setOptionsStatus(data.message || 'Premi "Aggiorna elenco" per interrogare il server', 'error', tooltip);
+        } else {
+          const summary = data.message || `Endpoint: ${data.endpointUsed || 'n/d'} · Modelli: ${(data.models || []).length} · Voci: ${(data.voices || []).length}`;
+          const statusType = data.partial ? 'error' : 'success';
+          setOptionsStatus(summary + (data.partial ? ' (parziale)' : ''), statusType, tooltip);
+        }
+
+        if (showToast) {
+          showStatus('Elenco TTS aggiornato', 'success');
+        }
+      } catch (error) {
+        setOptionsStatus('Impossibile recuperare le opzioni TTS: ' + error.message, 'error');
+        if (showToast) {
+          showStatus('Errore durante l\'aggiornamento delle opzioni TTS', 'error');
+        }
+      }
+    }
+
     async function saveSettings() {
       const payload = {
         ttsEnabled: document.getElementById('ttsEnabled').checked,
@@ -344,6 +489,7 @@
         if (data.success) {
           showStatus('Settings saved successfully', 'success');
           await loadSettings();
+          await loadTtsOptions({ refresh: true, showToast: true });
         } else {
           showStatus(data.message || 'Save failed', 'error');
         }
@@ -356,6 +502,7 @@
       const statusEl = document.getElementById('status');
       statusEl.textContent = message;
       statusEl.className = type;
+      statusEl.style.display = 'block';
       setTimeout(() => {
         statusEl.className = '';
         statusEl.style.display = 'none';
@@ -378,9 +525,13 @@
       updateVoiceSelection(e.target.value);
     });
 
+    document.getElementById('refreshOptionsBtn').addEventListener('click', () => loadTtsOptions({ refresh: true, showToast: true }));
     document.getElementById('saveBtn').addEventListener('click', saveSettings);
 
-    loadSettings();
+    (async () => {
+      await loadSettings();
+      await loadTtsOptions();
+    })();
   </script>
 </body>
 </html>
