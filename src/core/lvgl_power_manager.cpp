@@ -60,22 +60,19 @@ bool LVGLPowerManager::suspend() {
         ESP_LOGD(TAG, "LVGL mutex already owned by current task - skipping lock");
     }
 
-    // Pause all LVGL timers
+    // Pause all LVGL timers (saves CPU, objects remain in PSRAM)
     pauseLVGLTimers();
 
-    // Clean caches and temporary buffers
+    // Clean caches and temporary buffers (minimal DRAM impact)
     cleanLVGLCaches();
 
-    // Destroy LVGL UI resources to free heap
-    AppManager* app_manager = AppManager::getInstance();
-    if (app_manager && app_manager->isInitialized()) {
-        last_active_app_id = app_manager->getCurrentAppId();
-        if (last_active_app_id.empty()) {
-            last_active_app_id = "dashboard";
-        }
-        app_manager->destroyUI();
-        ui_resources_released = true;
-    }
+    // NOTE: We do NOT destroy UI objects - they stay in PSRAM (7.9 MB available)
+    // This approach:
+    // - Avoids crashes on resume (no need to recreate objects)
+    // - PSRAM is abundant, no need to free it
+    // - Only saves CPU by pausing timers and rendering
+    // If DRAM optimization is needed, focus on display buffers instead
+    ui_resources_released = false;
 
     lvgl_state = LVGLState::SUSPENDED;
 
@@ -123,19 +120,17 @@ bool LVGLPowerManager::resume() {
         ESP_LOGD(TAG, "LVGL mutex already owned by current task - skipping lock");
     }
 
-    // Resume timers
+    // Resume timers - UI objects were never destroyed, so this is safe
     resumeLVGLTimers();
 
-    // Rebuild UI resources if they were released during suspend
-    AppManager* app_manager = AppManager::getInstance();
-    if (app_manager && app_manager->isInitialized() && ui_resources_released) {
-        app_manager->restoreUI(last_active_app_id);
-        ui_resources_released = false;
+    // Force full refresh to update the screen
+    lv_obj_t* scr = lv_scr_act();
+    if (scr) {
+        lv_obj_invalidate(scr);
+        lv_refr_now(NULL);
+    } else {
+        ESP_LOGW(TAG, "No active screen found after resume");
     }
-
-    // Force full refresh
-    lv_obj_invalidate(lv_scr_act());
-    lv_refr_now(NULL);
 
     lvgl_state = LVGLState::ACTIVE;
     last_activity_time = millis();
@@ -328,8 +323,8 @@ void LVGLPowerManager::cleanLVGLCaches() {
 
     // Get default display
     lv_disp_t* disp = lv_disp_get_default();
-    if (disp) {
-        // Clean display cache
+    if (disp && disp->act_scr) {
+        // Clean display cache only if there's an active screen
         lv_disp_clean_dcache(disp);
     }
 
