@@ -1096,26 +1096,69 @@ bool VoiceAssistant::makeTTSRequest(const std::string& text, std::string& output
              timeinfo->tm_hour, timeinfo->tm_min, timeinfo->tm_sec,
              settings.ttsOutputFormat.c_str());
 
-    // Create output directory if it doesn't exist
+    // Parse output path to determine filesystem
     std::string output_dir = settings.ttsOutputPath;
-    if (!LittleFS.exists(output_dir.c_str())) {
-        LOG_I("Creating TTS output directory: %s", output_dir.c_str());
-        // Create directory recursively
-        size_t pos = 0;
-        while ((pos = output_dir.find('/', pos + 1)) != std::string::npos) {
-            std::string subdir = output_dir.substr(0, pos);
-            if (!LittleFS.exists(subdir.c_str())) {
-                LittleFS.mkdir(subdir.c_str());
-            }
-        }
-        LittleFS.mkdir(output_dir.c_str());
+    bool use_littlefs = false;
+    std::string actual_path;
+
+    if (output_dir.find("/littlefs/") == 0) {
+        // LittleFS mode
+        use_littlefs = true;
+        actual_path = output_dir.substr(9);  // Remove "/littlefs" prefix
+        LOG_I("Using LittleFS with path: %s", actual_path.c_str());
+    } else if (output_dir.find("/sd/") == 0) {
+        // SD card mode
+        use_littlefs = false;
+        actual_path = output_dir.substr(3);  // Remove "/sd" prefix
+        LOG_I("Using SD card with path: %s", actual_path.c_str());
+    } else {
+        // Fallback to SD card
+        use_littlefs = false;
+        actual_path = output_dir;
+        LOG_I("Path doesn't start with /littlefs/ or /sd/, defaulting to SD card with path: %s", actual_path.c_str());
     }
 
-    // Build full output path
+    // Create output directory if it doesn't exist
+    if (use_littlefs) {
+        if (!LittleFS.exists(actual_path.c_str())) {
+            LOG_I("Creating TTS output directory on LittleFS: %s", actual_path.c_str());
+            // Create directory recursively
+            size_t pos = 0;
+            while ((pos = actual_path.find('/', pos + 1)) != std::string::npos) {
+                std::string subdir = actual_path.substr(0, pos);
+                if (!LittleFS.exists(subdir.c_str())) {
+                    LittleFS.mkdir(subdir.c_str());
+                }
+            }
+            LittleFS.mkdir(actual_path.c_str());
+        }
+    } else {
+        if (!SD_MMC.exists(actual_path.c_str())) {
+            LOG_I("Creating TTS output directory on SD card: %s", actual_path.c_str());
+            // Create directory recursively
+            size_t pos = 0;
+            while ((pos = actual_path.find('/', pos + 1)) != std::string::npos) {
+                std::string subdir = actual_path.substr(0, pos);
+                if (!SD_MMC.exists(subdir.c_str())) {
+                    SD_MMC.mkdir(subdir.c_str());
+                }
+            }
+            SD_MMC.mkdir(actual_path.c_str());
+        }
+    }
+
+    // Build full output path (for logging purposes, keep the original prefix)
+    std::string file_path_on_fs = actual_path + "/" + filename;
     output_file_path = output_dir + "/" + filename;
 
     // Write audio data to file
-    File file = LittleFS.open(output_file_path.c_str(), FILE_WRITE);
+    File file;
+    if (use_littlefs) {
+        file = LittleFS.open(file_path_on_fs.c_str(), FILE_WRITE);
+    } else {
+        file = SD_MMC.open(file_path_on_fs.c_str(), FILE_WRITE);
+    }
+
     if (!file) {
         LOG_E("Failed to open file for writing: %s", output_file_path.c_str());
         return false;

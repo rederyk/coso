@@ -61,7 +61,7 @@ struct SettingsSnapshot {
     std::string ttsModel = "hexgrad/Kokoro-82M";  // TTS model name (Local: hexgrad/Kokoro-82M; OpenAI: tts-1)
     float ttsSpeed = 1.0f;  // Speech speed (0.25 to 4.0)
     std::string ttsOutputFormat = "mp3";  // Output format: mp3, opus, aac, flac
-    std::string ttsOutputPath = "/littlefs/data/memory/audio";  // Where to save TTS audio files
+    std::string ttsOutputPath = "/memory/audio";  // Where to save TTS audio files
 
     // Theme
     std::string theme;

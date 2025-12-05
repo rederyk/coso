@@ -3,7 +3,7 @@
   "description": "Sintesi vocale tramite TTS WebUI (OpenAI-compatible API) - genera e salva file audio da testo",
   "concepts": {
     "speak": "Converte testo in audio e salva in memoria (path configurabile)",
-    "output_path": "File salvati in /littlefs/data/memory/audio/ (configurabile)",
+    "output_path": "File salvati in /memory/audio/ (configurabile)",
     "formats": "mp3, opus, aac, flac (default: mp3)",
     "voices": "alloy, echo, fable, onyx, nova, shimmer (OpenAI voices)",
     "speed": "0.25 - 4.0 (default: 1.0)"
@@ -38,7 +38,7 @@
     "output_format": "mp3"
   },
   "return_values": {
-    "success": "Ritorna percorso file salvato (es: '/littlefs/data/memory/audio/tts_20250112_143022.mp3')",
+    "success": "Ritorna percorso file salvato (es: '/memory/audio/tts_20250112_143022.mp3')",
     "failure": "Ritorna nil + messaggio errore"
   },
   "when_to_use": [

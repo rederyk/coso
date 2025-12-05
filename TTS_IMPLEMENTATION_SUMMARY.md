@@ -32,7 +32,7 @@ std::string ttsVoice = "alloy";
 std::string ttsModel = "tts-1";
 float ttsSpeed = 1.0f;
 std::string ttsOutputFormat = "mp3";
-std::string ttsOutputPath = "/littlefs/data/memory/audio";
+std::string ttsOutputPath = "/memory/audio";
 ```
 
 ### 2. **voice_assistant.h** e **voice_assistant.cpp**
@@ -132,7 +132,7 @@ end
 - `text` (string): Testo da convertire in audio
 
 **Return:**
-- **Success**: Percorso file salvato (es: `/littlefs/data/memory/audio/tts_20250112_143022.mp3`)
+- **Success**: Percorso file salvato (es: `/memory/audio/tts_20250112_143022.mp3`)
 - **Failure**: `nil, error_message`
 
 **Esempio:**
@@ -224,7 +224,7 @@ tts_20250112_143022.mp3
 
 ### Path Default
 ```
-/littlefs/data/memory/audio/
+/memory/audio/
 ```
 
 ### Formati Supportati

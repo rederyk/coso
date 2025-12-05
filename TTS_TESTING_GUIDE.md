@@ -53,7 +53,7 @@ ttsVoice = "alloy"
 ttsModel = "tts-1"
 ttsSpeed = 1.0
 ttsOutputFormat = "mp3"
-ttsOutputPath = "/littlefs/data/memory/audio"
+ttsOutputPath = "/memory/audio"
 ```
 
 #### C. Riavvia Voice Assistant
@@ -90,7 +90,7 @@ end
 [VoiceAssistant] Using LOCAL TTS API at: http://192.168.1.51:7778/v1/audio/speech
 [VoiceAssistant] HTTP Status: 200
 [VoiceAssistant] Received 45320 bytes of audio data
-[VoiceAssistant] TTS audio saved to: /littlefs/data/memory/audio/tts_20250112_143022.mp3
+[VoiceAssistant] TTS audio saved to: /memory/audio/tts_20250112_143022.mp3
 ```
 
 #### Test 2: TTS Semplice

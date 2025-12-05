@@ -34,7 +34,7 @@ L'IA genererà automaticamente:
 ```lua
 local response = "A Roma ci sono 20 gradi"
 local audio_file = tts.speak(response)
-return audio_file  -- es: /littlefs/data/memory/audio/tts_20250112_143022.mp3
+return audio_file  -- es: /memory/audio/tts_20250112_143022.mp3
 ```
 
 ## Esempi Pratici

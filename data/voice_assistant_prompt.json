@@ -52,7 +52,7 @@
     "end\n",
     "```\n\n",
     "**IMPORTANTE:** tts.speak() ritorna:\n",
-    "- **Success**: percorso file (es: '/littlefs/data/memory/audio/tts_20250112_143022.mp3')\n",
+    "- **Success**: percorso file (es: '/memory/audio/tts_20250112_143022.mp3')\n",
     "- **Failure**: nil + messaggio errore\n\n",
     "Per riprodurre l'audio generato usa: `radio.play(audio_file_path)`\n\n"
   ]
