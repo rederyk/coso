@@ -53,6 +53,7 @@
 #include "ui/ui_symbols.h"
 #include "utils/logger.h"
 #include "utils/lvgl_mutex.h"
+#include "lvgl_power_manager.h"
 
 // ========== CONFIGURAZIONE BUFFER LVGL ==========
 // Modifica LVGL_BUFFER_MODE in platformio.ini per testare diverse modalità:
@@ -201,6 +202,8 @@ static void tft_flush_cb(lv_disp_drv_t* drv, const lv_area_t* area, lv_color_t* 
 static void lv_tick_handler(void*) {
     lv_tick_inc(1);
 }
+
+static TaskHandle_t s_lvgl_task_handle = nullptr;
 
 static void lvgl_task(void*) {
     while (true) {
@@ -645,10 +648,22 @@ void setup() {
 
     logger.info("[System] Memory logging started (every 60 seconds)");
 
+    // Initialize LVGL Power Manager
+    logger.info("[LVGLPower] Initializing LVGL Power Manager");
+    LVGLPowerMgr.init();
+    LVGLPowerMgr.setAutoSuspendEnabled(false);  // DISABLED for now - causes freezes
+    LVGLPowerMgr.setAutoSuspendTimeout(30000);  // 30 seconds idle timeout
+    logger.info("[LVGLPower] Power manager ready - manual mode only");
+    logger.warn("[LVGLPower] Auto-suspend DISABLED - use manual switchToVoiceMode() instead");
+    LVGLPowerMgr.printMemoryStats();
 
 }
 
 void loop() {
+    // Update LVGL Power Manager (checks for auto-suspend)
+    // NOTE: Auto-suspend disabled for now, so this just resets idle timer
+    LVGLPowerMgr.update();
+
     // Audio manager tick (required for playback)
     AudioManager::getInstance().tick();
 

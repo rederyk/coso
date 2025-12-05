@@ -98,6 +98,7 @@ public:
                       uint32_t icon_symbol_color,
                       uint8_t border_radius,
                       uint8_t icon_radius);
+    void destroy();
 
 private:
     struct LauncherItem {

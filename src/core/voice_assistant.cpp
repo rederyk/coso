@@ -10,6 +10,7 @@
 #include "peripheral/gpio_manager.h"
 #include "utils/logger.h"
 #include <esp_http_client.h>
+#include <esp_heap_caps.h>
 #include <cstring>
 #include <sstream>
 #include <WiFi.h>
@@ -34,9 +35,9 @@ constexpr const char* TAG = "VoiceAssistant";
 constexpr UBaseType_t RECORDING_TASK_PRIORITY = 4;
 constexpr size_t RECORDING_TASK_STACK = 4096;
 constexpr UBaseType_t STT_TASK_PRIORITY = 3;
-constexpr size_t STT_TASK_STACK = 8192;
+constexpr size_t STT_TASK_STACK = 8192;  // Need 8KB for HTTP operations (will use PSRAM with CONFIG_SPIRAM_ALLOW_STACK_EXTERNAL_MEMORY)
 constexpr UBaseType_t AI_TASK_PRIORITY = 3;
-constexpr size_t AI_TASK_STACK = 8192;
+constexpr size_t AI_TASK_STACK = 8192;   // Need 8KB for HTTP/TTS operations (will use PSRAM with CONFIG_SPIRAM_ALLOW_STACK_EXTERNAL_MEMORY)
 
 // Queue sizes
 constexpr size_t AUDIO_QUEUE_SIZE = 5;
@@ -286,15 +287,26 @@ bool VoiceAssistant::begin() {
     // Set initialized_ before creating worker tasks so they don't exit immediately
     initialized_ = true;
 
-    // Create tasks
+    // Log memory before task creation
+    LOG_I("Memory before task creation: free=%u, largest=%u",
+          heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+          heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
+
+    // Create tasks with reduced stack sizes
     // Note: Recording task is created on-demand when startRecording() is called
     BaseType_t stt_result = xTaskCreatePinnedToCore(
         speechToTextTask, "speech_to_text", STT_TASK_STACK,
         this, STT_TASK_PRIORITY, &sttTask_, tskNO_AFFINITY);
 
+    LOG_I("STT task result: %d, free mem: %u", stt_result,
+          heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
+
     BaseType_t ai_result = xTaskCreatePinnedToCore(
         aiProcessingTask, "ai_processing", AI_TASK_STACK,
         this, AI_TASK_PRIORITY, &aiTask_, tskNO_AFFINITY);
+
+    LOG_I("AI task result: %d, free mem: %u", ai_result,
+          heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
 
     if (stt_result != pdPASS || ai_result != pdPASS) {
         LOG_E("Failed to create assistant tasks (stt=%d, ai=%d)", stt_result, ai_result);
@@ -1218,7 +1230,10 @@ bool VoiceAssistant::makeGPTRequest(const std::string& prompt, std::string& resp
     }
 
     const std::string system_prompt = getSystemPrompt();
+    LOG_I("System prompt size: %d bytes", system_prompt.length());
+
     const std::vector<ConversationEntry> conversation_history = ConversationBuffer::getInstance().getEntries();
+    LOG_I("Conversation history entries: %d", conversation_history.size());
     const bool prompt_recorded = [&]() {
         if (conversation_history.empty()) {
             return false;
@@ -1306,16 +1321,35 @@ bool VoiceAssistant::makeGPTRequest(const std::string& prompt, std::string& resp
 
     // Buffer for response
     std::string response_buffer;
-    response_buffer.reserve(2048);
+    response_buffer.reserve(4096);  // Increased buffer size
 
-    // HTTP client event handler
+    // HTTP client event handler with improved error handling
     auto http_event_handler = [](esp_http_client_event_t *evt) -> esp_err_t {
         std::string* response = static_cast<std::string*>(evt->user_data);
         switch(evt->event_id) {
+            case HTTP_EVENT_ERROR:
+                LOG_E("HTTP_EVENT_ERROR");
+                break;
+            case HTTP_EVENT_ON_CONNECTED:
+                LOG_I("HTTP_EVENT_ON_CONNECTED");
+                break;
+            case HTTP_EVENT_HEADER_SENT:
+                LOG_I("HTTP_EVENT_HEADER_SENT");
+                break;
+            case HTTP_EVENT_ON_HEADER:
+                LOG_I("HTTP_EVENT_ON_HEADER: %s: %s", evt->header_key, evt->header_value);
+                break;
             case HTTP_EVENT_ON_DATA:
                 if (response && evt->data_len > 0) {
+                    LOG_I("HTTP_EVENT_ON_DATA: %d bytes", evt->data_len);
                     response->append((char*)evt->data, evt->data_len);
                 }
+                break;
+            case HTTP_EVENT_ON_FINISH:
+                LOG_I("HTTP_EVENT_ON_FINISH");
+                break;
+            case HTTP_EVENT_DISCONNECTED:
+                LOG_I("HTTP_EVENT_DISCONNECTED");
                 break;
             default:
                 break;
@@ -1340,9 +1374,10 @@ bool VoiceAssistant::makeGPTRequest(const std::string& prompt, std::string& resp
         config.method = HTTP_METHOD_POST;
         config.event_handler = http_event_handler;
         config.user_data = &response_buffer;
-        config.timeout_ms = 45000;  // 45 second timeout for LLM (first model load can take 30-40s)
-        config.buffer_size = 8192;  // Increased buffer for large responses
+        config.timeout_ms = 90000;  // 90 second timeout for large models (20B can take 60-80s)
+        config.buffer_size = 16384;  // Large buffer for responses
         config.buffer_size_tx = 8192;
+        config.is_async = false;  // Synchronous mode for better stability
 
         esp_http_client_handle_t client = esp_http_client_init(&config);
         if (!client) {
@@ -1364,15 +1399,27 @@ bool VoiceAssistant::makeGPTRequest(const std::string& prompt, std::string& resp
         esp_http_client_set_post_field(client, request_body.c_str(), request_body.length());
 
         // Perform request
+        LOG_I("Sending HTTP request to LLM...");
         esp_err_t err = esp_http_client_perform(client);
+
+        int status_code = esp_http_client_get_status_code(client);
+        int content_length = esp_http_client_get_content_length(client);
+
         if (err != ESP_OK) {
-            LOG_E("HTTP request failed: %s", esp_err_to_name(err));
+            LOG_E("HTTP request failed: %s (status=%d, content_len=%d)",
+                  esp_err_to_name(err), status_code, content_length);
             esp_http_client_cleanup(client);
+
+            // If network error, don't retry with fallback model
+            if (err == ESP_ERR_HTTP_CONNECT || err == ESP_ERR_HTTP_FETCH_HEADER) {
+                LOG_E("Network error - check LLM server availability at %s", gpt_url.c_str());
+                return false;
+            }
             return false;
         }
 
-        int status_code = esp_http_client_get_status_code(client);
-        LOG_I("HTTP Status: %d", status_code);
+        LOG_I("HTTP Status: %d, Content-Length: %d, Response size: %d",
+              status_code, content_length, response_buffer.size());
 
         esp_http_client_cleanup(client);
 
@@ -1841,12 +1888,24 @@ bool VoiceAssistant::getLastResponse(VoiceCommand& response, uint32_t timeout_ms
         return false;
     }
 
-    VoiceCommand* cmd = nullptr;
-    if (xQueueReceive(voiceCommandQueue_, &cmd, pdMS_TO_TICKS(timeout_ms)) == pdPASS) {
-        if (cmd) {
-            response = *cmd;
-            delete cmd;
-            return true;
+    // Poll with shorter intervals to prevent watchdog timeout
+    const uint32_t poll_interval_ms = 500;  // Check every 500ms
+    uint32_t elapsed_ms = 0;
+
+    while (elapsed_ms < timeout_ms) {
+        VoiceCommand* cmd = nullptr;
+        if (xQueueReceive(voiceCommandQueue_, &cmd, pdMS_TO_TICKS(poll_interval_ms)) == pdPASS) {
+            if (cmd) {
+                response = *cmd;
+                delete cmd;
+                return true;
+            }
+        }
+        elapsed_ms += poll_interval_ms;
+
+        // Feed the watchdog to prevent timeout during long LLM waits
+        if (elapsed_ms % 2000 == 0) {  // Every 2 seconds
+            LOG_I("Waiting for LLM response... (%d/%d ms)", elapsed_ms, timeout_ms);
         }
     }
 
@@ -1980,12 +2039,10 @@ bool VoiceAssistant::resolveAndSavePrompt(const std::string& raw_json,
         return false;
     }
 
-    // 2. Esegui auto_populate per popolare le variabili
-    LOG_I("[resolveAndSavePrompt] Executing auto_populate commands...");
-    if (!executeAutoPopulateCommands(raw_json, error)) {
-        LOG_W("[resolveAndSavePrompt] Auto-populate failed: %s", error.c_str());
-        // Continue anyway, some variables might still be populated
-    }
+    // 2. Auto-populate disabled to improve performance and reliability
+    // if (!executeAutoPopulateCommands(raw_json, error)) {
+    //     LOG_W("[resolveAndSavePrompt] Auto-populate failed: %s", error.c_str());
+    // }
 
     // 3. Risolvi le sections sostituendo i placeholder
     std::vector<std::string> resolved_sections;

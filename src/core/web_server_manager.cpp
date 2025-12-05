@@ -27,7 +27,7 @@
 namespace {
 constexpr const char* DEFAULT_ROOT = "/www/index.html";
 constexpr uint32_t SERVER_LOOP_DELAY_MS = 10;
-constexpr uint32_t ASSISTANT_RESPONSE_TIMEOUT_MS = 8000;  // 8 seconds (below TWDT timeout to prevent watchdog kill)
+constexpr uint32_t ASSISTANT_RESPONSE_TIMEOUT_MS = 120000;  // 120 seconds for slow LLM models (e.g., Ollama 20B)
 constexpr uint32_t SD_MUTEX_TIMEOUT_MS = 2000;
 constexpr size_t MAX_FS_LIST_ENTRIES = 128;
 constexpr uint32_t TTS_OPTIONS_HTTP_TIMEOUT_MS = 10000;

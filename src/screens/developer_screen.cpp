@@ -5,6 +5,7 @@
 #include "screens/ble_manager.h"
 #include "core/settings_manager.h"
 #include "utils/logger.h"
+#include "lvgl_power_manager.h"
 #include <esp_heap_caps.h>
 #include <Arduino.h>
 #include <SD_MMC.h>
@@ -168,6 +169,51 @@ void DeveloperScreen::build(lv_obj_t* parent) {
     lv_obj_t* restore_btn_label = lv_label_create(restore_btn);
     lv_label_set_text(restore_btn_label, "Restore from SD Card");
     lv_obj_center(restore_btn_label);
+
+    // TEST: LVGL Power Manager buttons
+    lv_obj_t* power_card = lv_obj_create(content_container);
+    lv_obj_remove_style_all(power_card);
+    lv_obj_set_width(power_card, LV_PCT(100));
+    lv_obj_set_layout(power_card, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(power_card, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_all(power_card, 14, 0);
+    lv_obj_set_style_pad_row(power_card, 6, 0);
+    lv_obj_set_height(power_card, LV_SIZE_CONTENT);
+
+    lv_obj_t* power_title = lv_label_create(power_card);
+    lv_label_set_text(power_title, "LVGL Power Manager TEST");
+    lv_obj_set_style_text_font(power_title, &lv_font_montserrat_16, 0);
+
+    // Suspend LVGL button
+    lv_obj_t* suspend_btn = lv_btn_create(power_card);
+    lv_obj_set_width(suspend_btn, LV_PCT(100));
+    lv_obj_set_height(suspend_btn, 48);
+    lv_obj_add_event_cb(suspend_btn, [](lv_event_t* e) {
+        auto& log = Logger::getInstance();
+        log.info("[TEST] Suspending LVGL...");
+        LVGLPowerMgr.printMemoryStats();
+        LVGLPowerMgr.switchToVoiceMode();
+        log.info("[TEST] LVGL suspended. Screen should be black. Touch to resume.");
+        LVGLPowerMgr.printMemoryStats();
+    }, LV_EVENT_CLICKED, nullptr);
+    lv_obj_t* suspend_label = lv_label_create(suspend_btn);
+    lv_label_set_text(suspend_label, "TEST: Suspend LVGL (Free ~100KB)");
+    lv_obj_center(suspend_label);
+
+    // Resume LVGL button
+    lv_obj_t* resume_btn = lv_btn_create(power_card);
+    lv_obj_set_width(resume_btn, LV_PCT(100));
+    lv_obj_set_height(resume_btn, 48);
+    lv_obj_add_event_cb(resume_btn, [](lv_event_t* e) {
+        auto& log = Logger::getInstance();
+        log.info("[TEST] Resuming LVGL...");
+        LVGLPowerMgr.switchToUIMode();
+        log.info("[TEST] LVGL resumed");
+        LVGLPowerMgr.printMemoryStats();
+    }, LV_EVENT_CLICKED, nullptr);
+    lv_obj_t* resume_label = lv_label_create(resume_btn);
+    lv_label_set_text(resume_label, "TEST: Resume LVGL");
+    lv_obj_center(resume_label);
 
     memory_result_label = lv_label_create(memory_card);
     lv_label_set_long_mode(memory_result_label, LV_LABEL_LONG_WRAP);

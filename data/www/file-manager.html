@@ -212,47 +212,6 @@
     .menu-dropdown button:last-child { border-bottom: none; }
     .menu-dropdown button:hover { background: rgba(255,255,255,0.06); }
     .menu-dropdown button.danger { color: var(--danger); }
-    .modal-overlay {
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background: rgba(0,0,0,0.7);
-      display: none;
-      align-items: center;
-      justify-content: center;
-      z-index: 1000;
-      backdrop-filter: blur(8px);
-    }
-    .modal-overlay.show { display: flex; }
-    .modal {
-      background: var(--panel);
-      border: 1px solid var(--panel-border);
-      border-radius: 18px;
-      padding: 24px;
-      max-width: 500px;
-      width: 90%;
-      box-shadow: 0 24px 60px rgba(0,0,0,0.6);
-    }
-    .modal h2 {
-      margin: 0 0 16px 0;
-      font-size: 1.4rem;
-      color: var(--text);
-    }
-    .modal p {
-      margin: 0 0 20px 0;
-      color: var(--muted);
-      line-height: 1.5;
-    }
-    .modal-actions {
-      display: flex;
-      gap: 10px;
-      justify-content: flex-end;
-    }
-    .modal-actions button {
-      flex: 1;
-    }
     @media (max-width: 640px) {
       body { padding: 16px; }
       table { font-size: 13px; }
@@ -291,17 +250,6 @@
     </section>
   </main>
 
-  <div id="conflict-modal" class="modal-overlay">
-    <div class="modal">
-      <h2>Folder already exists</h2>
-      <p id="conflict-message">The folder already exists in the destination. What would you like to do?</p>
-      <div class="modal-actions">
-        <button class="secondary" id="conflict-cancel">Cancel</button>
-        <button id="conflict-merge">Merge</button>
-        <button class="danger" id="conflict-overwrite">Overwrite</button>
-      </div>
-    </div>
-  </div>
 
   <script src="app-nav.js" defer></script>
   <script>
@@ -603,86 +551,14 @@
         }
       }
 
-      // Per ogni cartella root, verifica se esiste e chiedi cosa fare
+      // Upload tutti i file di ogni cartella (merge automatico)
       for (const rootFolder of rootFolders) {
-        const targetPath = joinPath(currentPath, rootFolder);
-        const exists = await checkFolderExists(targetPath);
-
-        if (exists) {
-          const action = await showConflictModal(rootFolder);
-          if (action === 'cancel') {
-            statusEl.textContent = 'Upload cancelled';
-            folderInput.value = '';
-            return;
-          }
-
-          if (action === 'overwrite') {
-            // Elimina la cartella esistente
-            statusEl.textContent = `Removing existing folder ${rootFolder}...`;
-            await fetch('/api/fs/delete', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ path: targetPath })
-            });
-          }
-          // Se merge, non facciamo nulla e procediamo con l'upload
-        }
-
-        // Upload tutti i file della cartella
         const files = folderStructure.get(rootFolder);
         await uploadFolderFiles(files, rootFolder);
       }
 
       folderInput.value = '';
       loadDirectory(currentPath);
-    }
-
-    async function checkFolderExists(path) {
-      try {
-        const res = await fetch(`/api/fs/list?path=${encodeURIComponent(path)}`);
-        return res.ok;
-      } catch {
-        return false;
-      }
-    }
-
-    function showConflictModal(folderName) {
-      return new Promise((resolve) => {
-        const modal = document.getElementById('conflict-modal');
-        const message = document.getElementById('conflict-message');
-        const cancelBtn = document.getElementById('conflict-cancel');
-        const mergeBtn = document.getElementById('conflict-merge');
-        const overwriteBtn = document.getElementById('conflict-overwrite');
-
-        message.textContent = `The folder "${folderName}" already exists. What would you like to do?`;
-        modal.classList.add('show');
-
-        const cleanup = () => {
-          modal.classList.remove('show');
-          cancelBtn.removeEventListener('click', onCancel);
-          mergeBtn.removeEventListener('click', onMerge);
-          overwriteBtn.removeEventListener('click', onOverwrite);
-        };
-
-        const onCancel = () => {
-          cleanup();
-          resolve('cancel');
-        };
-
-        const onMerge = () => {
-          cleanup();
-          resolve('merge');
-        };
-
-        const onOverwrite = () => {
-          cleanup();
-          resolve('overwrite');
-        };
-
-        cancelBtn.addEventListener('click', onCancel);
-        mergeBtn.addEventListener('click', onMerge);
-        overwriteBtn.addEventListener('click', onOverwrite);
-      });
     }
 
     async function uploadFolderFiles(files, rootFolderName) {
