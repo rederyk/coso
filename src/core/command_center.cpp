@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
+#include <sstream>
 #include <utility>
 
 #include <Arduino.h>
@@ -592,15 +593,74 @@ void CommandCenter::registerBuiltins() {
     // Voice assistant commands
 
     // Radio control
-    registerCommand("radio_play", "Play radio station by name (e.g., 'jazz', 'rock', 'news')",
+    registerCommand("radio_play", "Play radio stream or file (URL or SD path). Without args, returns status",
         [](const std::vector<std::string>& args) {
+            AudioManager& audio = AudioManager::getInstance();
+
+            // No args: return radio/playback status
             if (args.empty()) {
-                return CommandResult{false, "Usage: radio_play <genre/name>"};
+                std::ostringstream status;
+
+                PlayerState state = audio.getState();
+                const char* state_str = "UNKNOWN";
+                switch (state) {
+                    case PlayerState::STOPPED: state_str = "STOPPED"; break;
+                    case PlayerState::PLAYING: state_str = "PLAYING"; break;
+                    case PlayerState::PAUSED: state_str = "PAUSED"; break;
+                    case PlayerState::ENDED: state_str = "ENDED"; break;
+                    case PlayerState::ERROR: state_str = "ERROR"; break;
+                }
+
+                status << "State: " << state_str << "\n";
+                status << "Volume: " << audio.getVolume() << "%\n";
+
+                SourceType source_type = audio.getSourceType();
+                const char* source_str = "NONE";
+                switch (source_type) {
+                    case SourceType::LITTLEFS: source_str = "LITTLEFS"; break;
+                    case SourceType::SD_CARD: source_str = "SD_CARD"; break;
+                    case SourceType::HTTP_STREAM: source_str = "HTTP_STREAM (Timeshift)"; break;
+                }
+                status << "Source: " << source_str << "\n";
+
+                const Metadata& meta = audio.getMetadata();
+                if (meta.title.length() > 0) status << "Title: " << meta.title << "\n";
+                if (meta.artist.length() > 0) status << "Artist: " << meta.artist << "\n";
+
+                uint32_t pos_sec = audio.getCurrentPositionMs() / 1000;
+                uint32_t dur_sec = audio.getTotalDurationMs() / 1000;
+
+                if (source_type == SourceType::HTTP_STREAM) {
+                    status << "Position: " << pos_sec << "s";
+                    if (dur_sec > 0) {
+                        status << " / " << dur_sec << "s (buffered)";
+                    }
+                } else if (dur_sec > 0) {
+                    status << "Position: " << pos_sec << "s / " << dur_sec << "s ("
+                           << ((pos_sec * 100) / dur_sec) << "%)";
+                }
+
+                return CommandResult{true, status.str()};
             }
-            std::string genre = args[0];
-            // TODO: Implement radio selection logic
-            std::string msg = "Playing " + genre + " station (placeholder)";
-            return CommandResult{true, msg};
+
+            // With args: play URL or file
+            std::string source = args[0];
+            bool success = false;
+
+            // Detect if it's a URL (http/https) or file path
+            if (source.find("http://") == 0 || source.find("https://") == 0) {
+                // It's a radio stream URL
+                success = audio.playRadio(source.c_str());
+                return CommandResult{success, success ?
+                    "Radio stream started: " + source :
+                    "Failed to start radio stream"};
+            } else {
+                // It's a file path (SD card or LittleFS)
+                success = audio.playFile(source.c_str());
+                return CommandResult{success, success ?
+                    "Playing file: " + source :
+                    "Failed to play file"};
+            }
         });
 
     // WiFi control

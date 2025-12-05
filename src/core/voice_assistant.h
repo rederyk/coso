@@ -168,6 +168,16 @@ public:
         static int lua_memory_prepend_file(lua_State* L);
         static int lua_memory_grep_files(lua_State* L);
         static int lua_println(lua_State* L);
+
+        // Radio/Audio player functions
+        static int lua_radio_play(lua_State* L);
+        static int lua_radio_stop(lua_State* L);
+        static int lua_radio_pause(lua_State* L);
+        static int lua_radio_resume(lua_State* L);
+        static int lua_radio_status(lua_State* L);
+        static int lua_radio_seek(lua_State* L);
+        static int lua_radio_set_volume(lua_State* L);
+
         void appendOutput(const std::string& text);
         std::string output_buffer_;
     };

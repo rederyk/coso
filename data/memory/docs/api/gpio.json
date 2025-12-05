@@ -1,75 +1,33 @@
 {
   "namespace": "gpio",
-  "description": "Controllo pin GPIO digitali per input/output",
+  "description": "Controllo pin GPIO digitali",
   "functions": {
     "write": {
-      "signature": "gpio.write(pin: number, value: boolean)",
-      "description": "Scrive valore digitale HIGH/LOW su pin GPIO",
-      "parameters": {
-        "pin": {
-          "type": "number",
-          "description": "Numero pin GPIO (es. 23, 25, 26)",
-          "required": true
-        },
-        "value": {
-          "type": "boolean",
-          "description": "true = HIGH (3.3V), false = LOW (0V)",
-          "required": true
-        }
-      },
-      "returns": "void",
+      "signature": "gpio.write(pin, value)",
+      "description": "Scrive HIGH/LOW su pin",
       "examples": [
-        {
-          "code": "gpio.write(23, true)",
-          "description": "Accende pin GPIO 23"
-        },
-        {
-          "code": "gpio.write(25, false)",
-          "description": "Spegne pin GPIO 25"
-        }
+        {"code": "gpio.write(23, true)", "description": "Accende pin 23"},
+        {"code": "gpio.write(25, false)", "description": "Spegne pin 25"}
       ]
     },
     "read": {
-      "signature": "gpio.read(pin: number) -> boolean",
-      "description": "Legge valore digitale da pin GPIO configurato come input",
-      "parameters": {
-        "pin": {
-          "type": "number",
-          "description": "Numero pin GPIO da leggere",
-          "required": true
-        }
-      },
-      "returns": "boolean - true se HIGH, false se LOW",
+      "signature": "gpio.read(pin) -> boolean",
+      "description": "Legge stato pin",
       "examples": [
-        {
-          "code": "local value = gpio.read(26)\nif value then println('Pin HIGH') else println('Pin LOW') end",
-          "description": "Legge e stampa stato pin 26"
-        }
+        {"code": "local value = gpio.read(26)\nif value then println('HIGH') end"}
       ]
     },
     "toggle": {
-      "signature": "gpio.toggle(pin: number)",
-      "description": "Inverte stato corrente del pin GPIO (HIGH -> LOW, LOW -> HIGH)",
-      "parameters": {
-        "pin": {
-          "type": "number",
-          "description": "Numero pin GPIO da invertire",
-          "required": true
-        }
-      },
-      "returns": "void",
+      "signature": "gpio.toggle(pin)",
+      "description": "Inverte stato pin",
       "examples": [
-        {
-          "code": "gpio.toggle(23)",
-          "description": "Inverte stato pin 23"
-        }
+        {"code": "gpio.toggle(23)", "description": "Blink LED"}
       ]
     }
   },
   "notes": [
-    "I pin GPIO supportati dipendono dall'hardware (ESP32 tipicamente GPIO 0-39)",
-    "Alcuni pin sono riservati (UART, SPI, I2C) - verificare pinout",
-    "Tensione output: 3.3V (non 5V tollerante!)",
-    "Corrente massima per pin: ~40mA"
+    "Tensione: 3.3V (NON 5V tollerante!)",
+    "Corrente max: ~40mA per pin",
+    "Pin comuni ESP32-S3: 0-48 (verificare pinout per pin riservati)"
   ]
 }

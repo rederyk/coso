@@ -1,159 +1,35 @@
 {
   "namespace": "system",
-  "description": "Funzioni di sistema per controllo dispositivo e diagnostica",
+  "description": "Informazioni di sistema e diagnostica dispositivo",
   "functions": {
-    "reboot": {
-      "signature": "system.reboot()",
-      "description": "Riavvia il dispositivo (equivalente a reset hardware)",
-      "parameters": {},
-      "returns": "void (non ritorna - device si riavvia)",
-      "examples": [
-        {
-          "code": "println('Riavvio in corso...')\nsystem.reboot()",
-          "description": "Stampa messaggio e riavvia"
-        }
-      ]
+    "ping": {
+      "signature": "system.ping() -> string",
+      "description": "Test connettività (risponde 'pong')",
+      "examples": [{"code": "system.ping()"}]
     },
-    "sleep": {
-      "signature": "system.sleep(seconds: number)",
-      "description": "Entra in deep sleep per secondi specificati (risparmio energetico)",
-      "parameters": {
-        "seconds": {
-          "type": "number",
-          "description": "Durata sleep in secondi (max: ~4294967 secondi = 49 giorni)",
-          "required": true
-        }
-      },
-      "returns": "void (device entra in sleep, risveglio dopo timeout)",
-      "examples": [
-        {
-          "code": "println('Sleep 60 secondi')\nsystem.sleep(60)",
-          "description": "Sleep per 1 minuto"
-        },
-        {
-          "code": "system.sleep(3600)",
-          "description": "Sleep per 1 ora"
-        }
-      ]
+    "uptime": {
+      "signature": "system.uptime() -> string",
+      "description": "Secondi dall'ultimo boot",
+      "examples": [{"code": "local ok, uptime = system.uptime()\nprintln('Uptime: ' .. uptime .. ' secondi')"}]
     },
-    "get_battery": {
-      "signature": "system.get_battery() -> number",
-      "description": "Ottiene livello batteria (0-100%)",
-      "parameters": {},
-      "returns": "number - percentuale batteria (0-100), o -1 se non disponibile",
-      "examples": [
-        {
-          "code": "local battery = system.get_battery()\nif battery < 20 then\n  println('Batteria scarica: ' .. battery .. '%')\nend",
-          "description": "Check batteria e avviso se bassa"
-        },
-        {
-          "code": "println('Batteria: ' .. system.get_battery() .. '%')",
-          "description": "Mostra livello batteria"
-        }
-      ]
+    "heap": {
+      "signature": "system.heap() -> string",
+      "description": "Memoria RAM/PSRAM disponibile",
+      "examples": [{"code": "local ok, heap = system.heap()\nprintln(heap)"}]
     },
-    "get_uptime": {
-      "signature": "system.get_uptime() -> number",
-      "description": "Ottiene tempo di attività dispositivo in secondi dall'ultimo boot",
-      "parameters": {},
-      "returns": "number - uptime in secondi",
-      "examples": [
-        {
-          "code": "local uptime = system.get_uptime()\nlocal hours = math.floor(uptime / 3600)\nprintln('Uptime: ' .. hours .. ' ore')",
-          "description": "Mostra uptime in ore"
-        }
-      ]
+    "sd_status": {
+      "signature": "system.sd_status() -> string",
+      "description": "Stato SD card: montata, spazio totale/usato",
+      "examples": [{"code": "local ok, status = system.sd_status()\nprintln(status)"}]
     },
-    "get_free_heap": {
-      "signature": "system.get_free_heap() -> number",
-      "description": "Ottiene memoria RAM disponibile in bytes",
-      "parameters": {},
-      "returns": "number - RAM libera in bytes",
-      "examples": [
-        {
-          "code": "local free = system.get_free_heap()\nlocal kb = math.floor(free / 1024)\nprintln('RAM libera: ' .. kb .. ' KB')",
-          "description": "Mostra RAM disponibile"
-        }
-      ]
-    },
-    "get_chip_id": {
-      "signature": "system.get_chip_id() -> string",
-      "description": "Ottiene ID univoco del chip ESP32",
-      "parameters": {},
-      "returns": "string - Chip ID (formato esadecimale)",
-      "examples": [
-        {
-          "code": "local id = system.get_chip_id()\nprintln('Device ID: ' .. id)",
-          "description": "Mostra ID dispositivo"
-        }
-      ]
-    },
-    "get_wifi_rssi": {
-      "signature": "system.get_wifi_rssi() -> number",
-      "description": "Ottiene intensità segnale WiFi in dBm",
-      "parameters": {},
-      "returns": "number - RSSI in dBm (tipicamente -30 a -90)",
-      "examples": [
-        {
-          "code": "local rssi = system.get_wifi_rssi()\nif rssi > -50 then\n  println('Segnale WiFi eccellente')\nelseif rssi > -70 then\n  println('Segnale WiFi buono')\nelse\n  println('Segnale WiFi debole')\nend",
-          "description": "Valuta qualità segnale WiFi"
-        }
-      ]
-    },
-    "delay": {
-      "signature": "system.delay(milliseconds: number)",
-      "description": "Pausa esecuzione per millisecondi specificati (blocking)",
-      "parameters": {
-        "milliseconds": {
-          "type": "number",
-          "description": "Durata pausa in millisecondi",
-          "required": true
-        }
-      },
-      "returns": "void",
-      "examples": [
-        {
-          "code": "println('Inizio')\nsystem.delay(2000)\nprintln('Fine dopo 2 secondi')",
-          "description": "Pausa di 2 secondi"
-        },
-        {
-          "code": "gpio.write(23, true)\nsystem.delay(500)\ngpio.write(23, false)",
-          "description": "LED blink con delay"
-        }
-      ]
-    }
-  },
-  "power_management": {
-    "deep_sleep": {
-      "description": "Ultra-low power mode (~10µA)",
-      "wake_sources": ["Timer", "External GPIO"],
-      "note": "RAM non preservata, riavvio dopo wake"
-    },
-    "light_sleep": {
-      "description": "Low power mode con RAM preservata",
-      "consumption": "~0.8mA",
-      "note": "Non disponibile via Lua (usa system.delay())"
-    }
-  },
-  "diagnostics": {
-    "battery_thresholds": {
-      "critical": "< 10%",
-      "low": "10-20%",
-      "normal": "20-80%",
-      "full": "> 80%"
-    },
-    "wifi_rssi_scale": {
-      "excellent": "> -50 dBm",
-      "good": "-50 to -70 dBm",
-      "fair": "-70 to -80 dBm",
-      "poor": "< -80 dBm"
+    "status": {
+      "signature": "system.status() -> string",
+      "description": "Status completo: heap, PSRAM, SD, WiFi",
+      "examples": [{"code": "local ok, status = system.status()\nprintln(status)"}]
     }
   },
   "notes": [
-    "system.reboot() causa riavvio immediato (salva dati prima!)",
-    "Deep sleep resetta RAM - salvare stato in memory/webdata se necessario",
-    "get_battery() richiede hardware ADC configurato",
-    "delay() blocca esecuzione - usare con cautela in loop",
-    "RSSI: più negativo = segnale più debole"
+    "Tutte le funzioni ritornano (success, message)",
+    "Formato output: testo human-readable multi-line"
   ]
 }

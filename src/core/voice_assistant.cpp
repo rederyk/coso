@@ -2007,6 +2007,31 @@ void VoiceAssistant::LuaSandbox::setupSandbox() {
             end
         }
 
+        -- Radio/Audio Player API
+        radio = {
+            play = function(url_or_path)
+                return esp32_radio_play(url_or_path)
+            end,
+            stop = function()
+                return esp32_radio_stop()
+            end,
+            pause = function()
+                return esp32_radio_pause()
+            end,
+            resume = function()
+                return esp32_radio_resume()
+            end,
+            status = function()
+                return esp32_radio_status()
+            end,
+            seek = function(seconds)
+                return esp32_radio_seek(seconds)
+            end,
+            set_volume = function(volume)
+                return esp32_radio_set_volume(volume)
+            end
+        }
+
         -- System API
         system = {
             ping = function()
@@ -2137,6 +2162,15 @@ void VoiceAssistant::LuaSandbox::setupSandbox() {
     lua_register(L, "esp32_memory_append_file", lua_memory_append_file);
     lua_register(L, "esp32_memory_prepend_file", lua_memory_prepend_file);
     lua_register(L, "esp32_memory_grep_files", lua_memory_grep_files);
+
+    // Radio/Audio player functions
+    lua_register(L, "esp32_radio_play", lua_radio_play);
+    lua_register(L, "esp32_radio_stop", lua_radio_stop);
+    lua_register(L, "esp32_radio_pause", lua_radio_pause);
+    lua_register(L, "esp32_radio_resume", lua_radio_resume);
+    lua_register(L, "esp32_radio_status", lua_radio_status);
+    lua_register(L, "esp32_radio_seek", lua_radio_seek);
+    lua_register(L, "esp32_radio_set_volume", lua_radio_set_volume);
 
     // Utility functions
     lua_register(L, "println", lua_println);
@@ -2676,6 +2710,171 @@ void VoiceAssistant::LuaSandbox::appendOutput(const std::string& text) {
         output_buffer_ += '\n';
     }
     output_buffer_ += text;
+}
+
+// Radio/Audio player functions
+int VoiceAssistant::LuaSandbox::lua_radio_play(lua_State* L) {
+    AudioManager& audio = AudioManager::getInstance();
+
+    // Check if argument is provided (URL or file path)
+    if (lua_gettop(L) >= 1 && lua_isstring(L, 1)) {
+        const char* source = lua_tostring(L, 1);
+        bool success = false;
+        std::string error_msg;
+
+        // Detect if it's a URL (http/https) or file path
+        std::string source_str(source);
+        if (source_str.find("http://") == 0 || source_str.find("https://") == 0) {
+            // It's a radio stream URL
+            success = audio.playRadio(source);
+            error_msg = success ? "Radio stream started" : "Failed to start radio stream";
+        } else {
+            // It's a file path (SD card or LittleFS)
+            success = audio.playFile(source);
+            error_msg = success ? "File playback started" : "Failed to play file";
+        }
+
+        lua_pushboolean(L, success);
+        lua_pushstring(L, error_msg.c_str());
+        return 2;
+    }
+
+    // No argument provided - return error
+    lua_pushboolean(L, false);
+    lua_pushstring(L, "Usage: radio.play(url_or_path) - requires URL or file path");
+    return 2;
+}
+
+int VoiceAssistant::LuaSandbox::lua_radio_stop(lua_State* L) {
+    AudioManager& audio = AudioManager::getInstance();
+    audio.stop();
+
+    lua_pushboolean(L, true);
+    lua_pushstring(L, "Playback stopped");
+    return 2;
+}
+
+int VoiceAssistant::LuaSandbox::lua_radio_pause(lua_State* L) {
+    AudioManager& audio = AudioManager::getInstance();
+    audio.setPause(true);
+
+    lua_pushboolean(L, true);
+    lua_pushstring(L, "Playback paused");
+    return 2;
+}
+
+int VoiceAssistant::LuaSandbox::lua_radio_resume(lua_State* L) {
+    AudioManager& audio = AudioManager::getInstance();
+    audio.setPause(false);
+
+    lua_pushboolean(L, true);
+    lua_pushstring(L, "Playback resumed");
+    return 2;
+}
+
+int VoiceAssistant::LuaSandbox::lua_radio_status(lua_State* L) {
+    AudioManager& audio = AudioManager::getInstance();
+
+    // Build status string with comprehensive information
+    std::ostringstream status;
+
+    // Player state
+    PlayerState state = audio.getState();
+    const char* state_str = "UNKNOWN";
+    switch (state) {
+        case PlayerState::STOPPED: state_str = "STOPPED"; break;
+        case PlayerState::PLAYING: state_str = "PLAYING"; break;
+        case PlayerState::PAUSED: state_str = "PAUSED"; break;
+        case PlayerState::ENDED: state_str = "ENDED"; break;
+        case PlayerState::ERROR: state_str = "ERROR"; break;
+    }
+
+    status << "State: " << state_str << "\n";
+    status << "Volume: " << audio.getVolume() << "%\n";
+
+    // Source type
+    SourceType source_type = audio.getSourceType();
+    const char* source_str = "NONE";
+    switch (source_type) {
+        case SourceType::LITTLEFS: source_str = "LITTLEFS"; break;
+        case SourceType::SD_CARD: source_str = "SD_CARD"; break;
+        case SourceType::HTTP_STREAM: source_str = "HTTP_STREAM"; break;
+    }
+    status << "Source: " << source_str << "\n";
+
+    // Metadata (if available)
+    const Metadata& meta = audio.getMetadata();
+    if (meta.title.length() > 0) {
+        status << "Title: " << meta.title << "\n";
+    }
+    if (meta.artist.length() > 0) {
+        status << "Artist: " << meta.artist << "\n";
+    }
+    if (meta.album.length() > 0) {
+        status << "Album: " << meta.album << "\n";
+    }
+
+    // Playback position and duration
+    uint32_t pos_sec = audio.getCurrentPositionMs() / 1000;
+    uint32_t dur_sec = audio.getTotalDurationMs() / 1000;
+
+    if (source_type == SourceType::HTTP_STREAM) {
+        // For streams (timeshift), show buffer info
+        status << "Position: " << pos_sec << "s";
+        if (dur_sec > 0) {
+            status << " / " << dur_sec << "s (buffered)";
+        }
+        status << "\n";
+        status << "Timeshift: Available";
+    } else if (dur_sec > 0) {
+        // For files, show position/duration
+        status << "Position: " << pos_sec << "s / " << dur_sec << "s\n";
+        if (dur_sec > 0) {
+            int progress = (pos_sec * 100) / dur_sec;
+            status << "Progress: " << progress << "%";
+        }
+    }
+
+    std::string status_str = status.str();
+    lua_pushboolean(L, true);
+    lua_pushstring(L, status_str.c_str());
+    return 2;
+}
+
+int VoiceAssistant::LuaSandbox::lua_radio_seek(lua_State* L) {
+    int seconds = luaL_checkinteger(L, 1);
+
+    AudioManager& audio = AudioManager::getInstance();
+    audio.seek(seconds);
+
+    std::ostringstream msg;
+    if (seconds >= 0) {
+        msg << "Seeking forward " << seconds << " seconds";
+    } else {
+        msg << "Seeking backward " << (-seconds) << " seconds";
+    }
+
+    lua_pushboolean(L, true);
+    lua_pushstring(L, msg.str().c_str());
+    return 2;
+}
+
+int VoiceAssistant::LuaSandbox::lua_radio_set_volume(lua_State* L) {
+    int volume = luaL_checkinteger(L, 1);
+
+    // Clamp volume to 0-100
+    if (volume < 0) volume = 0;
+    if (volume > 100) volume = 100;
+
+    AudioManager& audio = AudioManager::getInstance();
+    audio.setVolume(volume);
+
+    std::ostringstream msg;
+    msg << "Volume set to " << volume << "%";
+
+    lua_pushboolean(L, true);
+    lua_pushstring(L, msg.str().c_str());
+    return 2;
 }
 
 // WebData functions

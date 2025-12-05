@@ -1,168 +1,62 @@
 {
   "namespace": "memory",
-  "description": "Sistema file persistente per storage dati utente",
+  "description": "File system persistente (flash storage)",
   "functions": {
     "read_file": {
-      "signature": "memory.read_file(path: string) -> string",
-      "description": "Legge contenuto completo di un file",
-      "parameters": {
-        "path": {
-          "type": "string",
-          "description": "Path relativo del file (es. 'notes.txt', 'data/config.json')",
-          "required": true
-        }
-      },
-      "returns": "string - contenuto del file, o stringa vuota se non esiste",
+      "signature": "memory.read_file(path) -> string",
+      "description": "Legge contenuto file",
       "examples": [
-        {
-          "code": "local content = memory.read_file('notes.txt')\nprintln(content)",
-          "description": "Legge file di testo"
-        },
-        {
-          "code": "local config = memory.read_file('config/settings.json')",
-          "description": "Legge configurazione JSON"
-        }
+        {"code": "local content = memory.read_file('notes.txt')\nprintln(content)"}
       ]
     },
     "write_file": {
-      "signature": "memory.write_file(path: string, content: string) -> boolean",
-      "description": "Crea o sovrascrive file con nuovo contenuto",
-      "parameters": {
-        "path": {
-          "type": "string",
-          "description": "Path file di destinazione",
-          "required": true
-        },
-        "content": {
-          "type": "string",
-          "description": "Contenuto da scrivere (sovrascrive file esistente)",
-          "required": true
-        }
-      },
-      "returns": "boolean - true se scrittura riuscita",
+      "signature": "memory.write_file(path, content) -> boolean",
+      "description": "Scrive/sovrascrive file",
       "examples": [
-        {
-          "code": "memory.write_file('todo.txt', 'Comprare latte\\nChiamare Mario')",
-          "description": "Crea file todo con 2 righe"
-        },
-        {
-          "code": "local json_data = '{\"temperatura\": 22.5}'\nmemory.write_file('data.json', json_data)",
-          "description": "Salva dati JSON"
-        }
+        {"code": "memory.write_file('todo.txt', 'Comprare latte\\nChiamare Mario')"}
       ]
     },
     "append_file": {
-      "signature": "memory.append_file(path: string, content: string) -> boolean",
-      "description": "Aggiunge contenuto alla fine di un file esistente (o crea nuovo file)",
-      "parameters": {
-        "path": {
-          "type": "string",
-          "description": "Path file da estendere",
-          "required": true
-        },
-        "content": {
-          "type": "string",
-          "description": "Contenuto da aggiungere in coda",
-          "required": true
-        }
-      },
-      "returns": "boolean - true se append riuscito",
+      "signature": "memory.append_file(path, content) -> boolean",
+      "description": "Aggiunge contenuto a fine file",
       "examples": [
-        {
-          "code": "memory.append_file('log.txt', os.date() .. ' - Evento registrato\\n')",
-          "description": "Aggiunge riga a log file"
-        },
-        {
-          "code": "memory.append_file('notes.txt', '\\nNuova nota: Ricordare compleanno')",
-          "description": "Aggiunge nota"
-        }
+        {"code": "memory.append_file('log.txt', 'Evento registrato\\n')"}
+      ]
+    },
+    "prepend_file": {
+      "signature": "memory.prepend_file(path, content) -> boolean",
+      "description": "Aggiunge contenuto a inizio file",
+      "examples": [
+        {"code": "memory.prepend_file('log.txt', 'NUOVO LOG\\n')"}
       ]
     },
     "delete_file": {
-      "signature": "memory.delete_file(path: string) -> boolean",
-      "description": "Elimina file dal filesystem",
-      "parameters": {
-        "path": {
-          "type": "string",
-          "description": "Path file da eliminare",
-          "required": true
-        }
-      },
-      "returns": "boolean - true se eliminazione riuscita",
+      "signature": "memory.delete_file(path) -> boolean",
+      "description": "Elimina file",
       "examples": [
-        {
-          "code": "memory.delete_file('old_data.txt')",
-          "description": "Rimuove file obsoleto"
-        }
+        {"code": "memory.delete_file('old_data.txt')"}
       ]
     },
     "list_files": {
-      "signature": "memory.list_files(directory: string) -> string",
-      "description": "Lista file in una directory",
-      "parameters": {
-        "directory": {
-          "type": "string",
-          "description": "Path directory (es. '/', 'config/', 'logs/'). Default: root '/'",
-          "required": false
-        }
-      },
-      "returns": "string - elenco file/directory separati da newline",
+      "signature": "memory.list_files() -> string",
+      "description": "Lista file in memory",
       "examples": [
-        {
-          "code": "local files = memory.list_files('/')\nprintln('File in root:')\nprintln(files)",
-          "description": "Lista file in root"
-        },
-        {
-          "code": "local logs = memory.list_files('logs/')",
-          "description": "Lista file in sottocartella logs"
-        }
+        {"code": "local files = memory.list_files()\nprintln(files)"}
       ]
     },
-    "file_exists": {
-      "signature": "memory.file_exists(path: string) -> boolean",
-      "description": "Verifica se un file esiste",
-      "parameters": {
-        "path": {
-          "type": "string",
-          "description": "Path file da verificare",
-          "required": true
-        }
-      },
-      "returns": "boolean - true se file esiste",
+    "grep_files": {
+      "signature": "memory.grep_files(pattern) -> string",
+      "description": "Cerca pattern in tutti i file",
       "examples": [
-        {
-          "code": "if memory.file_exists('config.json') then\n  println('Config trovata')\nelse\n  println('Config mancante, uso default')\nend",
-          "description": "Check esistenza file configurazione"
-        }
+        {"code": "local results = memory.grep_files('TODO')\nprintln(results)"}
       ]
-    }
-  },
-  "filesystem": {
-    "type": "LittleFS (Flash storage)",
-    "root": "/data/memory/",
-    "max_total_size": "~1MB (dipende da partizione)",
-    "persistence": "Dati sopravvivono a reboot",
-    "max_filename_length": "31 caratteri"
-  },
-  "directory_permissions": {
-    "/": {
-      "read": true,
-      "write": true,
-      "delete": true,
-      "description": "Root - accesso completo utente"
-    },
-    "/docs": {
-      "read": true,
-      "write": false,
-      "delete": false,
-      "description": "Documentazione - solo lettura"
     }
   },
   "notes": [
-    "Path sempre relativi a /data/memory/",
-    "Supporta sottodirectory (es. 'logs/error.txt')",
+    "Storage: LittleFS su flash (~1MB)",
+    "Path: relativi a /data/memory/",
+    "Supporta sottodirectory: 'logs/error.txt'",
     "Encoding: UTF-8",
-    "Newline: \\n (Unix-style)",
-    "Backup consigliato per dati critici (wear leveling limitato su Flash)"
+    "Dati persistono tra reboot"
   ]
 }

@@ -1,112 +1,52 @@
 {
-  "namespace": "audio",
-  "description": "Riproduzione file audio e controllo volume",
-  "functions": {
-    "play_file": {
-      "signature": "audio.play_file(filename: string) -> boolean",
-      "description": "Riproduce file audio (supporta WAV, MP3)",
-      "parameters": {
-        "filename": {
-          "type": "string",
-          "description": "Path file audio (es. 'sounds/beep.wav', 'music.mp3')",
-          "required": true
-        }
-      },
-      "returns": "boolean - true se riproduzione avviata con successo",
-      "examples": [
-        {
-          "code": "audio.play_file('notification.wav')",
-          "description": "Riproduce suono di notifica"
-        },
-        {
-          "code": "audio.play_file('sounds/alarm.mp3')",
-          "description": "Riproduce allarme da sottocartella"
-        }
-      ]
-    },
-    "stop": {
-      "signature": "audio.stop()",
-      "description": "Ferma riproduzione audio corrente",
-      "parameters": {},
-      "returns": "void",
-      "examples": [
-        {
-          "code": "audio.play_file('music.mp3')\n-- Aspetta 5 secondi\naudio.stop()",
-          "description": "Riproduce e poi ferma musica"
-        }
-      ]
-    },
-    "set_volume": {
-      "signature": "audio.set_volume(level: number)",
-      "description": "Imposta volume di riproduzione (0-100)",
-      "parameters": {
-        "level": {
-          "type": "number",
-          "description": "Livello volume: 0 = muto, 100 = massimo",
-          "required": true,
-          "range": "0-100"
-        }
-      },
-      "returns": "void",
-      "examples": [
-        {
-          "code": "audio.set_volume(50)\naudio.play_file('song.mp3')",
-          "description": "Imposta volume a 50% e riproduce"
-        },
-        {
-          "code": "audio.set_volume(0)",
-          "description": "Mute audio"
-        }
-      ]
-    },
-    "get_volume": {
-      "signature": "audio.get_volume() -> number",
-      "description": "Ottiene livello volume corrente",
-      "parameters": {},
-      "returns": "number - livello volume (0-100)",
-      "examples": [
-        {
-          "code": "local vol = audio.get_volume()\nprintln('Volume corrente: ' .. vol .. '%')",
-          "description": "Mostra volume attuale"
-        }
-      ]
-    },
-    "is_playing": {
-      "signature": "audio.is_playing() -> boolean",
-      "description": "Verifica se audio è in riproduzione",
-      "parameters": {},
-      "returns": "boolean - true se in riproduzione",
-      "examples": [
-        {
-          "code": "if audio.is_playing() then\n  println('Audio in riproduzione')\nelse\n  audio.play_file('idle.mp3')\nend",
-          "description": "Riproduce solo se non già in play"
-        }
-      ]
-    }
+  "namespace": "audio / radio",
+  "description": "Riproduzione audio: web radio streaming, file locali, controllo playback",
+  "concepts": {
+    "play": "Avvia riproduzione da URL stream o file SD/LittleFS",
+    "stop": "Ferma riproduzione corrente",
+    "pause": "Mette in pausa (buffer continua per stream)",
+    "resume": "Riprende dopo pausa",
+    "status": "Stato completo: cosa suona, posizione, metadata",
+    "seek": "Salta avanti/indietro in secondi (positivo/negativo)",
+    "volume": "Regola volume 0-100%"
   },
-  "supported_formats": {
-    "WAV": {
-      "description": "Waveform Audio File Format",
-      "sample_rate": "8-48 kHz",
-      "bits": "16-bit PCM",
-      "channels": "Mono/Stereo"
+  "usage_examples": [
+    {
+      "task": "Avvia web radio",
+      "code": "radio.play('http://stream.example.com/radio.mp3')"
     },
-    "MP3": {
-      "description": "MPEG Layer 3",
-      "bitrate": "32-320 kbps",
-      "sample_rate": "8-48 kHz"
+    {
+      "task": "Riproduci file da SD",
+      "code": "radio.play('/sd/music/song.mp3')"
+    },
+    {
+      "task": "Controlla cosa suona",
+      "code": "local ok, status = radio.status()\nprintln(status)"
+    },
+    {
+      "task": "Pausa e riprendi",
+      "code": "radio.pause()\ndelay(5000)\nradio.resume()"
+    },
+    {
+      "task": "Torna indietro 30 secondi (riascolta)",
+      "code": "radio.seek(-30)"
+    },
+    {
+      "task": "Imposta volume",
+      "code": "radio.set_volume(75)"
     }
-  },
-  "audio_storage": {
-    "path": "/data/audio/",
-    "max_file_size": "~2MB per file",
-    "total_capacity": "~5MB totale"
+  ],
+  "features": {
+    "streaming": "HTTP/HTTPS con buffer timeshift (riascolta ultimi minuti)",
+    "local_files": "SD card e LittleFS (MP3, WAV)",
+    "metadata": "Estrazione automatica Title/Artist/Album da ID3 tag",
+    "seek": "Navigazione temporale in stream buffered e file locali",
+    "formats": "MP3, WAV, AAC"
   },
   "notes": [
-    "Speaker output: pin configurabile (default GPIO 25)",
-    "Riproduzione asincrona: script continua mentre audio suona",
-    "Per audio sincrono: usare loop con is_playing()",
-    "File grandi (>2MB) possono causare lag",
-    "Qualità: preferire WAV 16kHz mono per size ridotto"
+    "Auto-detection: URL (http/https) vs percorso file locale",
+    "Stream timeshift: buffer circolare permette seek indietro",
+    "Metadata ID3: estratti automaticamente quando disponibili",
+    "Status senza argomenti ritorna: stato, volume, sorgente, metadata, posizione"
   ]
 }

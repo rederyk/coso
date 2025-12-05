@@ -1,158 +1,18 @@
 {
   "namespace": "led",
-  "description": "Controllo LED RGB indirizzabili (WS2812B/NeoPixel)",
+  "description": "Controllo LED RGB on-board",
   "functions": {
-    "set": {
-      "signature": "led.set(index: number, red: number, green: number, blue: number)",
-      "description": "Imposta colore di un singolo LED",
-      "parameters": {
-        "index": {
-          "type": "number",
-          "description": "Indice LED (0-based, es. 0 = primo LED)",
-          "required": true
-        },
-        "red": {
-          "type": "number",
-          "description": "Valore rosso (0-255)",
-          "required": true,
-          "range": "0-255"
-        },
-        "green": {
-          "type": "number",
-          "description": "Valore verde (0-255)",
-          "required": true,
-          "range": "0-255"
-        },
-        "blue": {
-          "type": "number",
-          "description": "Valore blu (0-255)",
-          "required": true,
-          "range": "0-255"
-        }
-      },
-      "returns": "void",
-      "examples": [
-        {
-          "code": "led.set(0, 255, 0, 0)",
-          "description": "Primo LED rosso"
-        },
-        {
-          "code": "led.set(1, 0, 255, 0)",
-          "description": "Secondo LED verde"
-        },
-        {
-          "code": "led.set(2, 0, 0, 255)",
-          "description": "Terzo LED blu"
-        },
-        {
-          "code": "led.set(0, 255, 255, 0)",
-          "description": "LED giallo (rosso + verde)"
-        }
-      ]
-    },
-    "clear": {
-      "signature": "led.clear()",
-      "description": "Spegne tutti i LED (imposta RGB a 0,0,0)",
-      "parameters": {},
-      "returns": "void",
-      "examples": [
-        {
-          "code": "led.clear()",
-          "description": "Spegne tutti i LED"
-        }
-      ]
-    },
     "set_brightness": {
-      "signature": "led.set_brightness(level: number)",
-      "description": "Imposta luminosità globale di tutti i LED (0-255)",
-      "parameters": {
-        "level": {
-          "type": "number",
-          "description": "Livello luminosità: 0 = spento, 255 = massimo",
-          "required": true,
-          "range": "0-255"
-        }
-      },
-      "returns": "void",
+      "signature": "led.set_brightness(percentage)",
+      "description": "Imposta luminosità LED RGB (0-100%)",
       "examples": [
-        {
-          "code": "led.set_brightness(50)\nled.set(0, 255, 0, 0)",
-          "description": "Imposta luminosità bassa e accende LED rosso"
-        },
-        {
-          "code": "led.set_brightness(255)",
-          "description": "Luminosità massima"
-        }
-      ]
-    },
-    "set_all": {
-      "signature": "led.set_all(red: number, green: number, blue: number)",
-      "description": "Imposta stesso colore a tutti i LED",
-      "parameters": {
-        "red": {
-          "type": "number",
-          "description": "Valore rosso (0-255)",
-          "required": true
-        },
-        "green": {
-          "type": "number",
-          "description": "Valore verde (0-255)",
-          "required": true
-        },
-        "blue": {
-          "type": "number",
-          "description": "Valore blu (0-255)",
-          "required": true
-        }
-      },
-      "returns": "void",
-      "examples": [
-        {
-          "code": "led.set_all(255, 0, 0)",
-          "description": "Tutti i LED rossi"
-        },
-        {
-          "code": "led.set_all(128, 0, 128)",
-          "description": "Tutti i LED viola"
-        }
-      ]
-    },
-    "show": {
-      "signature": "led.show()",
-      "description": "Aggiorna fisicamente i LED con i colori impostati (necessario dopo set/set_all)",
-      "parameters": {},
-      "returns": "void",
-      "examples": [
-        {
-          "code": "led.set(0, 255, 0, 0)\nled.set(1, 0, 255, 0)\nled.show()  -- Applica cambiamenti",
-          "description": "Imposta 2 LED e aggiorna"
-        }
+        {"code": "led.set_brightness(50)", "description": "Luminosità 50%"},
+        {"code": "led.set_brightness(0)", "description": "Spegne LED"}
       ]
     }
   },
-  "led_configuration": {
-    "type": "WS2812B (NeoPixel)",
-    "count": "Configurabile (default: 8 LED)",
-    "pin": "GPIO configurable (default: GPIO 5)",
-    "protocol": "800kHz one-wire"
-  },
-  "color_presets": {
-    "Rosso": [255, 0, 0],
-    "Verde": [0, 255, 0],
-    "Blu": [0, 0, 255],
-    "Giallo": [255, 255, 0],
-    "Ciano": [0, 255, 255],
-    "Magenta": [255, 0, 255],
-    "Bianco": [255, 255, 255],
-    "Arancione": [255, 165, 0],
-    "Viola": [128, 0, 128],
-    "Rosa": [255, 192, 203]
-  },
   "notes": [
-    "Chiamare led.show() dopo modifiche per applicare cambiamenti",
-    "Consumo: ~60mA per LED @ (255,255,255) - limitare brightness per batteria",
-    "Indici LED: 0-based (primo LED = 0)",
-    "Gamma correction non applicata (gestire manualmente se necessario)",
-    "Per animazioni smooth: loop con delay tra frame"
+    "LED RGB: WS2812B integrato",
+    "Range: 0-100%"
   ]
 }

@@ -1,114 +1,50 @@
 {
   "namespace": "ble",
-  "description": "Emulazione tastiera Bluetooth Low Energy (BLE HID)",
-  "functions": {
-    "type": {
-      "signature": "ble.type(host_mac: string, text: string)",
-      "description": "Digita testo come tastiera BLE sul dispositivo connesso",
-      "parameters": {
-        "host_mac": {
-          "type": "string",
-          "description": "Indirizzo MAC del dispositivo host (formato: 'AA:BB:CC:DD:EE:FF')",
-          "required": true
-        },
-        "text": {
-          "type": "string",
-          "description": "Testo da digitare (supporta lettere, numeri, spazi, punteggiatura)",
-          "required": true
-        }
-      },
-      "returns": "void",
-      "examples": [
-        {
-          "code": "ble.type('A1:B2:C3:D4:E5:F6', 'Ciao mondo!')",
-          "description": "Digita 'Ciao mondo!' sul dispositivo connesso"
-        },
-        {
-          "code": "ble.type('A1:B2:C3:D4:E5:F6', 'Username: admin\\nPassword: 1234')",
-          "description": "Digita credenziali con newline"
-        }
-      ]
-    },
-    "press": {
-      "signature": "ble.press(host_mac: string, key: string)",
-      "description": "Preme tasto speciale (senza rilasciare) - usare con ble.release()",
-      "parameters": {
-        "host_mac": {
-          "type": "string",
-          "description": "Indirizzo MAC del dispositivo host",
-          "required": true
-        },
-        "key": {
-          "type": "string",
-          "description": "Nome tasto (es. 'CTRL', 'ALT', 'SHIFT', 'GUI', 'ESC', 'F1-F12', 'ENTER', 'TAB')",
-          "required": true
-        }
-      },
-      "returns": "void",
-      "examples": [
-        {
-          "code": "ble.press('A1:B2:C3:D4:E5:F6', 'CTRL')\nble.press('A1:B2:C3:D4:E5:F6', 'C')\nble.release('A1:B2:C3:D4:E5:F6')",
-          "description": "Copia (Ctrl+C)"
-        }
-      ]
-    },
-    "release": {
-      "signature": "ble.release(host_mac: string)",
-      "description": "Rilascia tutti i tasti premuti con ble.press()",
-      "parameters": {
-        "host_mac": {
-          "type": "string",
-          "description": "Indirizzo MAC del dispositivo host",
-          "required": true
-        }
-      },
-      "returns": "void",
-      "examples": [
-        {
-          "code": "ble.press('A1:B2:C3:D4:E5:F6', 'SHIFT')\nble.type('A1:B2:C3:D4:E5:F6', 'a')\nble.release('A1:B2:C3:D4:E5:F6')",
-          "description": "Digita 'A' maiuscolo"
-        }
-      ]
-    },
-    "click": {
-      "signature": "ble.click(host_mac: string, key: string)",
-      "description": "Preme e rilascia immediatamente un tasto (shortcut per press + release)",
-      "parameters": {
-        "host_mac": {
-          "type": "string",
-          "description": "Indirizzo MAC del dispositivo host",
-          "required": true
-        },
-        "key": {
-          "type": "string",
-          "description": "Nome tasto da cliccare",
-          "required": true
-        }
-      },
-      "returns": "void",
-      "examples": [
-        {
-          "code": "ble.click('A1:B2:C3:D4:E5:F6', 'ENTER')",
-          "description": "Preme Invio"
-        },
-        {
-          "code": "ble.click('A1:B2:C3:D4:E5:F6', 'F5')",
-          "description": "Preme F5 (refresh)"
-        }
-      ]
-    }
+  "description": "Controllo dispositivi BLE: tastiera HID e mouse wireless",
+  "concepts": {
+    "type": "Digita testo come tastiera Bluetooth",
+    "send_key": "Invia tasto o combo (ctrl+c, enter, F5, ecc)",
+    "mouse_move": "Muovi mouse: dx/dy relativi, scroll, click",
+    "click": "Click mouse: left, right, middle"
   },
+  "usage_examples": [
+    {
+      "task": "Digita testo su PC",
+      "code": "ble.type('AA:BB:CC:DD:EE:FF', 'Ciao mondo!')"
+    },
+    {
+      "task": "Invia combo tastiera",
+      "code": "ble.send_key('AA:BB:CC:DD:EE:FF', 'ctrl+c')"
+    },
+    {
+      "task": "Premi tasto speciale",
+      "code": "ble.send_key('AA:BB:CC:DD:EE:FF', 'enter')"
+    },
+    {
+      "task": "Muovi mouse",
+      "code": "ble.mouse_move('AA:BB:CC:DD:EE:FF', 100, 50, 0, 0)"
+    },
+    {
+      "task": "Click sinistro",
+      "code": "ble.click('AA:BB:CC:DD:EE:FF', 'left')"
+    }
+  ],
   "special_keys": [
-    "CTRL", "ALT", "SHIFT", "GUI/WIN",
-    "ESC", "ENTER", "TAB", "BACKSPACE", "DELETE",
-    "HOME", "END", "PAGEUP", "PAGEDOWN",
-    "ARROW_UP", "ARROW_DOWN", "ARROW_LEFT", "ARROW_RIGHT",
-    "F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F11", "F12"
+    "Combo: ctrl+X, shift+X, alt+X, ctrl+alt+del",
+    "Funzioni: F1-F12, enter, escape, tab, backspace, delete",
+    "Frecce: arrow_up, arrow_down, arrow_left, arrow_right",
+    "Navigazione: home, end, pageup, pagedown"
+  ],
+  "mouse_buttons": [
+    "left - Click sinistro",
+    "right - Click destro", 
+    "middle - Click centrale",
+    "Combinabili: left+right"
   ],
   "notes": [
     "Richiede pairing BLE con dispositivo host",
-    "Layout tastiera: Italiano (può differire per caratteri speciali)",
-    "Delay tra comandi: ~50ms consigliato per affidabilità",
-    "Lunghezza massima stringa in ble.type(): ~256 caratteri"
+    "MAC address: formato AA:BB:CC:DD:EE:FF",
+    "Delay consigliato tra comandi: ~50ms per affidabilità",
+    "mouse_move: dx/dy da -128 a +127 (movimento relativo)"
   ]
 }

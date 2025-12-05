@@ -1,125 +1,41 @@
 {
   "namespace": "webData",
-  "description": "Download e gestione dati da HTTP/HTTPS con storage persistente",
+  "description": "Download e cache dati HTTP/HTTPS",
   "functions": {
     "fetch_once": {
-      "signature": "webData.fetch_once(url: string, filename: string) -> boolean",
-      "description": "Scarica dati da URL e salva in file locale (una tantum, non aggiornato automaticamente)",
-      "parameters": {
-        "url": {
-          "type": "string",
-          "description": "URL completo (http:// o https://)",
-          "required": true
-        },
-        "filename": {
-          "type": "string",
-          "description": "Nome file di destinazione (salvato in /data/webdata/)",
-          "required": true
-        }
-      },
-      "returns": "boolean - true se download riuscito, false in caso di errore",
+      "signature": "webData.fetch_once(url, filename) -> boolean",
+      "description": "Scarica dati da URL (una tantum)",
       "examples": [
-        {
-          "code": "local success = webData.fetch_once('https://api.open-meteo.com/v1/forecast?latitude=45.46&longitude=9.19&current=temperature_2m', 'weather.json')\nif success then println('Download OK') end",
-          "description": "Scarica dati meteo JSON"
-        },
-        {
-          "code": "webData.fetch_once('https://example.com/data.txt', 'mydata.txt')",
-          "description": "Scarica file di testo"
-        }
+        {"code": "webData.fetch_once('https://api.open-meteo.com/v1/forecast?latitude=45.46&longitude=9.19&current=temperature_2m', 'weather.json')"}
       ]
     },
     "fetch_scheduled": {
-      "signature": "webData.fetch_scheduled(url: string, filename: string, interval_minutes: number) -> boolean",
-      "description": "Scarica dati con aggiornamento automatico periodico",
-      "parameters": {
-        "url": {
-          "type": "string",
-          "description": "URL da cui scaricare",
-          "required": true
-        },
-        "filename": {
-          "type": "string",
-          "description": "Nome file destinazione",
-          "required": true
-        },
-        "interval_minutes": {
-          "type": "number",
-          "description": "Intervallo aggiornamento in minuti (es. 60 = ogni ora)",
-          "required": true
-        }
-      },
-      "returns": "boolean - true se scheduling configurato con successo",
+      "signature": "webData.fetch_scheduled(url, filename, minutes) -> boolean",
+      "description": "Scarica con aggiornamento periodico",
       "examples": [
-        {
-          "code": "webData.fetch_scheduled('https://api.weather.com/current', 'weather.json', 30)",
-          "description": "Aggiorna meteo ogni 30 minuti"
-        }
+        {"code": "webData.fetch_scheduled('https://api.weather.com/current', 'weather.json', 30)", "description": "Aggiorna ogni 30 min"}
       ]
     },
     "read_data": {
-      "signature": "webData.read_data(filename: string) -> string",
-      "description": "Legge contenuto di file scaricato precedentemente",
-      "parameters": {
-        "filename": {
-          "type": "string",
-          "description": "Nome file da leggere (in /data/webdata/)",
-          "required": true
-        }
-      },
-      "returns": "string - contenuto del file, o stringa vuota se file non esiste",
+      "signature": "webData.read_data(filename) -> string",
+      "description": "Legge file scaricato",
       "examples": [
-        {
-          "code": "local content = webData.read_data('weather.json')\nprintln(content)",
-          "description": "Legge e stampa dati meteo salvati"
-        },
-        {
-          "code": "local json = webData.read_data('api_response.json')\n-- Parse JSON con cjson o manualmente",
-          "description": "Legge risposta API JSON"
-        }
+        {"code": "local content = webData.read_data('weather.json')\nprintln(content)"}
       ]
     },
     "list_files": {
       "signature": "webData.list_files() -> string",
-      "description": "Lista tutti i file presenti nella directory webdata",
-      "parameters": {},
-      "returns": "string - elenco file separati da newline",
+      "description": "Lista file cache",
       "examples": [
-        {
-          "code": "local files = webData.list_files()\nprintln('File disponibili:')\nprintln(files)",
-          "description": "Mostra tutti i file scaricati"
-        }
-      ]
-    },
-    "delete_file": {
-      "signature": "webData.delete_file(filename: string) -> boolean",
-      "description": "Elimina file dalla directory webdata",
-      "parameters": {
-        "filename": {
-          "type": "string",
-          "description": "Nome file da eliminare",
-          "required": true
-        }
-      },
-      "returns": "boolean - true se eliminazione riuscita",
-      "examples": [
-        {
-          "code": "webData.delete_file('old_data.json')",
-          "description": "Rimuove file obsoleto"
-        }
+        {"code": "println(webData.list_files())"}
       ]
     }
   },
-  "storage": {
-    "path": "/data/webdata/",
-    "max_file_size": "~512KB (dipende da memoria disponibile)",
-    "persistence": "Dati sopravvivono a reboot"
-  },
   "notes": [
-    "Richiede connessione WiFi attiva",
+    "Storage: /data/webdata/ (~512KB)",
+    "Richiede WiFi attivo",
     "Timeout HTTP: 10 secondi",
-    "SSL/TLS supportato (HTTPS)",
-    "Formato file: qualsiasi (JSON, XML, TXT, CSV, HTML, ecc.)",
-    "Per JSON parsing: usare libreria cjson se disponibile, o parsing manuale"
+    "Supporta HTTPS/SSL",
+    "Formati: JSON, XML, TXT, CSV, HTML"
   ]
 }
