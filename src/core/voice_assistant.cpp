@@ -944,7 +944,7 @@ bool VoiceAssistant::makeWhisperRequest(const std::string& file_path, std::strin
     return true;
 }
 
-bool VoiceAssistant::makeTTSRequest(const std::string& text, std::string& output_file_path) {
+bool VoiceAssistant::makeTTSRequest(const std::string& text, std::string& output_file_path, bool force_enable) {
     LOG_I("Making TTS request for text: %s", text.c_str());
 
     // Check if we have WiFi connection
@@ -957,7 +957,7 @@ bool VoiceAssistant::makeTTSRequest(const std::string& text, std::string& output
     const SettingsSnapshot& settings = SettingsManager::getInstance().getSnapshot();
 
     // Check if TTS is enabled
-    if (!settings.ttsEnabled) {
+    if (!force_enable && !settings.ttsEnabled) {
         LOG_W("TTS is disabled in settings");
         return false;
     }
@@ -984,12 +984,39 @@ bool VoiceAssistant::makeTTSRequest(const std::string& text, std::string& output
     cJSON_free(json_str);
     cJSON_Delete(root);
 
+    LOG_I("TTS POST URL: %s", tts_url.c_str());
     LOG_I("TTS request body: %s", request_body.c_str());
+    if (s_active_lua_sandbox) {
+        s_active_lua_sandbox->appendOutput(std::string("[TTS] Endpoint: ") + tts_url);
+        s_active_lua_sandbox->appendOutput(std::string("[TTS] Body: ") + request_body);
+    }
+
+    // Buffer for audio data
+    std::vector<uint8_t> audio_data;
+    audio_data.reserve(8192);
+
+    // HTTP client event handler to capture binary audio data
+    auto http_event_handler = [](esp_http_client_event_t *evt) -> esp_err_t {
+        std::vector<uint8_t>* data = static_cast<std::vector<uint8_t>*>(evt->user_data);
+        switch(evt->event_id) {
+            case HTTP_EVENT_ON_DATA:
+                if (data && evt->data_len > 0) {
+                    const uint8_t* bytes = static_cast<const uint8_t*>(evt->data);
+                    data->insert(data->end(), bytes, bytes + evt->data_len);
+                }
+                break;
+            default:
+                break;
+        }
+        return ESP_OK;
+    };
 
     // Configure HTTP client
     esp_http_client_config_t config = {};
     config.url = tts_url.c_str();
     config.method = HTTP_METHOD_POST;
+    config.event_handler = http_event_handler;
+    config.user_data = &audio_data;
     config.timeout_ms = 30000;  // 30 second timeout
     config.buffer_size = 4096;
     config.buffer_size_tx = 4096;
@@ -1019,6 +1046,9 @@ bool VoiceAssistant::makeTTSRequest(const std::string& text, std::string& output
     esp_err_t err = esp_http_client_perform(client);
     if (err != ESP_OK) {
         LOG_E("HTTP request failed: %s", esp_err_to_name(err));
+        if (s_active_lua_sandbox) {
+            s_active_lua_sandbox->appendOutput(std::string("[TTS ERROR] HTTP perform failed: ") + esp_err_to_name(err));
+        }
         esp_http_client_cleanup(client);
         return false;
     }
@@ -1027,31 +1057,35 @@ bool VoiceAssistant::makeTTSRequest(const std::string& text, std::string& output
     int content_length = esp_http_client_get_content_length(client);
 
     LOG_I("HTTP Status: %d, Content-Length: %d", status_code, content_length);
+    if (s_active_lua_sandbox) {
+        s_active_lua_sandbox->appendOutput(std::string("[TTS] Status: ") + std::to_string(status_code) +
+                                          ", Content-Length: " + std::to_string(content_length));
+    }
 
     if (status_code != 200) {
         LOG_E("TTS API returned error status: %d", status_code);
+        if (s_active_lua_sandbox) {
+            s_active_lua_sandbox->appendOutput(std::string("[TTS ERROR] Server returned status: ") + std::to_string(status_code));
+        }
         esp_http_client_cleanup(client);
         return false;
     }
 
-    // Read audio data
-    std::vector<uint8_t> audio_data;
-    audio_data.reserve(content_length > 0 ? content_length : 4096);
-
-    char buffer[1024];
-    int read_len;
-    while ((read_len = esp_http_client_read(client, buffer, sizeof(buffer))) > 0) {
-        audio_data.insert(audio_data.end(), buffer, buffer + read_len);
-    }
-
+    // Cleanup HTTP client (audio_data has been filled by event handler)
     esp_http_client_cleanup(client);
 
     if (audio_data.empty()) {
         LOG_E("No audio data received from TTS API");
+        if (s_active_lua_sandbox) {
+            s_active_lua_sandbox->appendOutput("[TTS ERROR] No audio data received");
+        }
         return false;
     }
 
     LOG_I("Received %u bytes of audio data", audio_data.size());
+    if (s_active_lua_sandbox) {
+        s_active_lua_sandbox->appendOutput(std::string("[TTS] Received ") + std::to_string(audio_data.size()) + " bytes");
+    }
 
     // Generate output filename with timestamp
     char filename[128];
@@ -2248,6 +2282,13 @@ void VoiceAssistant::LuaSandbox::setupSandbox() {
             end
         }
 
+        -- TTS API
+        tts = {
+            speak = function(text)
+                return esp32_tts_speak(text)
+            end
+        }
+
         -- Docs API
         docs = {
             api = {
@@ -2259,7 +2300,8 @@ void VoiceAssistant::LuaSandbox::setupSandbox() {
                 display = function() return memory.read_file("docs/api/display.json") end,
                 led = function() return memory.read_file("docs/api/led.json") end,
                 system = function() return memory.read_file("docs/api/system.json") end,
-                calendar = function() return memory.read_file("docs/api/calendar.json") end
+                calendar = function() return memory.read_file("docs/api/calendar.json") end,
+                tts = function() return memory.read_file("docs/api/tts.json") end
             },
             reference = {
                 cities = function() return memory.read_file("docs/reference/cities.json") end,
@@ -2378,6 +2420,7 @@ std::string VoiceAssistant::LuaSandbox::preprocessScript(const std::string& scri
         // Valid prefixes (API namespaces)
         const char* valid_prefixes[] = {
             "gpio.", "ble.", "led.", "audio.", "display.", "system.",
+            "memory.", "webData.", "docs.", "radio.", "tts.",
             "delay(", "println(",
             "if ", "else", "end", "for ", "while ", "do", "then",
             "local ", "function ", "return",

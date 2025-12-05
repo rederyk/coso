@@ -204,7 +204,7 @@ private:
     bool parseGPTCommand(const std::string& response, VoiceCommand& cmd);
 
     // TTS helper
-    bool makeTTSRequest(const std::string& text, std::string& output_file_path);
+    bool makeTTSRequest(const std::string& text, std::string& output_file_path, bool force_enable = true);
 
     // Output refinement helpers (Phase 1: Output Refinement System)
     bool shouldRefineOutput(const VoiceCommand& cmd);

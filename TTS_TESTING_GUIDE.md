@@ -263,3 +263,36 @@ Il problema iniziale era che l'IA non conosceva l'API TTS. Ora:
 - ✅ Sistema pronto per test completo
 
 Riavvia l'ESP32 e riprova con: **"Parlami del meteo"** 🎙️
+
+
+# scriito da umano
+ - consigli e test by human 
+## script lua di test
+
+local audio, err = tts.speak("Ciao, questo è un test vocale")
+
+if audio then
+println("File: " .. audio)
+return audio
+end
+
+println("Errore: " .. tostring(err))
+local ok, status = system.status()
+if ok and status then
+println(status)
+else
+println("system.status fallito")
+end
+
+## richieste testate per tts webui
+
+curl -X POST http://192.168.1.51:7778/v1/audio/speech \
+     -H "Content-Type: application/json" \
+     -d '{"model":"hexgrad/Kokoro-82M","input":"Ciao, questo è un test vocale","voice":"af_heart","speed":1}' \
+     --output output.mp3
+
+
+curl -X POST http://192.168.1.51:7778/v1/audio/speech \
+     -H "Content-Type: application/json" \
+     -d '{"model":"hexgrad/Kokoro-82M","input":"Ciao, questo è un test vocale","voice":"if_sara","speed":1}' \
+     --output output.mp3

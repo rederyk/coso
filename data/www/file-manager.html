@@ -692,27 +692,42 @@
       for (const file of files) {
         uploaded++;
         const relativePath = file.webkitRelativePath || file.name;
-        const pathWithoutRoot = relativePath.split('/').slice(1).join('/');
+
+        // Rimuovi il nome della cartella root dal percorso relativo
+        const parts = relativePath.split('/');
+        if (parts.length < 2) {
+          // File senza struttura di cartelle, salta
+          continue;
+        }
+
+        // Rimuovi il primo elemento (root folder name) dal percorso
+        const pathWithoutRoot = parts.slice(1).join('/');
         const uploadPath = joinPath(currentPath, rootFolderName);
 
         statusEl.textContent = `Uploading ${relativePath} (${uploaded}/${total})...`;
 
-        // Crea le directory necessarie
+        // Separa directory e nome file
         const fileParts = pathWithoutRoot.split('/');
-        if (fileParts.length > 1) {
+        const fileName = fileParts[fileParts.length - 1];
+        const dirParts = fileParts.slice(0, -1);
+
+        // Crea le directory necessarie (escludendo il nome del file)
+        if (dirParts.length > 0) {
           let buildPath = uploadPath;
-          for (let i = 0; i < fileParts.length - 1; i++) {
-            buildPath = joinPath(buildPath, fileParts[i]);
+          for (const dirName of dirParts) {
+            buildPath = joinPath(buildPath, dirName);
             await createFolderIfNotExists(buildPath);
           }
         }
 
-        // Upload il file
-        const formData = new FormData();
-        formData.append('file', file);
-        const targetDir = fileParts.length > 1
-          ? joinPath(uploadPath, fileParts.slice(0, -1).join('/'))
+        // Calcola la directory di destinazione per l'upload
+        const targetDir = dirParts.length > 0
+          ? joinPath(uploadPath, dirParts.join('/'))
           : uploadPath;
+
+        // Upload il file nella directory corretta
+        const formData = new FormData();
+        formData.append('file', file, fileName);
 
         const res = await fetch(`/api/fs/upload?path=${encodeURIComponent(targetDir)}`, {
           method: 'POST',

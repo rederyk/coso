@@ -57,8 +57,8 @@ struct SettingsSnapshot {
     bool ttsEnabled = false;
     std::string ttsCloudEndpoint = "https://api.openai.com/v1/audio/speech";
     std::string ttsLocalEndpoint = "http://192.168.1.51:7778/v1/audio/speech";
-    std::string ttsVoice = "alloy";  // Voice name for TTS (OpenAI: alloy, echo, fable, onyx, nova, shimmer)
-    std::string ttsModel = "tts-1";  // TTS model name
+    std::string ttsVoice = "if_sara";  // Voice name for TTS (Local: if_sara, af_heart; OpenAI: alloy, echo, fable, onyx, nova, shimmer)
+    std::string ttsModel = "hexgrad/Kokoro-82M";  // TTS model name (Local: hexgrad/Kokoro-82M; OpenAI: tts-1)
     float ttsSpeed = 1.0f;  // Speech speed (0.25 to 4.0)
     std::string ttsOutputFormat = "mp3";  // Output format: mp3, opus, aac, flac
     std::string ttsOutputPath = "/littlefs/data/memory/audio";  // Where to save TTS audio files

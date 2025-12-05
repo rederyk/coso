@@ -43,19 +43,75 @@ std::string trimString(std::string value) {
     return value.substr(first, last - first + 1);
 }
 
-std::string deriveTtsAudioBase(const std::string& endpoint) {
+std::string stripLastPathSegment(const std::string& url) {
+    if (url.empty()) {
+        return {};
+    }
+
+    std::string result = url;
+    while (result.length() > 1 && result.back() == '/') {
+        result.pop_back();
+    }
+    if (result.empty()) {
+        return {};
+    }
+
+    const size_t scheme_pos = result.find("://");
+    const size_t host_start = (scheme_pos == std::string::npos) ? 0 : scheme_pos + 3;
+    const size_t last_slash = result.rfind('/');
+    if (last_slash == std::string::npos || last_slash < host_start) {
+        return result;
+    }
+
+    return result.substr(0, last_slash);
+}
+
+bool endsWithPathSegment(const std::string& value, const char* segment) {
+    if (!segment || value.empty()) {
+        return false;
+    }
+    const size_t seg_len = strlen(segment);
+    if (seg_len == 0 || value.length() < seg_len + 1) {
+        return false;
+    }
+    const size_t offset = value.length() - seg_len;
+    if (value.compare(offset, seg_len, segment) != 0) {
+        return false;
+    }
+    return value[offset - 1] == '/';
+}
+
+std::string deriveTtsApiBase(const std::string& endpoint) {
     if (endpoint.empty()) {
         return {};
     }
+
     std::string normalized = trimString(endpoint);
+    const size_t query_pos = normalized.find_first_of("?#");
+    if (query_pos != std::string::npos) {
+        normalized.erase(query_pos);
+    }
     while (normalized.length() > 1 && normalized.back() == '/') {
         normalized.pop_back();
     }
-    const size_t last_slash = normalized.rfind('/');
-    if (last_slash == std::string::npos) {
-        return normalized;
+
+    if (normalized.empty()) {
+        return {};
     }
-    return normalized.substr(0, last_slash);
+
+    std::string base = stripLastPathSegment(normalized);
+    if (base.empty() || base == normalized) {
+        return {};
+    }
+
+    if (endsWithPathSegment(base, "audio")) {
+        std::string trimmed = stripLastPathSegment(base);
+        if (!trimmed.empty() && trimmed != base) {
+            base = trimmed;
+        }
+    }
+
+    return base;
 }
 
 bool httpGetToString(const std::string& url, std::string& out) {
@@ -2139,9 +2195,9 @@ void WebServerManager::handleTtsOptions() {
         return;
     }
 
-    const std::string audio_base = deriveTtsAudioBase(snapshot.ttsLocalEndpoint);
-    if (audio_base.empty()) {
-        doc["message"] = "Impossibile derivare il percorso /v1/audio dall'endpoint configurato";
+    const std::string api_base = deriveTtsApiBase(snapshot.ttsLocalEndpoint);
+    if (api_base.empty()) {
+        doc["message"] = "Impossibile derivare il percorso API dall'endpoint configurato";
         doc["needsRefresh"] = true;
         String response;
         serializeJson(doc, response);
@@ -2149,7 +2205,7 @@ void WebServerManager::handleTtsOptions() {
         return;
     }
 
-    doc["apiBase"] = audio_base.c_str();
+    doc["apiBase"] = api_base.c_str();
     doc["endpointUsed"] = snapshot.ttsLocalEndpoint.c_str();
 
     bool models_ok = false;
@@ -2160,7 +2216,7 @@ void WebServerManager::handleTtsOptions() {
 
     {
         std::string models_body;
-        const std::string models_url = audio_base + "/models";
+        const std::string models_url = api_base + "/models";
         if (httpGetToString(models_url, models_body)) {
             DynamicJsonDocument models_doc(4096);
             auto err = deserializeJson(models_doc, models_body);
@@ -2199,7 +2255,7 @@ void WebServerManager::handleTtsOptions() {
 
     {
         std::string voices_body;
-        const std::string voices_url = audio_base + "/voices";
+        const std::string voices_url = api_base + "/voices";
         if (httpGetToString(voices_url, voices_body)) {
             DynamicJsonDocument voices_doc(16384);
             auto err = deserializeJson(voices_doc, voices_body);
