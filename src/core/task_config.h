@@ -18,7 +18,7 @@ constexpr uint32_t STACK_WIFI = 4096;
 constexpr UBaseType_t PRIO_WIFI = 1;
 
 // HTTP server task
-constexpr uint32_t STACK_HTTP = 12288;  // Increased for Lua scripts with HTTP requests
+constexpr uint32_t STACK_HTTP = 24576;  // 24 KB to prevent stack overflow with large DynamicJsonDocument
 constexpr UBaseType_t PRIO_HTTP = 2;
 
 // BLE manager task

@@ -27,7 +27,7 @@
 namespace {
 constexpr const char* DEFAULT_ROOT = "/www/index.html";
 constexpr uint32_t SERVER_LOOP_DELAY_MS = 10;
-constexpr uint32_t ASSISTANT_RESPONSE_TIMEOUT_MS = 50000;  // 50 seconds for first model load
+constexpr uint32_t ASSISTANT_RESPONSE_TIMEOUT_MS = 8000;  // 8 seconds (below TWDT timeout to prevent watchdog kill)
 constexpr uint32_t SD_MUTEX_TIMEOUT_MS = 2000;
 constexpr size_t MAX_FS_LIST_ENTRIES = 128;
 constexpr uint32_t TTS_OPTIONS_HTTP_TIMEOUT_MS = 10000;
@@ -114,7 +114,7 @@ std::string deriveTtsApiBase(const std::string& endpoint) {
     return base;
 }
 
-bool httpGetToString(const std::string& url, std::string& out) {
+bool httpGetToString(const std::string& url, std::string& out, size_t max_bytes = 102400) {
     out.clear();
 
     esp_http_client_config_t config = {};
@@ -150,6 +150,12 @@ bool httpGetToString(const std::string& url, std::string& out) {
     char buffer[512];
     int read_len = 0;
     while ((read_len = esp_http_client_read(client, buffer, sizeof(buffer))) > 0) {
+        // Prevent OOM by limiting response size
+        if (out.size() + read_len > max_bytes) {
+            Logger::getInstance().warnf("[WebServer] HTTP response too large, truncating at %zu bytes", max_bytes);
+            esp_http_client_cleanup(client);
+            return false;
+        }
         out.append(buffer, read_len);
     }
 
@@ -987,10 +993,17 @@ void WebServerManager::handleAssistantPromptResolveAndSave() {
     }
 
     // Ritorna il nuovo JSON risolto
-    DynamicJsonDocument response(resolved_json.length() + 512);
+    // Limit size to prevent heap exhaustion
+    size_t response_size = std::min(resolved_json.length() + 512, static_cast<size_t>(65536));
+    DynamicJsonDocument response(response_size);
     response["status"] = "success";
     response["message"] = "Prompt risolto e salvato";
-    response["resolved_json"] = resolved_json.c_str();
+    if (resolved_json.length() > 65000) {
+        response["resolved_json"] = "Response too large, truncated";
+        Logger::getInstance().warn("[WebServer] Resolved JSON too large, truncating");
+    } else {
+        response["resolved_json"] = resolved_json.c_str();
+    }
 
     String payload;
     serializeJson(response, payload);
@@ -2257,8 +2270,13 @@ void WebServerManager::handleTtsOptions() {
         std::string voices_body;
         const std::string voices_url = api_base + "/voices";
         if (httpGetToString(voices_url, voices_body)) {
-            DynamicJsonDocument voices_doc(16384);
-            auto err = deserializeJson(voices_doc, voices_body);
+            // Check size before allocating large JSON document to prevent stack overflow
+            if (voices_body.length() > 15000) {
+                Logger::getInstance().warnf("[WebServer][TTS] Voices response too large (%zu bytes), truncating", voices_body.length());
+                doc["voicesError"] = "Response too large";
+            } else {
+                DynamicJsonDocument voices_doc(16384);
+                auto err = deserializeJson(voices_doc, voices_body);
             if (!err) {
                 JsonArrayConst src = voices_doc["voices"].as<JsonArrayConst>();
                 if (!src.isNull()) {
@@ -2280,6 +2298,7 @@ void WebServerManager::handleTtsOptions() {
                 Logger::getInstance().warnf("[WebServer][TTS] Invalid JSON from %s: %s", voices_url.c_str(), err.c_str());
                 doc["voicesError"] = "JSON /voices non valido";
             }
+            }  // Close else block for size check
         } else {
             doc["voicesError"] = "Richiesta /voices fallita";
         }
