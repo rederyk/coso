@@ -212,6 +212,47 @@
     .menu-dropdown button:last-child { border-bottom: none; }
     .menu-dropdown button:hover { background: rgba(255,255,255,0.06); }
     .menu-dropdown button.danger { color: var(--danger); }
+    .modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0,0,0,0.7);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      backdrop-filter: blur(8px);
+    }
+    .modal-overlay.show { display: flex; }
+    .modal {
+      background: var(--panel);
+      border: 1px solid var(--panel-border);
+      border-radius: 18px;
+      padding: 24px;
+      max-width: 500px;
+      width: 90%;
+      box-shadow: 0 24px 60px rgba(0,0,0,0.6);
+    }
+    .modal h2 {
+      margin: 0 0 16px 0;
+      font-size: 1.4rem;
+      color: var(--text);
+    }
+    .modal p {
+      margin: 0 0 20px 0;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+    .modal-actions {
+      display: flex;
+      gap: 10px;
+      justify-content: flex-end;
+    }
+    .modal-actions button {
+      flex: 1;
+    }
     @media (max-width: 640px) {
       body { padding: 16px; }
       table { font-size: 13px; }
@@ -219,6 +260,7 @@
       button { width: 100%; text-align: center; }
       .action-buttons { flex-direction: column; width: 100%; }
       .action-buttons button { width: 100%; }
+      .modal-actions { flex-direction: column; }
     }
   </style>
 </head>
@@ -233,11 +275,13 @@
     <section class="panel">
       <div class="actions">
         <button id="upload">Upload files</button>
+        <button class="secondary" id="upload-folder">Upload folder</button>
         <button class="secondary" id="new-folder">New folder</button>
         <button class="secondary" id="refresh">Refresh</button>
         <button class="secondary" id="home">Go to root</button>
       </div>
       <input type="file" id="file-input" multiple style="display:none">
+      <input type="file" id="folder-input" webkitdirectory directory multiple style="display:none">
       <div id="status">Waiting…</div>
       <div id="entries-container"></div>
     </section>
@@ -246,6 +290,18 @@
       <div class="storage" id="storage-status">SD status pending…</div>
     </section>
   </main>
+
+  <div id="conflict-modal" class="modal-overlay">
+    <div class="modal">
+      <h2>Folder already exists</h2>
+      <p id="conflict-message">The folder already exists in the destination. What would you like to do?</p>
+      <div class="modal-actions">
+        <button class="secondary" id="conflict-cancel">Cancel</button>
+        <button id="conflict-merge">Merge</button>
+        <button class="danger" id="conflict-overwrite">Overwrite</button>
+      </div>
+    </div>
+  </div>
 
   <script src="app-nav.js" defer></script>
   <script>
@@ -257,11 +313,14 @@
     let openMenu = null;
 
     const fileInput = document.getElementById('file-input');
+    const folderInput = document.getElementById('folder-input');
     document.getElementById('upload').addEventListener('click', () => fileInput.click());
+    document.getElementById('upload-folder').addEventListener('click', () => folderInput.click());
     document.getElementById('new-folder').addEventListener('click', () => createFolder());
     document.getElementById('refresh').addEventListener('click', () => loadDirectory(currentPath));
     document.getElementById('home').addEventListener('click', () => loadDirectory('/'));
     fileInput.addEventListener('change', () => handleUpload(fileInput.files));
+    folderInput.addEventListener('change', () => handleFolderUpload(folderInput.files));
 
     function formatBytes(bytes) {
       if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
@@ -523,6 +582,173 @@
       }
       fileInput.value = '';
       loadDirectory(currentPath);
+    }
+
+    async function handleFolderUpload(fileList) {
+      if (!fileList || !fileList.length) return;
+
+      // Organizza i file per struttura di cartelle
+      const folderStructure = new Map();
+      const rootFolders = new Set();
+
+      for (const file of fileList) {
+        const relativePath = file.webkitRelativePath || file.name;
+        const parts = relativePath.split('/');
+        if (parts.length > 1) {
+          rootFolders.add(parts[0]);
+          if (!folderStructure.has(parts[0])) {
+            folderStructure.set(parts[0], []);
+          }
+          folderStructure.get(parts[0]).push(file);
+        }
+      }
+
+      // Per ogni cartella root, verifica se esiste e chiedi cosa fare
+      for (const rootFolder of rootFolders) {
+        const targetPath = joinPath(currentPath, rootFolder);
+        const exists = await checkFolderExists(targetPath);
+
+        if (exists) {
+          const action = await showConflictModal(rootFolder);
+          if (action === 'cancel') {
+            statusEl.textContent = 'Upload cancelled';
+            folderInput.value = '';
+            return;
+          }
+
+          if (action === 'overwrite') {
+            // Elimina la cartella esistente
+            statusEl.textContent = `Removing existing folder ${rootFolder}...`;
+            await fetch('/api/fs/delete', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ path: targetPath })
+            });
+          }
+          // Se merge, non facciamo nulla e procediamo con l'upload
+        }
+
+        // Upload tutti i file della cartella
+        const files = folderStructure.get(rootFolder);
+        await uploadFolderFiles(files, rootFolder);
+      }
+
+      folderInput.value = '';
+      loadDirectory(currentPath);
+    }
+
+    async function checkFolderExists(path) {
+      try {
+        const res = await fetch(`/api/fs/list?path=${encodeURIComponent(path)}`);
+        return res.ok;
+      } catch {
+        return false;
+      }
+    }
+
+    function showConflictModal(folderName) {
+      return new Promise((resolve) => {
+        const modal = document.getElementById('conflict-modal');
+        const message = document.getElementById('conflict-message');
+        const cancelBtn = document.getElementById('conflict-cancel');
+        const mergeBtn = document.getElementById('conflict-merge');
+        const overwriteBtn = document.getElementById('conflict-overwrite');
+
+        message.textContent = `The folder "${folderName}" already exists. What would you like to do?`;
+        modal.classList.add('show');
+
+        const cleanup = () => {
+          modal.classList.remove('show');
+          cancelBtn.removeEventListener('click', onCancel);
+          mergeBtn.removeEventListener('click', onMerge);
+          overwriteBtn.removeEventListener('click', onOverwrite);
+        };
+
+        const onCancel = () => {
+          cleanup();
+          resolve('cancel');
+        };
+
+        const onMerge = () => {
+          cleanup();
+          resolve('merge');
+        };
+
+        const onOverwrite = () => {
+          cleanup();
+          resolve('overwrite');
+        };
+
+        cancelBtn.addEventListener('click', onCancel);
+        mergeBtn.addEventListener('click', onMerge);
+        overwriteBtn.addEventListener('click', onOverwrite);
+      });
+    }
+
+    async function uploadFolderFiles(files, rootFolderName) {
+      let uploaded = 0;
+      const total = files.length;
+
+      for (const file of files) {
+        uploaded++;
+        const relativePath = file.webkitRelativePath || file.name;
+        const pathWithoutRoot = relativePath.split('/').slice(1).join('/');
+        const uploadPath = joinPath(currentPath, rootFolderName);
+
+        statusEl.textContent = `Uploading ${relativePath} (${uploaded}/${total})...`;
+
+        // Crea le directory necessarie
+        const fileParts = pathWithoutRoot.split('/');
+        if (fileParts.length > 1) {
+          let buildPath = uploadPath;
+          for (let i = 0; i < fileParts.length - 1; i++) {
+            buildPath = joinPath(buildPath, fileParts[i]);
+            await createFolderIfNotExists(buildPath);
+          }
+        }
+
+        // Upload il file
+        const formData = new FormData();
+        formData.append('file', file);
+        const targetDir = fileParts.length > 1
+          ? joinPath(uploadPath, fileParts.slice(0, -1).join('/'))
+          : uploadPath;
+
+        const res = await fetch(`/api/fs/upload?path=${encodeURIComponent(targetDir)}`, {
+          method: 'POST',
+          body: formData
+        });
+
+        if (!res.ok) {
+          statusEl.textContent = `Failed to upload ${relativePath}`;
+          return;
+        }
+      }
+
+      statusEl.textContent = `Upload completed: ${total} files`;
+    }
+
+    async function createFolderIfNotExists(path) {
+      try {
+        const checkRes = await fetch(`/api/fs/list?path=${encodeURIComponent(path)}`);
+        if (!checkRes.ok) {
+          // Cartella non esiste, creala
+          const parts = path.split('/').filter(Boolean);
+          const folderName = parts[parts.length - 1];
+          const parentPath = '/' + parts.slice(0, -1).join('/');
+
+          await fetch('/api/fs/mkdir', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              path: parentPath || '/',
+              name: folderName
+            })
+          });
+        }
+      } catch (err) {
+        // Ignora errori, la cartella potrebbe già esistere
+      }
     }
 
     loadDirectory('/');

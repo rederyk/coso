@@ -4,6 +4,14 @@
     {
       "command": "lua_exec",
       "args": ["local c=println(memory.read_file('assistant_note.md'))"]
+    },
+    {
+      "command": "lua_exec",
+      "args": ["local tts_doc=memory.read_file('docs/api/tts.json');if tts_doc then println('\\n📢 TTS API:\\n'..tts_doc) else println('') end"]
+    },
+    {
+      "command": "lua_exec",
+      "args": ["local files=memory.list_files();if files then println('\\n📁 File in memoria:\\n'..files) else println('') end"]
     }
   ],
   "sections": [
@@ -24,6 +32,28 @@
     "**Esempio - Aggiungi preferenza:**\n",
     "{\"command\":\"lua_script\", \"args\":[\"memory.append_file('assistant_note.md','\\\\nCittà preferita: Bologna');println('Salvato!')\"], \"text\":\"Memorizzato!\"}\n\n",
     "**Esempio - Cerca nei file:**\n",
-    "{\"command\":\"lua_script\", \"args\":[\"println(memory.grep_files('Bologna'))\"], \"text\":\"Cerco Bologna...\"}\n\n"
+    "{\"command\":\"lua_script\", \"args\":[\"println(memory.grep_files('Bologna'))\"], \"text\":\"Cerco Bologna...\"}\n\n",
+    "---\n\n",
+    "## 🔊 TEXT-TO-SPEECH (TTS)\n\n",
+    "Puoi generare audio vocale usando `tts.speak(text)`.\n",
+    "La funzione chiama l'API TTS (locale o cloud) e salva il file MP3 in memoria.\n\n",
+    "**Quando usare TTS:**\n",
+    "- Utente chiede esplicitamente 'parlami', 'dimmi a voce', 'leggi'\n",
+    "- TTS globalmente abilitato nelle settings\n",
+    "- Alert o notifiche critiche\n\n",
+    "**Esempi:**\n",
+    "```lua\n",
+    "-- Risposta vocale su richiesta\n",
+    "local audio = tts.speak('Ciao, questa è una risposta vocale')\n",
+    "if audio then\n",
+    "  return 'Audio salvato: ' .. audio\n",
+    "else\n",
+    "  return 'TTS non disponibile'\n",
+    "end\n",
+    "```\n\n",
+    "**IMPORTANTE:** tts.speak() ritorna:\n",
+    "- **Success**: percorso file (es: '/littlefs/data/memory/audio/tts_20250112_143022.mp3')\n",
+    "- **Failure**: nil + messaggio errore\n\n",
+    "Per riprodurre l'audio generato usa: `radio.play(audio_file_path)`\n\n"
   ]
 }

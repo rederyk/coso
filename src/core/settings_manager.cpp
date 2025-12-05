@@ -812,6 +812,78 @@ void SettingsManager::setLlmModel(const std::string& model) {
     notify(SettingKey::LlmModel);
 }
 
+void SettingsManager::setTtsEnabled(bool enabled) {
+    if (!initialized_ || enabled == current_.ttsEnabled) {
+        return;
+    }
+    current_.ttsEnabled = enabled;
+    persistSnapshot();
+    notify(SettingKey::TtsEnabled);
+}
+
+void SettingsManager::setTtsCloudEndpoint(const std::string& endpoint) {
+    if (!initialized_ || endpoint == current_.ttsCloudEndpoint) {
+        return;
+    }
+    current_.ttsCloudEndpoint = endpoint;
+    persistSnapshot();
+    notify(SettingKey::TtsCloudEndpoint);
+}
+
+void SettingsManager::setTtsLocalEndpoint(const std::string& endpoint) {
+    if (!initialized_ || endpoint == current_.ttsLocalEndpoint) {
+        return;
+    }
+    current_.ttsLocalEndpoint = endpoint;
+    persistSnapshot();
+    notify(SettingKey::TtsLocalEndpoint);
+}
+
+void SettingsManager::setTtsVoice(const std::string& voice) {
+    if (!initialized_ || voice == current_.ttsVoice) {
+        return;
+    }
+    current_.ttsVoice = voice;
+    persistSnapshot();
+    notify(SettingKey::TtsVoice);
+}
+
+void SettingsManager::setTtsModel(const std::string& model) {
+    if (!initialized_ || model == current_.ttsModel) {
+        return;
+    }
+    current_.ttsModel = model;
+    persistSnapshot();
+    notify(SettingKey::TtsModel);
+}
+
+void SettingsManager::setTtsSpeed(float speed) {
+    if (!initialized_ || speed == current_.ttsSpeed) {
+        return;
+    }
+    current_.ttsSpeed = speed;
+    persistSnapshot();
+    notify(SettingKey::TtsSpeed);
+}
+
+void SettingsManager::setTtsOutputFormat(const std::string& format) {
+    if (!initialized_ || format == current_.ttsOutputFormat) {
+        return;
+    }
+    current_.ttsOutputFormat = format;
+    persistSnapshot();
+    notify(SettingKey::TtsOutputFormat);
+}
+
+void SettingsManager::setTtsOutputPath(const std::string& path) {
+    if (!initialized_ || path == current_.ttsOutputPath) {
+        return;
+    }
+    current_.ttsOutputPath = path;
+    persistSnapshot();
+    notify(SettingKey::TtsOutputPath);
+}
+
 void SettingsManager::setVoiceAssistantSystemPromptTemplate(const std::string& prompt) {
     if (!initialized_ || prompt == current_.voiceAssistantSystemPromptTemplate) {
         return;

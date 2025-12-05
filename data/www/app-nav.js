@@ -29,6 +29,13 @@
       match: (path) => path.includes('calendar'),
     },
     {
+      id: 'tts',
+      label: 'TTS Settings',
+      href: '/tts-settings.html',
+      icon: '🔊',
+      match: (path) => path.includes('tts-settings'),
+    },
+    {
       id: 'settings',
       label: 'Settings',
       href: '#',

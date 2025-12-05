@@ -169,6 +169,9 @@ public:
         static int lua_memory_grep_files(lua_State* L);
         static int lua_println(lua_State* L);
 
+        // TTS function
+        static int lua_tts_speak(lua_State* L);
+
         // Radio/Audio player functions
         static int lua_radio_play(lua_State* L);
         static int lua_radio_stop(lua_State* L);
@@ -199,6 +202,9 @@ private:
     bool makeWhisperRequest(const std::string& file_path, std::string& transcription);
     bool makeGPTRequest(const std::string& prompt, std::string& response);
     bool parseGPTCommand(const std::string& response, VoiceCommand& cmd);
+
+    // TTS helper
+    bool makeTTSRequest(const std::string& text, std::string& output_file_path);
 
     // Output refinement helpers (Phase 1: Output Refinement System)
     bool shouldRefineOutput(const VoiceCommand& cmd);

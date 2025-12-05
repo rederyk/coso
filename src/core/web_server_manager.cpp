@@ -173,6 +173,13 @@ void WebServerManager::registerRoutes() {
     server_->on("/api/calendar/settings", HTTP_GET, [this]() { handleCalendarSettingsGet(); });
     server_->on("/api/calendar/settings", HTTP_POST, [this]() { handleCalendarSettingsPost(); });
 
+    // ========== TTS SETTINGS ENDPOINTS ==========
+    server_->on("/tts-settings", HTTP_GET, [this]() { handleTtsSettingsPage(); });
+    server_->on("/api/tts/settings", HTTP_GET, [this]() { handleTtsSettingsGet(); });
+    server_->on("/api/tts/settings", HTTP_POST, [this]() { handleTtsSettingsPost(); });
+    server_->on("/api/tts/settings/export", HTTP_GET, [this]() { handleTtsSettingsExport(); });
+    server_->on("/api/tts/settings/import", HTTP_POST, [this]() { handleTtsSettingsImport(); });
+
     server_->on("/api/health", HTTP_GET, [this]() { handleApiHealth(); });
     server_->on("/api/fs/list", HTTP_GET, [this]() { handleFsList(); });
     server_->on("/api/fs/download", HTTP_GET, [this]() { handleFsDownload(); });
@@ -1735,4 +1742,186 @@ void WebServerManager::handleCalendarSettingsPost() {
     cJSON_AddBoolToObject(response, "enabled", enabled);
 
     sendCalendarJsonResponse(*server_, response);
+}
+
+// ========== TTS SETTINGS HANDLERS ==========
+
+void WebServerManager::handleTtsSettingsPage() {
+    if (!serveFile("/www/tts-settings.html")) {
+        server_->send(404, "text/plain", "tts-settings.html not found");
+    }
+}
+
+void WebServerManager::handleTtsSettingsGet() {
+    SettingsManager& settings = SettingsManager::getInstance();
+    const SettingsSnapshot& snapshot = settings.getSnapshot();
+
+    DynamicJsonDocument doc(2048);
+    doc["success"] = true;
+
+    // TTS settings
+    doc["ttsEnabled"] = snapshot.ttsEnabled;
+    doc["ttsCloudEndpoint"] = snapshot.ttsCloudEndpoint;
+    doc["ttsLocalEndpoint"] = snapshot.ttsLocalEndpoint;
+    doc["ttsVoice"] = snapshot.ttsVoice;
+    doc["ttsModel"] = snapshot.ttsModel;
+    doc["ttsSpeed"] = snapshot.ttsSpeed;
+    doc["ttsOutputFormat"] = snapshot.ttsOutputFormat;
+    doc["ttsOutputPath"] = snapshot.ttsOutputPath;
+
+    // Include mode info
+    doc["localApiMode"] = snapshot.localApiMode;
+    doc["activeTtsEndpoint"] = snapshot.localApiMode ? snapshot.ttsLocalEndpoint : snapshot.ttsCloudEndpoint;
+
+    String response;
+    serializeJson(doc, response);
+    sendJson(200, response);
+}
+
+void WebServerManager::handleTtsSettingsPost() {
+    String body = server_->arg("plain");
+    if (body.isEmpty()) {
+        sendJson(400, "{\"success\":false,\"message\":\"Empty body\"}");
+        return;
+    }
+
+    DynamicJsonDocument doc(2048);
+    auto err = deserializeJson(doc, body);
+    if (err) {
+        sendJson(400, "{\"success\":false,\"message\":\"Invalid JSON\"}");
+        return;
+    }
+
+    SettingsManager& settings = SettingsManager::getInstance();
+
+    // Update TTS settings
+    if (doc.containsKey("ttsEnabled")) {
+        settings.setTtsEnabled(doc["ttsEnabled"] | false);
+    }
+    if (doc.containsKey("ttsCloudEndpoint")) {
+        JsonVariant val = doc["ttsCloudEndpoint"];
+        if (!val.isNull()) {
+            settings.setTtsCloudEndpoint(val.as<const char*>());
+        }
+    }
+    if (doc.containsKey("ttsLocalEndpoint")) {
+        JsonVariant val = doc["ttsLocalEndpoint"];
+        if (!val.isNull()) {
+            settings.setTtsLocalEndpoint(val.as<const char*>());
+        }
+    }
+    if (doc.containsKey("ttsVoice")) {
+        JsonVariant val = doc["ttsVoice"];
+        if (!val.isNull()) {
+            settings.setTtsVoice(val.as<const char*>());
+        }
+    }
+    if (doc.containsKey("ttsModel")) {
+        JsonVariant val = doc["ttsModel"];
+        if (!val.isNull()) {
+            settings.setTtsModel(val.as<const char*>());
+        }
+    }
+    if (doc.containsKey("ttsSpeed")) {
+        settings.setTtsSpeed(doc["ttsSpeed"] | 1.0f);
+    }
+    if (doc.containsKey("ttsOutputFormat")) {
+        JsonVariant val = doc["ttsOutputFormat"];
+        if (!val.isNull()) {
+            settings.setTtsOutputFormat(val.as<const char*>());
+        }
+    }
+    if (doc.containsKey("ttsOutputPath")) {
+        JsonVariant val = doc["ttsOutputPath"];
+        if (!val.isNull()) {
+            settings.setTtsOutputPath(val.as<const char*>());
+        }
+    }
+
+    sendJson(200, "{\"success\":true,\"message\":\"TTS settings updated\"}");
+}
+
+void WebServerManager::handleTtsSettingsExport() {
+    SettingsManager& settings = SettingsManager::getInstance();
+    const SettingsSnapshot& snapshot = settings.getSnapshot();
+
+    DynamicJsonDocument doc(2048);
+    doc["ttsEnabled"] = snapshot.ttsEnabled;
+    doc["ttsCloudEndpoint"] = snapshot.ttsCloudEndpoint;
+    doc["ttsLocalEndpoint"] = snapshot.ttsLocalEndpoint;
+    doc["ttsVoice"] = snapshot.ttsVoice;
+    doc["ttsModel"] = snapshot.ttsModel;
+    doc["ttsSpeed"] = snapshot.ttsSpeed;
+    doc["ttsOutputFormat"] = snapshot.ttsOutputFormat;
+    doc["ttsOutputPath"] = snapshot.ttsOutputPath;
+
+    String response;
+    serializeJson(doc, response);
+
+    server_->sendHeader("Content-Disposition", "attachment; filename=\"tts-settings.json\"");
+    server_->sendHeader("Cache-Control", "no-store");
+    sendJson(200, response);
+}
+
+void WebServerManager::handleTtsSettingsImport() {
+    String body = server_->arg("plain");
+    if (body.isEmpty()) {
+        sendJson(400, "{\"success\":false,\"message\":\"Empty body\"}");
+        return;
+    }
+
+    DynamicJsonDocument doc(2048);
+    auto err = deserializeJson(doc, body);
+    if (err) {
+        sendJson(400, "{\"success\":false,\"message\":\"Invalid JSON format\"}");
+        return;
+    }
+
+    SettingsManager& settings = SettingsManager::getInstance();
+
+    // Import all TTS settings from JSON
+    if (doc.containsKey("ttsEnabled")) {
+        settings.setTtsEnabled(doc["ttsEnabled"] | false);
+    }
+    if (doc.containsKey("ttsCloudEndpoint")) {
+        JsonVariant val = doc["ttsCloudEndpoint"];
+        if (!val.isNull()) {
+            settings.setTtsCloudEndpoint(val.as<const char*>());
+        }
+    }
+    if (doc.containsKey("ttsLocalEndpoint")) {
+        JsonVariant val = doc["ttsLocalEndpoint"];
+        if (!val.isNull()) {
+            settings.setTtsLocalEndpoint(val.as<const char*>());
+        }
+    }
+    if (doc.containsKey("ttsVoice")) {
+        JsonVariant val = doc["ttsVoice"];
+        if (!val.isNull()) {
+            settings.setTtsVoice(val.as<const char*>());
+        }
+    }
+    if (doc.containsKey("ttsModel")) {
+        JsonVariant val = doc["ttsModel"];
+        if (!val.isNull()) {
+            settings.setTtsModel(val.as<const char*>());
+        }
+    }
+    if (doc.containsKey("ttsSpeed")) {
+        settings.setTtsSpeed(doc["ttsSpeed"] | 1.0f);
+    }
+    if (doc.containsKey("ttsOutputFormat")) {
+        JsonVariant val = doc["ttsOutputFormat"];
+        if (!val.isNull()) {
+            settings.setTtsOutputFormat(val.as<const char*>());
+        }
+    }
+    if (doc.containsKey("ttsOutputPath")) {
+        JsonVariant val = doc["ttsOutputPath"];
+        if (!val.isNull()) {
+            settings.setTtsOutputPath(val.as<const char*>());
+        }
+    }
+
+    sendJson(200, "{\"success\":true,\"message\":\"TTS settings imported successfully\"}");
 }

@@ -944,6 +944,162 @@ bool VoiceAssistant::makeWhisperRequest(const std::string& file_path, std::strin
     return true;
 }
 
+bool VoiceAssistant::makeTTSRequest(const std::string& text, std::string& output_file_path) {
+    LOG_I("Making TTS request for text: %s", text.c_str());
+
+    // Check if we have WiFi connection
+    if (WiFi.status() != WL_CONNECTED) {
+        LOG_E("WiFi not connected");
+        return false;
+    }
+
+    // Get settings
+    const SettingsSnapshot& settings = SettingsManager::getInstance().getSnapshot();
+
+    // Check if TTS is enabled
+    if (!settings.ttsEnabled) {
+        LOG_W("TTS is disabled in settings");
+        return false;
+    }
+
+    // Get endpoint based on local/cloud mode
+    std::string tts_url;
+    if (settings.localApiMode) {
+        tts_url = settings.ttsLocalEndpoint;
+        LOG_I("Using LOCAL TTS API at: %s", tts_url.c_str());
+    } else {
+        tts_url = settings.ttsCloudEndpoint;
+        LOG_I("Using CLOUD TTS API at: %s", tts_url.c_str());
+    }
+
+    // Build JSON request body
+    cJSON* root = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "model", settings.ttsModel.c_str());
+    cJSON_AddStringToObject(root, "input", text.c_str());
+    cJSON_AddStringToObject(root, "voice", settings.ttsVoice.c_str());
+    cJSON_AddNumberToObject(root, "speed", settings.ttsSpeed);
+
+    char* json_str = cJSON_PrintUnformatted(root);
+    std::string request_body(json_str);
+    cJSON_free(json_str);
+    cJSON_Delete(root);
+
+    LOG_I("TTS request body: %s", request_body.c_str());
+
+    // Configure HTTP client
+    esp_http_client_config_t config = {};
+    config.url = tts_url.c_str();
+    config.method = HTTP_METHOD_POST;
+    config.timeout_ms = 30000;  // 30 second timeout
+    config.buffer_size = 4096;
+    config.buffer_size_tx = 4096;
+
+    esp_http_client_handle_t client = esp_http_client_init(&config);
+    if (!client) {
+        LOG_E("Failed to initialize HTTP client");
+        return false;
+    }
+
+    // Set headers
+    esp_http_client_set_header(client, "Content-Type", "application/json");
+    esp_http_client_set_header(client, "User-Agent", "ESP32-VoiceAssistant/1.0");
+
+    // Add API key if using cloud mode
+    if (!settings.localApiMode && !settings.openAiApiKey.empty()) {
+        std::string auth_header = std::string("Bearer ") + settings.openAiApiKey;
+        esp_http_client_set_header(client, "Authorization", auth_header.c_str());
+        LOG_I("Using API key for cloud authentication");
+    }
+
+    // Set POST data
+    esp_http_client_set_post_field(client, request_body.c_str(), request_body.length());
+
+    // Perform request
+    LOG_I("Sending TTS request...");
+    esp_err_t err = esp_http_client_perform(client);
+    if (err != ESP_OK) {
+        LOG_E("HTTP request failed: %s", esp_err_to_name(err));
+        esp_http_client_cleanup(client);
+        return false;
+    }
+
+    int status_code = esp_http_client_get_status_code(client);
+    int content_length = esp_http_client_get_content_length(client);
+
+    LOG_I("HTTP Status: %d, Content-Length: %d", status_code, content_length);
+
+    if (status_code != 200) {
+        LOG_E("TTS API returned error status: %d", status_code);
+        esp_http_client_cleanup(client);
+        return false;
+    }
+
+    // Read audio data
+    std::vector<uint8_t> audio_data;
+    audio_data.reserve(content_length > 0 ? content_length : 4096);
+
+    char buffer[1024];
+    int read_len;
+    while ((read_len = esp_http_client_read(client, buffer, sizeof(buffer))) > 0) {
+        audio_data.insert(audio_data.end(), buffer, buffer + read_len);
+    }
+
+    esp_http_client_cleanup(client);
+
+    if (audio_data.empty()) {
+        LOG_E("No audio data received from TTS API");
+        return false;
+    }
+
+    LOG_I("Received %u bytes of audio data", audio_data.size());
+
+    // Generate output filename with timestamp
+    char filename[128];
+    time_t now = time(nullptr);
+    struct tm* timeinfo = localtime(&now);
+    snprintf(filename, sizeof(filename), "tts_%04d%02d%02d_%02d%02d%02d.%s",
+             timeinfo->tm_year + 1900, timeinfo->tm_mon + 1, timeinfo->tm_mday,
+             timeinfo->tm_hour, timeinfo->tm_min, timeinfo->tm_sec,
+             settings.ttsOutputFormat.c_str());
+
+    // Create output directory if it doesn't exist
+    std::string output_dir = settings.ttsOutputPath;
+    if (!LittleFS.exists(output_dir.c_str())) {
+        LOG_I("Creating TTS output directory: %s", output_dir.c_str());
+        // Create directory recursively
+        size_t pos = 0;
+        while ((pos = output_dir.find('/', pos + 1)) != std::string::npos) {
+            std::string subdir = output_dir.substr(0, pos);
+            if (!LittleFS.exists(subdir.c_str())) {
+                LittleFS.mkdir(subdir.c_str());
+            }
+        }
+        LittleFS.mkdir(output_dir.c_str());
+    }
+
+    // Build full output path
+    output_file_path = output_dir + "/" + filename;
+
+    // Write audio data to file
+    File file = LittleFS.open(output_file_path.c_str(), FILE_WRITE);
+    if (!file) {
+        LOG_E("Failed to open file for writing: %s", output_file_path.c_str());
+        return false;
+    }
+
+    size_t bytes_written = file.write(audio_data.data(), audio_data.size());
+    file.close();
+
+    if (bytes_written != audio_data.size()) {
+        LOG_E("Failed to write complete audio data (wrote %u of %u bytes)",
+              bytes_written, audio_data.size());
+        return false;
+    }
+
+    LOG_I("TTS audio saved to: %s (%u bytes)", output_file_path.c_str(), bytes_written);
+    return true;
+}
+
 bool VoiceAssistant::makeGPTRequest(const std::string& prompt, std::string& response) {
     LOG_I("Making Ollama/GPT request");
 
@@ -2165,6 +2321,9 @@ void VoiceAssistant::LuaSandbox::setupSandbox() {
     lua_register(L, "esp32_memory_prepend_file", lua_memory_prepend_file);
     lua_register(L, "esp32_memory_grep_files", lua_memory_grep_files);
 
+    // TTS function
+    lua_register(L, "esp32_tts_speak", lua_tts_speak);
+
     // Radio/Audio player functions
     lua_register(L, "esp32_radio_play", lua_radio_play);
     lua_register(L, "esp32_radio_stop", lua_radio_stop);
@@ -2456,6 +2615,24 @@ int VoiceAssistant::LuaSandbox::lua_memory_grep_files(lua_State* L) {
     }
 
     return 1;
+}
+
+// TTS function
+int VoiceAssistant::LuaSandbox::lua_tts_speak(lua_State* L) {
+    const char* text = luaL_checkstring(L, 1);
+
+    VoiceAssistant& va = VoiceAssistant::getInstance();
+    std::string output_file;
+    bool success = va.makeTTSRequest(text, output_file);
+
+    if (success) {
+        lua_pushstring(L, output_file.c_str());
+        return 1;
+    } else {
+        lua_pushnil(L);
+        lua_pushstring(L, "TTS request failed");
+        return 2;
+    }
 }
 
 int VoiceAssistant::LuaSandbox::lua_gpio_read(lua_State* L) {

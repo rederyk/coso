@@ -53,6 +53,16 @@ struct SettingsSnapshot {
     std::string llmLocalEndpoint = "http://192.168.1.51:11434/v1/chat/completions";
     std::string llmModel = "llama3.2:3b";  // Model name for LLM requests
 
+    // TTS (Text-to-Speech) endpoints
+    bool ttsEnabled = false;
+    std::string ttsCloudEndpoint = "https://api.openai.com/v1/audio/speech";
+    std::string ttsLocalEndpoint = "http://192.168.1.51:7778/v1/audio/speech";
+    std::string ttsVoice = "alloy";  // Voice name for TTS (OpenAI: alloy, echo, fable, onyx, nova, shimmer)
+    std::string ttsModel = "tts-1";  // TTS model name
+    float ttsSpeed = 1.0f;  // Speech speed (0.25 to 4.0)
+    std::string ttsOutputFormat = "mp3";  // Output format: mp3, opus, aac, flac
+    std::string ttsOutputPath = "/littlefs/data/memory/audio";  // Where to save TTS audio files
+
     // Theme
     std::string theme;
     uint32_t primaryColor = 0x0b2035;
@@ -131,6 +141,16 @@ public:
         LlmLocalEndpoint,
         LlmModel,
         VoiceAssistantSystemPrompt,
+
+        // TTS
+        TtsEnabled,
+        TtsCloudEndpoint,
+        TtsLocalEndpoint,
+        TtsVoice,
+        TtsModel,
+        TtsSpeed,
+        TtsOutputFormat,
+        TtsOutputPath,
 
         // Theme
         Theme,
@@ -286,6 +306,31 @@ public:
 
     const std::string& getLlmModel() const { return current_.llmModel; }
     void setLlmModel(const std::string& model);
+
+    // TTS
+    bool getTtsEnabled() const { return current_.ttsEnabled; }
+    void setTtsEnabled(bool enabled);
+
+    const std::string& getTtsCloudEndpoint() const { return current_.ttsCloudEndpoint; }
+    void setTtsCloudEndpoint(const std::string& endpoint);
+
+    const std::string& getTtsLocalEndpoint() const { return current_.ttsLocalEndpoint; }
+    void setTtsLocalEndpoint(const std::string& endpoint);
+
+    const std::string& getTtsVoice() const { return current_.ttsVoice; }
+    void setTtsVoice(const std::string& voice);
+
+    const std::string& getTtsModel() const { return current_.ttsModel; }
+    void setTtsModel(const std::string& model);
+
+    float getTtsSpeed() const { return current_.ttsSpeed; }
+    void setTtsSpeed(float speed);
+
+    const std::string& getTtsOutputFormat() const { return current_.ttsOutputFormat; }
+    void setTtsOutputFormat(const std::string& format);
+
+    const std::string& getTtsOutputPath() const { return current_.ttsOutputPath; }
+    void setTtsOutputPath(const std::string& path);
 
     // Time & NTP
     const std::string& getTimezone() const { return current_.timezone; }

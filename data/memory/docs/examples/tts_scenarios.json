@@ -1,0 +1,55 @@
+{
+  "tts_usage_scenarios": {
+    "description": "Scenari d'uso per la sintesi vocale (TTS)",
+    "scenarios": [
+      {
+        "user_request": "Parlami del meteo",
+        "intent": "Utente chiede esplicitamente risposta vocale",
+        "lua_script": "-- Recupera info meteo\nlocal weather_data = webdata.read_data('weather_rome.json')\nif weather_data then\n  local weather = cjson.decode(weather_data)\n  local temp = weather.current.temp\n  local desc = weather.current.description\n  \n  -- Genera risposta vocale\n  local response = 'A Roma ci sono ' .. temp .. ' gradi, ' .. desc\n  local audio_file = tts.speak(response)\n  \n  if audio_file then\n    return 'Risposta vocale generata: ' .. audio_file\n  else\n    return response  -- Fallback a testo se TTS fallisce\n  end\nend"
+      },
+      {
+        "user_request": "Dimmi a voce che ore sono",
+        "intent": "Richiesta esplicita di output vocale",
+        "lua_script": "-- Ottieni ora corrente\nlocal status = system.status()\nlocal current_time = status.time\n\n-- Genera audio\nlocal message = 'Sono le ore ' .. current_time\nlocal audio = tts.speak(message)\n\nif audio then\n  return 'Audio salvato in: ' .. audio\nelse\n  return message\nend"
+      },
+      {
+        "user_request": "Quanta memoria libera c'è?",
+        "intent": "Risposta normale (NO TTS a meno che non sia globalmente abilitato)",
+        "lua_script": "local status = system.status()\nlocal heap = status.heap_free\n\n-- TTS solo se abilitato globalmente o richiesto\n-- In questo caso restituiamo solo testo\nreturn 'Memoria libera: ' .. heap .. ' bytes'"
+      },
+      {
+        "user_request": "Alert: temperatura critica rilevata!",
+        "intent": "Sistema genera notifica vocale automatica",
+        "lua_script": "-- Scenario: monitoring automatico che rileva evento critico\nlocal temp_sensor = 85  -- esempio\n\nif temp_sensor > 80 then\n  local alert_msg = 'Attenzione! Temperatura critica: ' .. temp_sensor .. ' gradi'\n  \n  -- Genera notifica vocale per alert\n  local audio = tts.speak(alert_msg)\n  \n  -- Salva anche in memoria per log\n  memory.append_file('alerts.log', alert_msg .. '\\n')\n  \n  return 'Alert generato: ' .. (audio or 'TTS fallito')\nend"
+      },
+      {
+        "user_request": "Leggi l'ultimo messaggio",
+        "intent": "Assistenza accessibilità - lettura vocale",
+        "lua_script": "-- Recupera ultimo messaggio\nlocal messages = memory.read_file('messages.txt')\n\nif messages then\n  -- Estrai ultima riga\n  local last_msg = messages:match('([^\\n]+)$')\n  \n  if last_msg then\n    -- Leggi a voce\n    local audio = tts.speak(last_msg)\n    return audio or last_msg\n  end\nend\n\nreturn 'Nessun messaggio trovato'"
+      }
+    ],
+    "best_practices": [
+      "Usa TTS solo quando utente lo richiede esplicitamente ('parlami', 'dimmi a voce')",
+      "Oppure quando TTS è globalmente abilitato nelle settings",
+      "Per alert/notifiche critiche, TTS può essere sempre attivo",
+      "Verifica sempre il return value: nil = errore",
+      "Fornisci fallback testuale se TTS fallisce",
+      "Mantieni messaggi vocali concisi e chiari",
+      "File audio salvati automaticamente con timestamp"
+    ],
+    "error_handling": [
+      {
+        "scenario": "TTS disabilitato",
+        "code": "local audio = tts.speak('test')\nif not audio then\n  -- TTS disabilitato o errore\n  return 'TTS non disponibile'\nend"
+      },
+      {
+        "scenario": "Nessuna connessione WiFi",
+        "code": "local status = system.status()\nif not status.wifi_connected then\n  return 'WiFi non connesso, TTS non disponibile'\nend\n\nlocal audio = tts.speak('messaggio')"
+      },
+      {
+        "scenario": "Fallback testuale",
+        "code": "local message = 'Risposta importante'\nlocal audio = tts.speak(message)\n\n-- Restituisci sempre il messaggio (anche se TTS funziona)\nreturn message .. (audio and ' [Audio: ' .. audio .. ']' or '')"
+      }
+    ]
+  }
+}

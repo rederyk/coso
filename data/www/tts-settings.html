@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="en" data-page="tts">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TTS Configuration</title>
+  <link rel="stylesheet" href="app-nav.css">
+  <style>
+    :root {
+      --bg: #05060f;
+      --panel: rgba(12, 18, 32, 0.92);
+      --panel-border: rgba(255,255,255,0.06);
+      --accent: #5cffe1;
+      --accent-dark: #3ce0c7;
+      --danger: #ff7b7b;
+      --success: #7ee7c0;
+      --muted: #9fb0c6;
+      --text: #eef5ff;
+      --shadow: 0 18px 40px rgba(0,0,0,0.35);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Inter", system-ui, sans-serif;
+      background: radial-gradient(circle at 15% 20%, rgba(92,255,225,0.16), transparent 40%),
+                  radial-gradient(circle at 80% 0%, rgba(82,120,255,0.18), transparent 35%),
+                  var(--bg);
+      color: var(--text);
+      padding: 24px;
+    }
+    main {
+      max-width: 800px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+    h1 {
+      margin: 0;
+      font-size: 1.8rem;
+    }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--panel-border);
+      border-radius: 18px;
+      padding: 20px;
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(14px);
+    }
+    .form-group {
+      margin-bottom: 16px;
+    }
+    label {
+      display: block;
+      margin-bottom: 6px;
+      font-weight: 600;
+      font-size: 14px;
+    }
+    .label-desc {
+      font-size: 12px;
+      color: var(--muted);
+      font-weight: 400;
+      margin-top: 2px;
+    }
+    input[type="text"],
+    input[type="number"],
+    select {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid var(--panel-border);
+      border-radius: 10px;
+      background: rgba(255,255,255,0.03);
+      color: var(--text);
+      font-size: 14px;
+      font-family: inherit;
+    }
+    input:focus, select:focus {
+      outline: none;
+      border-color: var(--accent);
+      background: rgba(255,255,255,0.05);
+    }
+    .checkbox-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px;
+      background: rgba(92,255,225,0.08);
+      border: 1px solid rgba(92,255,225,0.2);
+      border-radius: 10px;
+    }
+    input[type="checkbox"] {
+      width: 18px;
+      height: 18px;
+      cursor: pointer;
+      accent-color: var(--accent);
+    }
+    button {
+      border: none;
+      border-radius: 10px;
+      padding: 10px 18px;
+      font-weight: 600;
+      cursor: pointer;
+      background: linear-gradient(135deg, var(--accent), var(--accent-dark));
+      color: #021218;
+      transition: transform 0.15s ease;
+      font-size: 14px;
+    }
+    button:hover { transform: translateY(-1px); }
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    #status {
+      margin-top: 12px;
+      padding: 10px 12px;
+      border-radius: 8px;
+      font-size: 13px;
+      display: none;
+    }
+    #status.success {
+      background: rgba(126,231,192,0.15);
+      border: 1px solid var(--success);
+      color: var(--success);
+      display: block;
+    }
+    #status.error {
+      background: rgba(255,123,123,0.15);
+      border: 1px solid var(--danger);
+      color: var(--danger);
+      display: block;
+    }
+    .info-box {
+      background: rgba(92,255,225,0.08);
+      border: 1px solid rgba(92,255,225,0.2);
+      border-radius: 10px;
+      padding: 12px;
+      font-size: 13px;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+    .voice-presets {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+      gap: 6px;
+      margin-top: 8px;
+    }
+    .voice-preset {
+      padding: 6px 10px;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid var(--panel-border);
+      border-radius: 6px;
+      cursor: pointer;
+      text-align: center;
+      font-size: 12px;
+      transition: all 0.2s ease;
+    }
+    .voice-preset:hover {
+      background: rgba(255,255,255,0.08);
+      border-color: var(--accent);
+    }
+    .voice-preset.selected {
+      background: var(--accent);
+      color: #021218;
+      font-weight: 600;
+    }
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 16px;
+    }
+    .range-display {
+      text-align: center;
+      font-weight: 600;
+      color: var(--accent);
+      margin-top: 4px;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <div data-app-nav></div>
+
+    <h1>🔊 TTS Configuration</h1>
+
+    <div class="panel">
+      <div class="checkbox-group">
+        <input type="checkbox" id="ttsEnabled">
+        <label for="ttsEnabled" style="margin: 0; cursor: pointer;">Enable Text-to-Speech</label>
+      </div>
+
+      <div class="info-box" style="margin-top: 16px;">
+        Configure TTS synthesis settings. The active endpoint depends on the global API mode (Cloud/Local).
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="grid-2">
+        <div class="form-group">
+          <label>
+            Cloud Endpoint
+            <div class="label-desc">OpenAI-compatible TTS API</div>
+          </label>
+          <input type="text" id="ttsCloudEndpoint" placeholder="https://api.openai.com/v1/audio/speech">
+        </div>
+
+        <div class="form-group">
+          <label>
+            Local Endpoint
+            <div class="label-desc">Local Docker/server TTS API</div>
+          </label>
+          <input type="text" id="ttsLocalEndpoint" placeholder="http://192.168.1.51:7778/v1/audio/speech">
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="form-group">
+        <label>
+          Voice
+          <div class="label-desc">TTS voice for synthesis</div>
+        </label>
+        <input type="text" id="ttsVoice" placeholder="alloy">
+
+        <div class="label-desc" style="margin-top: 10px; margin-bottom: 4px;">OpenAI Voices:</div>
+        <div class="voice-presets">
+          <div class="voice-preset" data-voice="alloy">Alloy</div>
+          <div class="voice-preset" data-voice="echo">Echo</div>
+          <div class="voice-preset" data-voice="fable">Fable</div>
+          <div class="voice-preset" data-voice="onyx">Onyx</div>
+          <div class="voice-preset" data-voice="nova">Nova</div>
+          <div class="voice-preset" data-voice="shimmer">Shimmer</div>
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <div class="form-group">
+          <label>
+            Model
+            <div class="label-desc">TTS model (e.g., tts-1, tts-1-hd)</div>
+          </label>
+          <input type="text" id="ttsModel" placeholder="tts-1">
+        </div>
+
+        <div class="form-group">
+          <label>
+            Output Format
+            <div class="label-desc">Audio format</div>
+          </label>
+          <select id="ttsOutputFormat">
+            <option value="mp3">MP3</option>
+            <option value="opus">Opus</option>
+            <option value="aac">AAC</option>
+            <option value="flac">FLAC</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <div class="form-group">
+          <label>
+            Speed
+            <div class="label-desc">Speech speed (0.25 to 4.0)</div>
+          </label>
+          <input type="range" id="ttsSpeed" min="0.25" max="4.0" step="0.05" value="1.0"
+                 style="width: 100%; accent-color: var(--accent);">
+          <div class="range-display" id="speedValue">1.0x</div>
+        </div>
+
+        <div class="form-group">
+          <label>
+            Output Path
+            <div class="label-desc">Directory for audio files</div>
+          </label>
+          <input type="text" id="ttsOutputPath" placeholder="/littlefs/data/memory/audio">
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <button id="saveBtn">Save TTS Settings</button>
+      <div id="status"></div>
+    </div>
+  </main>
+
+  <script src="app-nav.js" defer></script>
+  <script>
+    let settings = {};
+
+    async function loadSettings() {
+      try {
+        const response = await fetch('/api/tts/settings');
+        const data = await response.json();
+        if (data.success) {
+          settings = data;
+          updateForm();
+        } else {
+          showStatus('Failed to load settings', 'error');
+        }
+      } catch (error) {
+        showStatus('Error: ' + error.message, 'error');
+      }
+    }
+
+    function updateForm() {
+      document.getElementById('ttsEnabled').checked = settings.ttsEnabled || false;
+      document.getElementById('ttsCloudEndpoint').value = settings.ttsCloudEndpoint || '';
+      document.getElementById('ttsLocalEndpoint').value = settings.ttsLocalEndpoint || '';
+      document.getElementById('ttsVoice').value = settings.ttsVoice || '';
+      document.getElementById('ttsModel').value = settings.ttsModel || '';
+      document.getElementById('ttsSpeed').value = settings.ttsSpeed || 1.0;
+      document.getElementById('speedValue').textContent = (settings.ttsSpeed || 1.0).toFixed(2) + 'x';
+      document.getElementById('ttsOutputFormat').value = settings.ttsOutputFormat || 'mp3';
+      document.getElementById('ttsOutputPath').value = settings.ttsOutputPath || '';
+      updateVoiceSelection(settings.ttsVoice || '');
+    }
+
+    function updateVoiceSelection(voice) {
+      document.querySelectorAll('.voice-preset').forEach(preset => {
+        preset.classList.toggle('selected', preset.dataset.voice === voice);
+      });
+    }
+
+    async function saveSettings() {
+      const payload = {
+        ttsEnabled: document.getElementById('ttsEnabled').checked,
+        ttsCloudEndpoint: document.getElementById('ttsCloudEndpoint').value,
+        ttsLocalEndpoint: document.getElementById('ttsLocalEndpoint').value,
+        ttsVoice: document.getElementById('ttsVoice').value,
+        ttsModel: document.getElementById('ttsModel').value,
+        ttsSpeed: parseFloat(document.getElementById('ttsSpeed').value),
+        ttsOutputFormat: document.getElementById('ttsOutputFormat').value,
+        ttsOutputPath: document.getElementById('ttsOutputPath').value
+      };
+
+      try {
+        const response = await fetch('/api/tts/settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await response.json();
+        if (data.success) {
+          showStatus('Settings saved successfully', 'success');
+          await loadSettings();
+        } else {
+          showStatus(data.message || 'Save failed', 'error');
+        }
+      } catch (error) {
+        showStatus('Error: ' + error.message, 'error');
+      }
+    }
+
+    function showStatus(message, type) {
+      const statusEl = document.getElementById('status');
+      statusEl.textContent = message;
+      statusEl.className = type;
+      setTimeout(() => {
+        statusEl.className = '';
+        statusEl.style.display = 'none';
+      }, 4000);
+    }
+
+    document.getElementById('ttsSpeed').addEventListener('input', (e) => {
+      document.getElementById('speedValue').textContent = parseFloat(e.target.value).toFixed(2) + 'x';
+    });
+
+    document.querySelectorAll('.voice-preset').forEach(preset => {
+      preset.addEventListener('click', () => {
+        const voice = preset.dataset.voice;
+        document.getElementById('ttsVoice').value = voice;
+        updateVoiceSelection(voice);
+      });
+    });
+
+    document.getElementById('ttsVoice').addEventListener('input', (e) => {
+      updateVoiceSelection(e.target.value);
+    });
+
+    document.getElementById('saveBtn').addEventListener('click', saveSettings);
+
+    loadSettings();
+  </script>
+</body>
+</html>

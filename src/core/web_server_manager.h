@@ -65,6 +65,13 @@ private:
     void handleCalendarSettingsGet();
     void handleCalendarSettingsPost();
 
+    // TTS Settings handlers
+    void handleTtsSettingsPage();
+    void handleTtsSettingsGet();
+    void handleTtsSettingsPost();
+    void handleTtsSettingsExport();
+    void handleTtsSettingsImport();
+
     bool normalizeSdPath(const String& raw, std::string& out) const;
     bool sanitizeFilename(const String& raw, std::string& out) const;
     std::string joinPaths(const std::string& parent, const std::string& child) const;
