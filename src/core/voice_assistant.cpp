@@ -2102,7 +2102,8 @@ void VoiceAssistant::LuaSandbox::setupSandbox() {
                 audio = function() return memory.read_file("docs/api/audio.json") end,
                 display = function() return memory.read_file("docs/api/display.json") end,
                 led = function() return memory.read_file("docs/api/led.json") end,
-                system = function() return memory.read_file("docs/api/system.json") end
+                system = function() return memory.read_file("docs/api/system.json") end,
+                calendar = function() return memory.read_file("docs/api/calendar.json") end
             },
             reference = {
                 cities = function() return memory.read_file("docs/reference/cities.json") end,
@@ -2111,7 +2112,8 @@ void VoiceAssistant::LuaSandbox::setupSandbox() {
             examples = {
                 weather_query = function() return memory.read_file("docs/examples/weather_query.json") end,
                 gpio_control = function() return memory.read_file("docs/examples/gpio_control.json") end,
-                ble_keyboard = function() return memory.read_file("docs/examples/ble_keyboard.json") end
+                ble_keyboard = function() return memory.read_file("docs/examples/ble_keyboard.json") end,
+                calendar_scenarios = function() return memory.read_file("docs/examples/calendar_scenarios.json") end
             },
             get = function(path) return memory.read_file("docs/" .. path) end -- Generic getter for any doc
         }
