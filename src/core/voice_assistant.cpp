@@ -1949,6 +1949,110 @@ std::string VoiceAssistant::getLastRecordedFile() const {
     return last_recorded_file_;
 }
 
+std::string VoiceAssistant::listLuaCommands() const {
+    // Lua API namespaces (synchronized with setupSandbox line 2258-2449)
+    std::vector<std::string> lua_apis = {
+        // GPIO API
+        "gpio.write(pin, value) - Write HIGH/LOW to GPIO pin",
+        "gpio.read(pin) - Read GPIO pin state",
+        "gpio.toggle(pin) - Toggle GPIO pin state",
+
+        // Timing
+        "delay(ms) - Delay execution for milliseconds",
+
+        // BLE API
+        "ble.type(host_mac, text) - Type text via BLE keyboard",
+        "ble.send_key(host_mac, keycode, modifier) - Send HID keycode",
+        "ble.mouse_move(host_mac, dx, dy, wheel, buttons) - Move mouse cursor",
+        "ble.click(host_mac, buttons) - Click mouse button",
+
+        // Audio API
+        "audio.volume_up() - Increase system volume",
+        "audio.volume_down() - Decrease system volume",
+
+        // Display API
+        "display.brightness_up() - Increase display brightness",
+        "display.brightness_down() - Decrease display brightness",
+
+        // LED API
+        "led.set_brightness(percentage) - Set LED brightness (0-100)",
+
+        // Radio/Audio Player API
+        "radio.play(url_or_path) - Play audio stream or file",
+        "radio.stop() - Stop playback",
+        "radio.pause() - Pause playback",
+        "radio.resume() - Resume playback",
+        "radio.status() - Get player status",
+        "radio.seek(seconds) - Seek to position",
+        "radio.set_volume(volume) - Set player volume",
+
+        // System API
+        "system.ping() - Ping system health",
+        "system.uptime() - Get system uptime",
+        "system.heap() - Get heap memory status",
+        "system.sd_status() - Get SD card status",
+        "system.status() - Get complete system status",
+
+        // WebData API
+        "webData.fetch_once(url, filename) - Fetch HTTP data once",
+        "webData.fetch_scheduled(url, filename, minutes) - Schedule periodic HTTP fetch",
+        "webData.read_data(filename) - Read web cache data",
+        "webData.list_files() - List web cache files",
+
+        // Memory API
+        "memory.read_file(filename) - Read file from memory",
+        "memory.write_file(filename, data) - Write file to memory",
+        "memory.list_files() - List all memory files",
+        "memory.delete_file(filename) - Delete memory file",
+        "memory.append_file(filename, data) - Append to file",
+        "memory.prepend_file(filename, data) - Prepend to file",
+        "memory.grep_files(pattern) - Search pattern in files",
+
+        // TTS API
+        "tts.speak(text) - Text-to-speech synthesis",
+
+        // Documentation API
+        "docs.api.gpio() - Read GPIO API documentation",
+        "docs.api.ble() - Read BLE API documentation",
+        "docs.api.webData() - Read WebData API documentation",
+        "docs.api.memory() - Read Memory API documentation",
+        "docs.api.audio() - Read Audio API documentation",
+        "docs.api.display() - Read Display API documentation",
+        "docs.api.led() - Read LED API documentation",
+        "docs.api.system() - Read System API documentation",
+        "docs.api.calendar() - Read Calendar API documentation",
+        "docs.api.tts() - Read TTS API documentation",
+        "docs.reference.cities() - Read cities reference",
+        "docs.reference.weather() - Read weather API reference",
+        "docs.examples.weather_query() - Read weather query examples",
+        "docs.examples.gpio_control() - Read GPIO control examples",
+        "docs.examples.ble_keyboard() - Read BLE keyboard examples",
+        "docs.examples.calendar_scenarios() - Read calendar scenarios examples",
+        "docs.get(path) - Read any documentation from docs/path"
+    };
+
+    // Add CommandCenter commands (legacy support)
+    auto cc_commands = CommandCenter::getInstance().listCommands();
+    for (const auto& cmd : cc_commands) {
+        std::string entry = cmd.name;
+        if (!cmd.description.empty()) {
+            entry += " - " + cmd.description + " (CommandCenter)";
+        }
+        lua_apis.push_back(entry);
+    }
+
+    // Format as semicolon-separated string
+    std::string result;
+    for (size_t i = 0; i < lua_apis.size(); ++i) {
+        if (i > 0) {
+            result += "; ";
+        }
+        result += lua_apis[i];
+    }
+
+    return result.empty() ? "none" : result;
+}
+
 std::string VoiceAssistant::getSystemPrompt() const {
     const SettingsSnapshot& settings = SettingsManager::getInstance().getSnapshot();
     const VoiceAssistantPromptDefinition prompt_definition = getPromptDefinition();
@@ -2000,12 +2104,34 @@ std::string VoiceAssistant::composeSystemPrompt(const std::string& override_temp
     }
 
     std::string prompt = prompt_template;
+
+    // Replace {{LUA_API_LIST}} placeholder (includes all Lua APIs + CommandCenter commands)
+    const std::string lua_api_list = listLuaCommands();
+    const std::string lua_placeholder = VOICE_ASSISTANT_LUA_API_LIST_PLACEHOLDER;
+    const size_t lua_pos = prompt.find(lua_placeholder);
+    if (lua_pos != std::string::npos) {
+        prompt.replace(lua_pos, lua_placeholder.length(), lua_api_list);
+    }
+
+    // Legacy: Replace {{COMMAND_LIST}} if still present in old templates
     const std::string placeholder = VOICE_ASSISTANT_COMMAND_LIST_PLACEHOLDER;
     const size_t pos = prompt.find(placeholder);
     if (pos != std::string::npos) {
+        auto commands = CommandCenter::getInstance().listCommands();
+        std::string command_list;
+        for (size_t i = 0; i < commands.size(); ++i) {
+            if (i > 0) {
+                command_list += "; ";
+            }
+            command_list += commands[i].name;
+            if (!commands[i].description.empty()) {
+                command_list += " (" + commands[i].description + ")";
+            }
+        }
+        if (command_list.empty()) {
+            command_list = "none";
+        }
         prompt.replace(pos, placeholder.length(), command_list);
-    } else {
-        prompt += " Available commands: " + command_list;
     }
 
     const std::string hosts_placeholder = VOICE_ASSISTANT_BLE_HOSTS_PLACEHOLDER;

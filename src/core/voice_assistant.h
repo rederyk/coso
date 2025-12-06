@@ -111,6 +111,9 @@ public:
     /** Build the current system prompt, including the active command list */
     std::string getSystemPrompt() const;
     void reloadPromptDefinition();
+
+    /** List all available Lua API commands and their descriptions */
+    std::string listLuaCommands() const;
     bool buildPromptFromJson(const std::string& raw_json, std::string& error, std::string& output) const;
     bool savePromptDefinition(const std::string& raw_json, std::string& error);
     bool resolveAndSavePrompt(const std::string& raw_json, std::string& error, std::string& resolved_json_out);
