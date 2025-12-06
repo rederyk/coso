@@ -228,12 +228,6 @@ private:
     TaskHandle_t sttTask_ = nullptr;
     TaskHandle_t aiTask_ = nullptr;
 
-    // Task stacks allocated in PSRAM to save DRAM for web server
-    StackType_t* stt_task_stack_ = nullptr;
-    StaticTask_t stt_task_buffer_;
-    StackType_t* ai_task_stack_ = nullptr;
-    StaticTask_t ai_task_buffer_;
-
     bool initialized_ = false;
     std::atomic<bool> stop_recording_flag_{false};  // Flag to stop recording
     std::string last_recorded_file_;                // Path to last recorded file

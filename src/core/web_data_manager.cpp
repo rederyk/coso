@@ -7,6 +7,7 @@
 #include <WiFi.h>
 #include <ArduinoJson.h>
 #include <esp_log.h>
+#include <esp_heap_caps.h>
 
 #include <algorithm>
 #include <regex>

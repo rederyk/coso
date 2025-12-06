@@ -5,6 +5,8 @@
 
 ---
 
+> **Update (2025-12-07)**: The AI task allocation failures we were chasing were ultimately caused by passing stack sizes in bytes to `xTaskCreatePinnedToCore()`, which expects a depth in words. A requested "48KB" stack (49152) actually meant ~192KB in DRAM, causing `xTaskCreate` to fail. We now convert the requested byte size to words before creating the task, so the stack fits comfortably and can spill into PSRAM when needed. Details remain below for reference because the ESP-IDF limitation on `xTaskCreateStatic()` still applies.
+
 ## 🚫 Problem Discovered
 
 During implementation, we discovered that **`xTaskCreateStatic` with PSRAM-allocated stacks is NOT supported** by ESP-IDF/FreeRTOS on ESP32-S3.
@@ -50,7 +52,7 @@ Let ESP-IDF handle stack allocation automatically:
 xTaskCreatePinnedToCore(
     task_function,
     "task_name",
-    STACK_SIZE,      // in bytes
+    STACK_SIZE,      // depth in StackType_t words (bytes/4 on ESP32)
     param,
     priority,
     &task_handle,

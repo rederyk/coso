@@ -20,12 +20,60 @@
 #include <cJSON.h>
 #include <cctype>
 #include <mutex>
+#include <new>
 
 const char VOICE_ASSISTANT_PROMPT_JSON_PATH[] = "/voice_assistant_prompt.json";
 
 namespace {
 thread_local VoiceAssistant::LuaSandbox* s_active_lua_sandbox = nullptr;
 constexpr const char* TAG = "VoiceAssistant";
+
+// Allocator that prefers PSRAM for large dynamic containers
+template <typename T>
+struct PsramAllocator {
+    using value_type = T;
+
+    PsramAllocator() noexcept = default;
+    template <typename U>
+    PsramAllocator(const PsramAllocator<U>&) noexcept {}
+
+    T* allocate(std::size_t n) {
+        const size_t bytes = n * sizeof(T);
+        void* ptr = heap_caps_malloc(bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        if (!ptr) {
+            ptr = heap_caps_malloc(bytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+        }
+        if (!ptr) {
+            throw std::bad_alloc();
+        }
+        return static_cast<T*>(ptr);
+    }
+
+    void deallocate(T* ptr, std::size_t) noexcept {
+        if (ptr) {
+            heap_caps_free(ptr);
+        }
+    }
+
+    template <typename U>
+    struct rebind {
+        using other = PsramAllocator<U>;
+    };
+};
+
+template <typename T, typename U>
+bool operator==(const PsramAllocator<T>&, const PsramAllocator<U>&) noexcept {
+    return true;
+}
+
+template <typename T, typename U>
+bool operator!=(const PsramAllocator<T>&, const PsramAllocator<U>&) noexcept {
+    return false;
+}
+
+using PsramString = std::basic_string<char, std::char_traits<char>, PsramAllocator<char>>;
+template <typename T>
+using PsramVector = std::vector<T, PsramAllocator<T>>;
 
 #define LOG_I(format, ...) Logger::getInstance().infof("[VoiceAssistant] " format, ##__VA_ARGS__)
 #define LOG_E(format, ...) Logger::getInstance().errorf("[VoiceAssistant] " format, ##__VA_ARGS__)
@@ -40,9 +88,10 @@ constexpr size_t stackBytesToWords(size_t bytes) {
 
 constexpr size_t RECORDING_TASK_STACK = stackBytesToWords(4096);
 constexpr UBaseType_t STT_TASK_PRIORITY = 3;
-constexpr size_t STT_TASK_STACK = stackBytesToWords(6144);  // 6KB stack for STT task
+constexpr size_t STT_TASK_STACK = stackBytesToWords(4096);  // 4KB stack - keep stack small, use heap for buffers
 constexpr UBaseType_t AI_TASK_PRIORITY = 3;
-constexpr size_t AI_TASK_STACK = stackBytesToWords(48 * 1024);  // 48KB stack for AI task
+// CRITICAL: Reduced from 48KB to 8KB - large allocations MUST use heap_caps_malloc(MALLOC_CAP_SPIRAM)
+constexpr size_t AI_TASK_STACK = stackBytesToWords(8 * 1024);  // 8KB stack for AI task
 
 // Queue sizes
 constexpr size_t AUDIO_QUEUE_SIZE = 5;
@@ -137,6 +186,38 @@ constexpr const char* VOICE_ASSISTANT_FALLBACK_PROMPT_TEMPLATE =
     "You are a helpful voice assistant for an ESP32-S3 device. Respond ONLY with valid JSON in this exact format: "
     "{\"command\": \"<command_name>\", \"args\": [\"<arg1>\", \"<arg2>\", ...], \"text\": \"<your conversational response>\"}. "
     "Available commands: {{COMMAND_LIST}}. Bonded BLE hosts: {{BLE_HOSTS}}.";
+
+void* cjson_psram_malloc(size_t size) {
+    void* ptr = heap_caps_malloc(size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!ptr) {
+        ptr = heap_caps_malloc(size, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    }
+    return ptr;
+}
+
+void cjson_psram_free(void* ptr) {
+    if (ptr) {
+        heap_caps_free(ptr);
+    }
+}
+
+void initCjsonPsramAllocator() {
+    static bool initialized = false;
+    if (!initialized) {
+        cJSON_Hooks hooks = {};
+        hooks.malloc_fn = cjson_psram_malloc;
+        hooks.free_fn = cjson_psram_free;
+        cJSON_InitHooks(&hooks);
+        initialized = true;
+    }
+}
+
+struct CjsonAllocatorInitializer {
+    CjsonAllocatorInitializer() { initCjsonPsramAllocator(); }
+};
+
+// Ensure cJSON allocations prefer PSRAM before any JSON parsing
+static CjsonAllocatorInitializer g_cjson_allocator_initializer;
 
 std::string readFileToString(const char* path) {
     File file = LittleFS.open(path, FILE_READ);
@@ -297,59 +378,24 @@ bool VoiceAssistant::begin() {
           heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
           heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
 
-    // Allocate task stacks in PSRAM to save precious DRAM for web server
+    // Create tasks with minimal stack sizes - large allocations must use heap
     // Note: Recording task is created on-demand when startRecording() is called
+    BaseType_t stt_result = xTaskCreatePinnedToCore(
+        speechToTextTask, "speech_to_text", STT_TASK_STACK,
+        this, STT_TASK_PRIORITY, &sttTask_, tskNO_AFFINITY);
 
-    const size_t stt_stack_bytes = STT_TASK_STACK * sizeof(StackType_t);
-    stt_task_stack_ = (StackType_t*)heap_caps_malloc(stt_stack_bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    LOG_I("STT task result: %d, free mem: %u", stt_result,
+          heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
 
-    if (!stt_task_stack_) {
-        LOG_E("Failed to allocate STT task stack in PSRAM (%u bytes)", stt_stack_bytes);
-        end();
-        return false;
-    }
+    BaseType_t ai_result = xTaskCreatePinnedToCore(
+        aiProcessingTask, "ai_processing", AI_TASK_STACK,
+        this, AI_TASK_PRIORITY, &aiTask_, tskNO_AFFINITY);
 
-    LOG_I("STT task stack allocated in PSRAM: %u bytes @ %p", stt_stack_bytes, stt_task_stack_);
+    LOG_I("AI task result: %d, free mem: %u", ai_result,
+          heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
 
-    // Create STT task with static allocation (stack in PSRAM)
-    sttTask_ = xTaskCreateStaticPinnedToCore(
-        speechToTextTask,
-        "speech_to_text",
-        STT_TASK_STACK,
-        this,
-        STT_TASK_PRIORITY,
-        stt_task_stack_,
-        &stt_task_buffer_,
-        tskNO_AFFINITY);
-
-    LOG_I("STT task created, free mem: %u", heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
-
-    const size_t ai_stack_bytes = AI_TASK_STACK * sizeof(StackType_t);
-    ai_task_stack_ = (StackType_t*)heap_caps_malloc(ai_stack_bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-
-    if (!ai_task_stack_) {
-        LOG_E("Failed to allocate AI task stack in PSRAM (%u bytes)", ai_stack_bytes);
-        end();
-        return false;
-    }
-
-    LOG_I("AI task stack allocated in PSRAM: %u bytes @ %p", ai_stack_bytes, ai_task_stack_);
-
-    // Create AI task with static allocation (stack in PSRAM)
-    aiTask_ = xTaskCreateStaticPinnedToCore(
-        aiProcessingTask,
-        "ai_processing",
-        AI_TASK_STACK,
-        this,
-        AI_TASK_PRIORITY,
-        ai_task_stack_,
-        &ai_task_buffer_,
-        tskNO_AFFINITY);
-
-    LOG_I("AI task created, free mem: %u", heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
-
-    if (!sttTask_ || !aiTask_) {
-        LOG_E("Failed to create assistant tasks (stt=%p, ai=%p)", sttTask_, aiTask_);
+    if (stt_result != pdPASS || ai_result != pdPASS) {
+        LOG_E("Failed to create assistant tasks (stt=%d, ai=%d)", stt_result, ai_result);
         end();
         return false;
     }
@@ -379,16 +425,6 @@ void VoiceAssistant::end() {
     if (aiTask_) {
         vTaskDelete(aiTask_);
         aiTask_ = nullptr;
-    }
-
-    // Free task stacks from PSRAM
-    if (stt_task_stack_) {
-        heap_caps_free(stt_task_stack_);
-        stt_task_stack_ = nullptr;
-    }
-    if (ai_task_stack_) {
-        heap_caps_free(ai_task_stack_);
-        ai_task_stack_ = nullptr;
     }
 
     // Delete queues
@@ -965,7 +1001,7 @@ bool VoiceAssistant::makeWhisperRequest(const std::string& file_path, std::strin
     int status_code = esp_http_client_get_status_code(client);
 
     // Read response body manually
-    std::string response_buffer;
+    PsramString response_buffer;
     response_buffer.reserve(1024);
     char read_buf[512];
     int read_len = 0;
@@ -1053,13 +1089,13 @@ bool VoiceAssistant::makeTTSRequest(const std::string& text, std::string& output
         s_active_lua_sandbox->appendOutput(std::string("[TTS] Body: ") + request_body);
     }
 
-    // Buffer for audio data
-    std::vector<uint8_t> audio_data;
+    // Buffer for audio data - store in PSRAM to keep DRAM free
+    PsramVector<uint8_t> audio_data;
     audio_data.reserve(8192);
 
     // HTTP client event handler to capture binary audio data
     auto http_event_handler = [](esp_http_client_event_t *evt) -> esp_err_t {
-        std::vector<uint8_t>* data = static_cast<std::vector<uint8_t>*>(evt->user_data);
+        PsramVector<uint8_t>* data = static_cast<PsramVector<uint8_t>*>(evt->user_data);
         switch(evt->event_id) {
             case HTTP_EVENT_ON_DATA:
                 if (data && evt->data_len > 0) {
@@ -1298,7 +1334,7 @@ bool VoiceAssistant::makeGPTRequest(const std::string& prompt, std::string& resp
         return last.transcription == prompt;
     }();
 
-    auto buildRequestBody = [&](const std::string& model, std::string& out) -> bool {
+    auto buildRequestBody = [&](const std::string& model, PsramString& out) -> bool {
         // Build JSON request body using cJSON
         cJSON* root = cJSON_CreateObject();
         if (!root) {
@@ -1370,12 +1406,12 @@ bool VoiceAssistant::makeGPTRequest(const std::string& prompt, std::string& resp
     };
 
     // Buffer for response
-    std::string response_buffer;
+    PsramString response_buffer;
     response_buffer.reserve(4096);  // Increased buffer size
 
     // HTTP client event handler with improved error handling
     auto http_event_handler = [](esp_http_client_event_t *evt) -> esp_err_t {
-        std::string* response = static_cast<std::string*>(evt->user_data);
+        PsramString* response = static_cast<PsramString*>(evt->user_data);
         switch(evt->event_id) {
             case HTTP_EVENT_ERROR:
                 LOG_E("HTTP_EVENT_ERROR");
@@ -1408,7 +1444,7 @@ bool VoiceAssistant::makeGPTRequest(const std::string& prompt, std::string& resp
     };
 
     bool fallback_attempted = false;
-    std::string request_body;
+    PsramString request_body;
 
     while (true) {
         if (!buildRequestBody(selected_model, request_body)) {
@@ -1663,12 +1699,12 @@ bool VoiceAssistant::fetchOllamaModels(const std::string& base_url, std::vector<
     LOG_I("Ollama tags endpoint: %s", ollama_tags_url.c_str());
 
     // Buffer for response
-    std::string response_buffer;
+    PsramString response_buffer;
     response_buffer.reserve(4096);
 
     // HTTP client event handler
     auto http_event_handler = [](esp_http_client_event_t *evt) -> esp_err_t {
-        std::string* response = static_cast<std::string*>(evt->user_data);
+        PsramString* response = static_cast<PsramString*>(evt->user_data);
         switch(evt->event_id) {
             case HTTP_EVENT_ON_DATA:
                 if (response && evt->data_len > 0) {
