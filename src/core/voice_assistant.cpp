@@ -35,9 +35,9 @@ constexpr const char* TAG = "VoiceAssistant";
 constexpr UBaseType_t RECORDING_TASK_PRIORITY = 4;
 constexpr size_t RECORDING_TASK_STACK = 4096;
 constexpr UBaseType_t STT_TASK_PRIORITY = 3;
-constexpr size_t STT_TASK_STACK = 8192;  // Need 8KB for HTTP operations (will use PSRAM with CONFIG_SPIRAM_ALLOW_STACK_EXTERNAL_MEMORY)
+constexpr size_t STT_TASK_STACK = 6144;  // Reduced from 8KB to 6KB to fit in fragmented DRAM
 constexpr UBaseType_t AI_TASK_PRIORITY = 3;
-constexpr size_t AI_TASK_STACK = 8192;   // Need 8KB for HTTP/TTS operations (will use PSRAM with CONFIG_SPIRAM_ALLOW_STACK_EXTERNAL_MEMORY)
+constexpr size_t AI_TASK_STACK = 6144;   // Reduced from 8KB to 6KB to fit in fragmented DRAM
 
 // Queue sizes
 constexpr size_t AUDIO_QUEUE_SIZE = 5;

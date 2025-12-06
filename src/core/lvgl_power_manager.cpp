@@ -396,3 +396,43 @@ void LVGLPowerManager::printMemoryStats() const {
              lvgl_state == LVGLState::SUSPENDED ? "SUSPENDED" : "INACTIVE");
     ESP_LOGI(TAG, "==================");
 }
+
+void LVGLPowerManager::printDetailedDRAMUsage() const {
+    ESP_LOGI(TAG, "=== Detailed DRAM Usage ===");
+
+    // Heap info
+    uint32_t free_dram = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+    uint32_t total_dram = heap_caps_get_total_size(MALLOC_CAP_INTERNAL);
+    uint32_t largest_block = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL);
+    uint32_t min_free = heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL);
+
+    ESP_LOGI(TAG, "DRAM Heap:");
+    ESP_LOGI(TAG, "  Total:         %6lu KB", total_dram / 1024);
+    ESP_LOGI(TAG, "  Free:          %6lu KB (%.1f%%)",
+             free_dram / 1024, (float)free_dram / total_dram * 100.0f);
+    ESP_LOGI(TAG, "  Used:          %6lu KB", (total_dram - free_dram) / 1024);
+    ESP_LOGI(TAG, "  Largest block: %6lu KB", largest_block / 1024);
+    ESP_LOGI(TAG, "  Min free ever: %6lu KB", min_free / 1024);
+    ESP_LOGI(TAG, "  Fragmentation: %.1f%%",
+             100.0f * (1.0f - (float)largest_block / free_dram));
+
+    // Stack info (approssimato)
+    ESP_LOGI(TAG, "Task Stacks (approx):");
+    ESP_LOGI(TAG, "  LVGL task:     ~8-12 KB");
+    ESP_LOGI(TAG, "  Network task:  ~8-12 KB");
+    ESP_LOGI(TAG, "  Audio task:    ~4-8 KB");
+    ESP_LOGI(TAG, "  Other tasks:   ~20-30 KB");
+
+    // What's eating DRAM
+    uint32_t estimated_stacks = 50 * 1024;  // ~50KB for all stacks
+    uint32_t estimated_used = total_dram - free_dram;
+    uint32_t heap_allocated = estimated_used - estimated_stacks;
+
+    ESP_LOGI(TAG, "Estimated breakdown:");
+    ESP_LOGI(TAG, "  Task stacks:   ~%6lu KB (fixed)", estimated_stacks / 1024);
+    ESP_LOGI(TAG, "  Heap allocs:   ~%6lu KB (dynamic)", heap_allocated / 1024);
+    ESP_LOGI(TAG, "  Free:           %6lu KB", free_dram / 1024);
+
+    ESP_LOGI(TAG, "Note: LVGL draw buffer is in PSRAM (mode 0), not using DRAM");
+    ESP_LOGI(TAG, "===========================");
+}

@@ -18,6 +18,7 @@
 #include "core/command_center.h"
 #include "core/conversation_buffer.h"
 #include "core/settings_manager.h"
+#include "lvgl_power_manager.h"
 #include "core/task_config.h"
 #include "core/time_scheduler.h"
 #include "core/voice_assistant.h"
@@ -596,11 +597,20 @@ void WebServerManager::handleAssistantChat() {
     VoiceAssistant& assistant = VoiceAssistant::getInstance();
     if (!assistant.isInitialized()) {
         Logger::getInstance().info("[VoiceAssistant] Initializing before web chat request");
+
+        // Suspend LVGL to free DRAM for voice assistant initialization
+        Logger::getInstance().info("[VoiceAssistant] Suspending LVGL to free memory...");
+        LVGLPowerMgr.switchToVoiceMode();
+        vTaskDelay(pdMS_TO_TICKS(100)); // Give time for suspend to complete
+
         if (!assistant.begin()) {
             Logger::getInstance().warn("[VoiceAssistant] Initialization failed before chat request");
+            // Resume LVGL on failure
+            LVGLPowerMgr.switchToUIMode();
             sendJson(503, "{\"status\":\"error\",\"message\":\"Voice assistant unavailable\"}");
             return;
         }
+        Logger::getInstance().info("[VoiceAssistant] Initialized successfully with suspended LVGL");
     }
 
     if (!assistant.sendTextMessage(message)) {
@@ -632,11 +642,20 @@ void WebServerManager::handleAssistantAudioStart() {
 
     if (!assistant.isInitialized()) {
         Logger::getInstance().info("[VoiceAssistant] Initializing before web recording");
+
+        // Suspend LVGL to free DRAM for voice assistant initialization
+        Logger::getInstance().info("[VoiceAssistant] Suspending LVGL to free memory...");
+        LVGLPowerMgr.switchToVoiceMode();
+        vTaskDelay(pdMS_TO_TICKS(100)); // Give time for suspend to complete
+
         if (!assistant.begin()) {
             Logger::getInstance().warn("[VoiceAssistant] Initialization failed before recording");
+            // Resume LVGL on failure
+            LVGLPowerMgr.switchToUIMode();
             sendJson(503, "{\"status\":\"error\",\"message\":\"Voice assistant unavailable\"}");
             return;
         }
+        Logger::getInstance().info("[VoiceAssistant] Initialized successfully with suspended LVGL");
     }
 
     assistant.startRecording();

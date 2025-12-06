@@ -54,6 +54,7 @@ public:
     uint32_t getFreeDRAM() const;
     uint32_t getFreePSRAM() const;
     void printMemoryStats() const;
+    void printDetailedDRAMUsage() const;  // Analizza cosa occupa DRAM
 
     // Called from main loop
     void update();

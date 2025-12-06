@@ -215,6 +215,53 @@ void DeveloperScreen::build(lv_obj_t* parent) {
     lv_label_set_text(resume_label, "TEST: Resume LVGL");
     lv_obj_center(resume_label);
 
+    // Detailed DRAM analysis button
+    lv_obj_t* dram_analysis_btn = lv_btn_create(power_card);
+    lv_obj_set_width(dram_analysis_btn, LV_PCT(100));
+    lv_obj_set_height(dram_analysis_btn, 48);
+    lv_obj_add_event_cb(dram_analysis_btn, [](lv_event_t* e) {
+        auto& log = Logger::getInstance();
+        log.info("[DRAM] Analyzing DRAM usage...");
+
+        // Force print to serial using Logger instead of ESP_LOGI
+        uint32_t free_dram = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+        uint32_t total_dram = heap_caps_get_total_size(MALLOC_CAP_INTERNAL);
+        uint32_t largest_block = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL);
+        uint32_t min_free = heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL);
+
+        log.info("=== Detailed DRAM Usage ===");
+        log.info("DRAM Heap:");
+        log.infof("  Total:         %6lu KB", total_dram / 1024);
+        log.infof("  Free:          %6lu KB (%.1f%%)",
+                 free_dram / 1024, (float)free_dram / total_dram * 100.0f);
+        log.infof("  Used:          %6lu KB", (total_dram - free_dram) / 1024);
+        log.infof("  Largest block: %6lu KB", largest_block / 1024);
+        log.infof("  Min free ever: %6lu KB", min_free / 1024);
+        log.infof("  Fragmentation: %.1f%%",
+                 100.0f * (1.0f - (float)largest_block / free_dram));
+
+        log.info("Task Stacks (approx):");
+        log.info("  LVGL task:     ~8-12 KB");
+        log.info("  Network task:  ~8-12 KB");
+        log.info("  Audio task:    ~4-8 KB");
+        log.info("  Other tasks:   ~20-30 KB");
+
+        uint32_t estimated_stacks = 50 * 1024;
+        uint32_t estimated_used = total_dram - free_dram;
+        uint32_t heap_allocated = estimated_used - estimated_stacks;
+
+        log.info("Estimated breakdown:");
+        log.infof("  Task stacks:   ~%6lu KB (fixed)", estimated_stacks / 1024);
+        log.infof("  Heap allocs:   ~%6lu KB (dynamic)", heap_allocated / 1024);
+        log.infof("  Free:           %6lu KB", free_dram / 1024);
+
+        log.info("Note: LVGL draw buffer is in PSRAM (mode 0), not using DRAM");
+        log.info("===========================");
+    }, LV_EVENT_CLICKED, nullptr);
+    lv_obj_t* dram_analysis_label = lv_label_create(dram_analysis_btn);
+    lv_label_set_text(dram_analysis_label, "Analyze DRAM Usage");
+    lv_obj_center(dram_analysis_label);
+
     memory_result_label = lv_label_create(memory_card);
     lv_label_set_long_mode(memory_result_label, LV_LABEL_LONG_WRAP);
     lv_obj_set_style_text_font(memory_result_label, &lv_font_montserrat_14, 0);

@@ -10,19 +10,23 @@ constexpr BaseType_t CORE_UI = 1;       // reserve Core 1 for LVGL/UI
 constexpr BaseType_t CORE_WORK = 0;     // worker/comms core
 
 // LVGL/UI task
-constexpr uint32_t STACK_LVGL = 6144;
+// Reduced from 6KB to 4KB to free DRAM for voice assistant
+constexpr uint32_t STACK_LVGL = 4096;  // 4 KB - sufficient for LVGL with PSRAM objects
 constexpr UBaseType_t PRIO_LVGL = 3;
 
 // WiFi task
-constexpr uint32_t STACK_WIFI = 4096;
+constexpr uint32_t STACK_WIFI = 3072;  // Reduced from 4KB to 3KB
 constexpr UBaseType_t PRIO_WIFI = 1;
 
 // HTTP server task
-constexpr uint32_t STACK_HTTP = 24576;  // 24 KB to prevent stack overflow with large DynamicJsonDocument
+// Reduced from 24KB to 6KB - DynamicJsonDocument should be allocated on heap, not stack
+// Further reduced to leave room for voice assistant in fragmented DRAM
+constexpr uint32_t STACK_HTTP = 6144;  // 6 KB - JSON docs allocated on heap
 constexpr UBaseType_t PRIO_HTTP = 2;
 
 // BLE manager task
-constexpr uint32_t STACK_BLE = 8192;
+// Reduced from 8KB to 6KB to free DRAM
+constexpr uint32_t STACK_BLE = 6144;  // 6 KB
 constexpr UBaseType_t PRIO_BLE = 5;
 
 // RGB LED task
