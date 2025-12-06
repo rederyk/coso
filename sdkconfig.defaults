@@ -1,0 +1,10 @@
+# PSRAM Configuration for Stack in External Memory
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_USE=1
+CONFIG_SPIRAM_BOOT_INIT=y
+CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY=y
+CONFIG_SPIRAM_ALLOW_STACK_EXTERNAL_MEMORY=y
+
+# Disable the memory check for static task stacks in PSRAM
+# This allows xTaskCreateStatic to accept PSRAM addresses
+CONFIG_FREERTOS_CHECK_STACKOVERFLOW_PTRVAL=n

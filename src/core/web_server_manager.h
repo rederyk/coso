@@ -31,6 +31,7 @@ private:
     void handleLuaConsolePage();
     void handleApiLuaExecute();
     void handleAssistantChat();
+    void handleAssistantChatStatus();
     void handleAssistantAudioStart();
     void handleAssistantAudioStop();
     void handleAssistantConversationGet();

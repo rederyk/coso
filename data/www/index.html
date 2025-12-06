@@ -732,6 +732,68 @@
       return data;
     }
 
+    function describeAsyncStatus(status, payload = {}) {
+      let normalized = (status || '').toLowerCase();
+      if (normalized === 'accepted') {
+        normalized = 'pending';
+      }
+
+      const parts = [];
+      if (normalized === 'pending') {
+        parts.push('Richiesta in coda');
+      } else if (normalized === 'processing') {
+        parts.push('LLM sta elaborando la risposta');
+      } else {
+        parts.push('Attesa completamento');
+      }
+
+      const pendingCount = Number(payload.pending);
+      if (Number.isFinite(pendingCount)) {
+        parts.push(`In coda: ${pendingCount}`);
+      }
+
+      const processingCount = Number(payload.processing);
+      if (Number.isFinite(processingCount)) {
+        parts.push(`In esecuzione: ${processingCount}`);
+      }
+
+      return parts.join(' · ');
+    }
+
+    async function waitForAssistantResponse(requestInfo, timeoutMs = 180000, pollIntervalMs = 1500) {
+      if (!requestInfo || !requestInfo.request_id) {
+        throw new Error('Risposta non valida dal server (request_id mancante)');
+      }
+
+      const resolvedPollUrl = requestInfo.poll_url || `/api/assistant/chat/${encodeURIComponent(requestInfo.request_id)}`;
+      const start = Date.now();
+
+      while (true) {
+        if ((Date.now() - start) > timeoutMs) {
+          throw new Error('Timeout in attesa della risposta dell\'assistente');
+        }
+
+        const res = await fetchWithTimeout(resolvedPollUrl, {}, 30000);
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.message || data.error || 'Errore durante il polling della risposta');
+        }
+
+        const status = (data.status || '').toLowerCase();
+        if (status === 'completed') {
+          return data;
+        }
+
+        if (status === 'failed' || status === 'timeout') {
+          throw new Error(data.error || `Richiesta ${status}`);
+        }
+
+        const waitMessage = describeAsyncStatus(status, data) || 'Attesa completamento';
+        setStatusAnimated(waitMessage, 'busy');
+        await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
+      }
+    }
+
     async function resetConversationBuffer() {
       if (resetMemoryBtn.disabled) {
         return;
@@ -779,28 +841,35 @@
       appendMessage('user', text);
 
       // Show animated status
-      setStatusAnimated('AI sta elaborando la richiesta', 'busy');
+      setStatusAnimated('Invio richiesta...', 'busy');
       sendBtn.disabled = true;
 
       try {
         // Use 60 second timeout for chat (first model load can take 30-45 seconds)
-        const response = await postJson('/api/assistant/chat', { message: text }, 60000);
+        const requestInfo = await postJson('/api/assistant/chat', { message: text }, 60000);
+
+        const acceptedMessage = describeAsyncStatus('accepted', requestInfo) || 'Richiesta accettata, attesa disponibilità';
+        setStatusAnimated(acceptedMessage, 'busy');
+
+        const completion = await waitForAssistantResponse(requestInfo);
 
         clearStatusAnimation();
 
+        const assistantResponse = completion.response || {};
+
         // Check if a command is being executed
-        if (response.command) {
-          setStatusAnimated(`Esecuzione comando: ${response.command}`, 'busy');
+        if (assistantResponse.command) {
+          setStatusAnimated(`Esecuzione comando: ${assistantResponse.command}`, 'busy');
           // Give visual feedback that command is running
           await new Promise(resolve => setTimeout(resolve, 500));
         }
 
-        const answer = response.text || response.message || 'Nessuna risposta';
-        appendMessage('assistant', answer, buildMeta(response), response.output || '');
+        const answer = assistantResponse.text || assistantResponse.message || 'Nessuna risposta';
+        appendMessage('assistant', answer, buildMeta(assistantResponse), assistantResponse.output || '');
         await loadConversationHistory();
 
         // Refresh variables after command execution
-        if (response.command && response.command !== 'none') {
+        if (assistantResponse.command && assistantResponse.command !== 'none') {
           await refreshPromptVariables();
         }
 
@@ -809,8 +878,9 @@
         setTimeout(() => setStatus('Pronto', 'idle'), 3000);
       } catch (err) {
         clearStatusAnimation();
-        appendMessage('assistant', err.message, 'error');
-        setStatus('✗ ' + err.message, 'error');
+        const errorMessage = err && err.message ? err.message : 'Errore durante la richiesta';
+        appendMessage('assistant', errorMessage, 'error');
+        setStatus('✗ ' + errorMessage, 'error');
         setTimeout(() => setStatus('Pronto', 'idle'), 5000);
       } finally {
         sendBtn.disabled = false;

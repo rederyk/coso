@@ -15,6 +15,7 @@
 #include <cstring>
 #include <vector>
 
+#include "core/async_request_manager.h"
 #include "core/command_center.h"
 #include "core/conversation_buffer.h"
 #include "core/settings_manager.h"
@@ -318,6 +319,12 @@ void WebServerManager::start(uint16_t port) {
     routes_registered_ = false;
     registerRoutes();
     server_->begin();
+
+    AsyncRequestManager& async_manager = AsyncRequestManager::getInstance();
+    if (!async_manager.isRunning() && !async_manager.begin()) {
+        Logger::getInstance().warn("[WebServer] Failed to start AsyncRequestManager");
+    }
+
     running_ = true;
 
     Logger::getInstance().infof("[WebServer] Started on port %u", static_cast<unsigned>(port));
@@ -346,6 +353,8 @@ void WebServerManager::stop() {
         vTaskDelete(task_handle_);
         task_handle_ = nullptr;
     }
+    AsyncRequestManager::getInstance().end();
+
     routes_registered_ = false;
     Logger::getInstance().info("[WebServer] Stopped");
 }
@@ -363,6 +372,7 @@ void WebServerManager::registerRoutes() {
     server_->on("/api/commands/execute", HTTP_POST, [this]() { handleApiExecute(); });
     server_->on("/api/lua/execute", HTTP_POST, [this]() { handleApiLuaExecute(); });
     server_->on("/api/assistant/chat", HTTP_POST, [this]() { handleAssistantChat(); });
+    server_->on(UriBraces("/api/assistant/chat/{}"), HTTP_GET, [this]() { handleAssistantChatStatus(); });
     server_->on("/api/assistant/audio/start", HTTP_POST, [this]() { handleAssistantAudioStart(); });
     server_->on("/api/assistant/audio/stop", HTTP_POST, [this]() { handleAssistantAudioStop(); });
     server_->on("/api/assistant/conversation", HTTP_GET, [this]() { handleAssistantConversationGet(); });
@@ -552,20 +562,43 @@ void WebServerManager::handleApiLuaExecute() {
     sendJson(result.success ? 200 : 400, response);
 }
 
-static void appendCommandToDoc(StaticJsonDocument<512>& doc, const VoiceAssistant::VoiceCommand& response) {
-    doc["status"] = "success";
-    doc["command"] = response.command.c_str();
-    JsonArray args = doc.createNestedArray("args");
+static void appendCommandToJson(JsonObject obj, const VoiceAssistant::VoiceCommand& response, bool include_status = true) {
+    if (!obj) {
+        return;
+    }
+
+    if (include_status) {
+        obj["status"] = "success";
+    }
+
+    obj["command"] = response.command.c_str();
+    JsonArray args = obj.createNestedArray("args");
     for (const auto& arg : response.args) {
         args.add(arg.c_str());
     }
-    doc["text"] = response.text.c_str();
+    obj["text"] = response.text.c_str();
     if (!response.transcription.empty()) {
-        doc["transcription"] = response.transcription.c_str();
+        obj["transcription"] = response.transcription.c_str();
     }
     if (!response.output.empty()) {
-        doc["output"] = response.output.c_str();
+        obj["output"] = response.output.c_str();
     }
+}
+
+static const char* requestStatusToString(AsyncRequestManager::RequestStatus status) {
+    switch (status) {
+        case AsyncRequestManager::RequestStatus::PENDING:
+            return "pending";
+        case AsyncRequestManager::RequestStatus::PROCESSING:
+            return "processing";
+        case AsyncRequestManager::RequestStatus::COMPLETED:
+            return "completed";
+        case AsyncRequestManager::RequestStatus::FAILED:
+            return "failed";
+        case AsyncRequestManager::RequestStatus::TIMEOUT:
+            return "timeout";
+    }
+    return "unknown";
 }
 
 void WebServerManager::handleAssistantChat() {
@@ -594,38 +627,69 @@ void WebServerManager::handleAssistantChat() {
         return;
     }
 
-    VoiceAssistant& assistant = VoiceAssistant::getInstance();
-    if (!assistant.isInitialized()) {
-        Logger::getInstance().info("[VoiceAssistant] Initializing before web chat request");
-
-        // Suspend LVGL to free DRAM for voice assistant initialization
-        Logger::getInstance().info("[VoiceAssistant] Suspending LVGL to free memory...");
-        LVGLPowerMgr.switchToVoiceMode();
-        vTaskDelay(pdMS_TO_TICKS(100)); // Give time for suspend to complete
-
-        if (!assistant.begin()) {
-            Logger::getInstance().warn("[VoiceAssistant] Initialization failed before chat request");
-            // Resume LVGL on failure
-            LVGLPowerMgr.switchToUIMode();
-            sendJson(503, "{\"status\":\"error\",\"message\":\"Voice assistant unavailable\"}");
-            return;
-        }
-        Logger::getInstance().info("[VoiceAssistant] Initialized successfully with suspended LVGL");
-    }
-
-    if (!assistant.sendTextMessage(message)) {
-        sendJson(503, "{\"status\":\"error\",\"message\":\"Voice assistant unavailable\"}");
+    AsyncRequestManager& manager = AsyncRequestManager::getInstance();
+    if (!manager.isRunning() && !manager.begin()) {
+        sendJson(503, "{\"status\":\"error\",\"message\":\"Async manager unavailable\"}");
         return;
     }
 
-    VoiceAssistant::VoiceCommand response;
-    if (!assistant.getLastResponse(response, ASSISTANT_RESPONSE_TIMEOUT_MS)) {
-        sendJson(504, "{\"status\":\"error\",\"message\":\"No response from assistant\"}");
+    std::string request_id;
+    if (!manager.submitRequest(message, request_id)) {
+        sendJson(503, "{\"status\":\"error\",\"message\":\"Unable to queue request\"}");
         return;
     }
 
-    StaticJsonDocument<512> doc;
-    appendCommandToDoc(doc, response);
+    StaticJsonDocument<256> response;
+    response["status"] = "accepted";
+    response["request_id"] = request_id.c_str();
+    std::string poll_url = "/api/assistant/chat/" + request_id;
+    response["poll_url"] = poll_url.c_str();
+    response["pending"] = static_cast<uint32_t>(manager.getPendingCount());
+    response["processing"] = static_cast<uint32_t>(manager.getProcessingCount());
+
+    String payload;
+    serializeJson(response, payload);
+    sendJson(202, payload);
+}
+
+void WebServerManager::handleAssistantChatStatus() {
+    String request_id_param = server_->pathArg(0);
+    if (request_id_param.isEmpty()) {
+        sendJson(400, "{\"status\":\"error\",\"message\":\"Missing request ID\"}");
+        return;
+    }
+
+    AsyncRequestManager& manager = AsyncRequestManager::getInstance();
+    if (!manager.isRunning()) {
+        sendJson(503, "{\"status\":\"error\",\"message\":\"Async manager unavailable\"}");
+        return;
+    }
+
+    AsyncRequestManager::RequestResult result;
+    const std::string request_id = request_id_param.c_str();
+    if (!manager.getRequestStatus(request_id, result)) {
+        sendJson(404, "{\"status\":\"error\",\"message\":\"Request not found\"}");
+        return;
+    }
+
+    StaticJsonDocument<768> doc;
+    doc["status"] = requestStatusToString(result.status);
+    doc["request_id"] = request_id.c_str();
+    doc["created_at_ms"] = result.created_at_ms;
+    doc["completed_at_ms"] = result.completed_at_ms;
+
+    if (!result.error_message.empty()) {
+        doc["error"] = result.error_message.c_str();
+    }
+
+    doc["pending"] = static_cast<uint32_t>(manager.getPendingCount());
+    doc["processing"] = static_cast<uint32_t>(manager.getProcessingCount());
+
+    if (result.status == AsyncRequestManager::RequestStatus::COMPLETED) {
+        JsonObject response = doc.createNestedObject("response");
+        appendCommandToJson(response, result.response, false);
+    }
+
     String payload;
     serializeJson(doc, payload);
     sendJson(200, payload);
@@ -673,7 +737,7 @@ void WebServerManager::handleAssistantAudioStop() {
     }
 
     StaticJsonDocument<512> doc;
-    appendCommandToDoc(doc, response);
+    appendCommandToJson(doc.to<JsonObject>(), response);
     String payload;
     serializeJson(doc, payload);
     sendJson(200, payload);

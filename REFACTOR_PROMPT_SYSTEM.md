@@ -1,5 +1,15 @@
 # 📋 REFACTOR COMPLETO: Sistema Prompt Dinamico
 
+## 🗺️ Prompt Snapshot Roadmap (Q1 2025)
+
+| Stato | Task | Dettagli |
+| --- | --- | --- |
+| ✅ | Snapshot unico | Script `memory/scripts/prompt_snapshot.lua` aggrega meteo, note persistenti, lista file e regole TTS in un solo auto-populate `lua_exec`. |
+| ✅ | Prompt compatto | `data/voice_assistant_prompt.json` ora ha tre sezioni: snapshot, ultimo comando (variabili dinamiche) e regole rapide. |
+| 🟡 | Compose runtime snello | Prossimo step: rimuovere `resolvePromptVariables()` dal runtime e affidarsi solo alle variabili dinamiche necessarie (`{{COMMAND_LIST}}`, `{{last_command_*}}`). |
+| 🟡 | Anteprima “Risolvi e Salva” | Rifinire endpoint/UI per salvare prompt già risolto così da evitare auto-populate ripetuti (vedi sezione “Refactor Proposto”). |
+| 🔜 | Telemetria snapshot | Estendere lo script per includere stato sensori (heap, uptime) e verificare che l’output resti sotto 4 KB per non appesantire il prompt. |
+
 ## 🔍 Analisi Flusso Attuale
 
 ### Flusso di Creazione/Visualizzazione/Salvataggio

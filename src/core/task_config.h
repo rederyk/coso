@@ -33,4 +33,9 @@ constexpr UBaseType_t PRIO_BLE = 5;
 constexpr uint32_t STACK_LED = 2048;
 constexpr UBaseType_t PRIO_LED = 0;
 
+// Async voice assistant worker (handles long-running LLM requests)
+constexpr uint32_t VOICE_ASSISTANT_STACK_SIZE = 8192;
+constexpr UBaseType_t VOICE_ASSISTANT_PRIORITY = 4;
+constexpr BaseType_t VOICE_ASSISTANT_CORE = CORE_WORK;
+
 }  // namespace TaskConfig
