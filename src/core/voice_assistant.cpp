@@ -33,11 +33,16 @@ constexpr const char* TAG = "VoiceAssistant";
 
 // Task priorities and stack sizes
 constexpr UBaseType_t RECORDING_TASK_PRIORITY = 4;
-constexpr size_t RECORDING_TASK_STACK = 4096;
+
+constexpr size_t stackBytesToWords(size_t bytes) {
+    return (bytes + sizeof(StackType_t) - 1) / sizeof(StackType_t);
+}
+
+constexpr size_t RECORDING_TASK_STACK = stackBytesToWords(4096);
 constexpr UBaseType_t STT_TASK_PRIORITY = 3;
-constexpr size_t STT_TASK_STACK = 6144;  // Reduced from 8KB to 6KB to fit in fragmented DRAM
+constexpr size_t STT_TASK_STACK = stackBytesToWords(6144);  // 6KB stack for STT task
 constexpr UBaseType_t AI_TASK_PRIORITY = 3;
-constexpr size_t AI_TASK_STACK = 6144;   // Reduced from 8KB to 6KB to fit in fragmented DRAM
+constexpr size_t AI_TASK_STACK = stackBytesToWords(48 * 1024);  // 48KB stack for AI task
 
 // Queue sizes
 constexpr size_t AUDIO_QUEUE_SIZE = 5;
@@ -292,24 +297,59 @@ bool VoiceAssistant::begin() {
           heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
           heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
 
-    // Create tasks with reduced stack sizes
+    // Allocate task stacks in PSRAM to save precious DRAM for web server
     // Note: Recording task is created on-demand when startRecording() is called
-    BaseType_t stt_result = xTaskCreatePinnedToCore(
-        speechToTextTask, "speech_to_text", STT_TASK_STACK,
-        this, STT_TASK_PRIORITY, &sttTask_, tskNO_AFFINITY);
 
-    LOG_I("STT task result: %d, free mem: %u", stt_result,
-          heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
+    const size_t stt_stack_bytes = STT_TASK_STACK * sizeof(StackType_t);
+    stt_task_stack_ = (StackType_t*)heap_caps_malloc(stt_stack_bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
 
-    BaseType_t ai_result = xTaskCreatePinnedToCore(
-        aiProcessingTask, "ai_processing", AI_TASK_STACK,
-        this, AI_TASK_PRIORITY, &aiTask_, tskNO_AFFINITY);
+    if (!stt_task_stack_) {
+        LOG_E("Failed to allocate STT task stack in PSRAM (%u bytes)", stt_stack_bytes);
+        end();
+        return false;
+    }
 
-    LOG_I("AI task result: %d, free mem: %u", ai_result,
-          heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
+    LOG_I("STT task stack allocated in PSRAM: %u bytes @ %p", stt_stack_bytes, stt_task_stack_);
 
-    if (stt_result != pdPASS || ai_result != pdPASS) {
-        LOG_E("Failed to create assistant tasks (stt=%d, ai=%d)", stt_result, ai_result);
+    // Create STT task with static allocation (stack in PSRAM)
+    sttTask_ = xTaskCreateStaticPinnedToCore(
+        speechToTextTask,
+        "speech_to_text",
+        STT_TASK_STACK,
+        this,
+        STT_TASK_PRIORITY,
+        stt_task_stack_,
+        &stt_task_buffer_,
+        tskNO_AFFINITY);
+
+    LOG_I("STT task created, free mem: %u", heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
+
+    const size_t ai_stack_bytes = AI_TASK_STACK * sizeof(StackType_t);
+    ai_task_stack_ = (StackType_t*)heap_caps_malloc(ai_stack_bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+
+    if (!ai_task_stack_) {
+        LOG_E("Failed to allocate AI task stack in PSRAM (%u bytes)", ai_stack_bytes);
+        end();
+        return false;
+    }
+
+    LOG_I("AI task stack allocated in PSRAM: %u bytes @ %p", ai_stack_bytes, ai_task_stack_);
+
+    // Create AI task with static allocation (stack in PSRAM)
+    aiTask_ = xTaskCreateStaticPinnedToCore(
+        aiProcessingTask,
+        "ai_processing",
+        AI_TASK_STACK,
+        this,
+        AI_TASK_PRIORITY,
+        ai_task_stack_,
+        &ai_task_buffer_,
+        tskNO_AFFINITY);
+
+    LOG_I("AI task created, free mem: %u", heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
+
+    if (!sttTask_ || !aiTask_) {
+        LOG_E("Failed to create assistant tasks (stt=%p, ai=%p)", sttTask_, aiTask_);
         end();
         return false;
     }
@@ -339,6 +379,16 @@ void VoiceAssistant::end() {
     if (aiTask_) {
         vTaskDelete(aiTask_);
         aiTask_ = nullptr;
+    }
+
+    // Free task stacks from PSRAM
+    if (stt_task_stack_) {
+        heap_caps_free(stt_task_stack_);
+        stt_task_stack_ = nullptr;
+    }
+    if (ai_task_stack_) {
+        heap_caps_free(ai_task_stack_);
+        ai_task_stack_ = nullptr;
     }
 
     // Delete queues
