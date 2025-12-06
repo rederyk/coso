@@ -88,9 +88,22 @@ bool StorageAccessManager::readWebData(const std::string& filename, std::string&
 
 bool StorageAccessManager::writeWebData(const std::string& filename, const std::string& data) const {
     const std::string path = getWebDataPath(filename);
-    if (path.empty() || !isAllowedLittleFsPath(path)) {
+    Logger::getInstance().infof("[StorageAccess] writeWebData: filename=%s, path=%s", filename.c_str(), path.c_str());
+
+    if (path.empty()) {
+        Logger::getInstance().warnf("[StorageAccess] writeWebData: path is empty!");
         return false;
     }
+
+    if (!isAllowedLittleFsPath(path)) {
+        Logger::getInstance().warnf("[StorageAccess] writeWebData: path '%s' is not allowed!", path.c_str());
+        Logger::getInstance().infof("[StorageAccess] Allowed prefixes count: %d", littlefs_allowed_prefixes_.size());
+        for (const auto& prefix : littlefs_allowed_prefixes_) {
+            Logger::getInstance().infof("[StorageAccess]   - prefix: '%s'", prefix.c_str());
+        }
+        return false;
+    }
+
     return writeToLittleFs(path, data);
 }
 

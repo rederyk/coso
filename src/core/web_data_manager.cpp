@@ -36,8 +36,7 @@ bool WebDataManager::begin() {
 
     ESP_LOGI(LOG_TAG, "Initializing WebDataManager...");
 
-    // Initialize WiFiClientSecure
-    wifi_client_.setInsecure(); // For development - in production use proper certificates
+    // WiFiClientSecure is now created on-demand in makeHttpRequest() to save DRAM
 
     // Create cache directory
     if (!LittleFS.exists(CACHE_DIR)) {
@@ -87,30 +86,37 @@ void WebDataManager::end() {
 WebDataManager::RequestResult WebDataManager::fetchOnce(const std::string& url, const std::string& filename) {
     RequestResult result = {false, 0, "", 0};
 
+    ESP_LOGI(LOG_TAG, "fetchOnce called: url=%s, filename=%s", url.c_str(), filename.c_str());
+
     if (!initialized_) {
         result.error_message = "WebDataManager not initialized";
+        ESP_LOGE(LOG_TAG, "fetchOnce failed: %s", result.error_message.c_str());
         return result;
     }
 
     if (!WiFi.isConnected()) {
         result.error_message = "WiFi not connected";
+        ESP_LOGE(LOG_TAG, "fetchOnce failed: %s", result.error_message.c_str());
         return result;
     }
 
     // Validate URL and domain
     if (!validateUrl(url)) {
         result.error_message = "Invalid URL format";
+        ESP_LOGE(LOG_TAG, "fetchOnce failed: %s", result.error_message.c_str());
         return result;
     }
 
     if (!isDomainAllowed(url)) {
         result.error_message = "Domain not in whitelist";
+        ESP_LOGE(LOG_TAG, "fetchOnce failed: %s (url=%s)", result.error_message.c_str(), url.c_str());
         return result;
     }
 
     std::string domain = extractDomain(url);
     if (!checkRateLimit(domain)) {
         result.error_message = "Rate limit exceeded for domain: " + domain;
+        ESP_LOGE(LOG_TAG, "fetchOnce failed: %s", result.error_message.c_str());
         return result;
     }
 
@@ -307,12 +313,23 @@ std::vector<std::string> WebDataManager::getScheduledTasks() const {
 WebDataManager::RequestResult WebDataManager::makeHttpRequest(const std::string& url, std::string& response_data) {
     RequestResult result = {false, 0, "", 0};
 
+    // Create WiFiClientSecure on-demand using heap allocation (not stack!)
+    // WiFiClientSecure is too large (~16-32KB) for task stack, must use heap
+    // Using unique_ptr ensures automatic cleanup when function returns
+    std::unique_ptr<WiFiClientSecure> wifi_client(new WiFiClientSecure());
+    if (!wifi_client) {
+        result.error_message = "Failed to allocate WiFiClientSecure";
+        ESP_LOGE(LOG_TAG, "Out of memory: cannot allocate WiFiClientSecure");
+        return result;
+    }
+    wifi_client->setInsecure(); // For development - in production use proper certificates
+
     HTTPClient http;
     http.setTimeout(request_timeout_ms_);
 
     ESP_LOGI(LOG_TAG, "Making HTTP request to: %s", url.c_str());
 
-    if (!http.begin(wifi_client_, url.c_str())) {
+    if (!http.begin(*wifi_client, url.c_str())) {
         result.error_message = "Failed to begin HTTP connection";
         return result;
     }

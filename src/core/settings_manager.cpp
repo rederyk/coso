@@ -357,7 +357,7 @@ void SettingsManager::loadDefaults() {
     current_.borderRadius = DEFAULT_BORDER_RADIUS;
 
     // Web Data Manager
-    current_.webDataAllowedDomains = {"api.open-meteo.com", "newsapi.org", "httpbin.org"};
+    current_.webDataAllowedDomains = {"api.open-meteo.com", "newsapi.org", "httpbin.org", "wttr.in"};
     current_.webDataMaxFileSizeKb = 50;
     current_.webDataMaxRequestsPerHour = 10;
     current_.webDataRequestTimeoutMs = 10000;

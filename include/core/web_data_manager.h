@@ -87,7 +87,7 @@ private:
 
     /** Internal state */
     bool initialized_ = false;
-    WiFiClientSecure wifi_client_;
+    // WiFiClientSecure removed - now allocated on-demand in makeHttpRequest() to save DRAM
 
     /** Configuration */
     size_t max_file_size_ = 50 * 1024; // 50KB default
