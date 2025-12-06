@@ -1566,9 +1566,24 @@ bool VoiceAssistant::parseGPTCommand(const std::string& response, VoiceCommand& 
 
 // Ollama API helpers
 bool VoiceAssistant::fetchOllamaModels(const std::string& base_url, std::vector<std::string>& models) {
-    LOG_I("Fetching available models from Ollama API");
-
     models.clear();
+
+    // Check cache first
+    {
+        std::lock_guard<std::mutex> lock(ollama_cache_mutex_);
+        const uint32_t now = millis();
+        const bool cache_valid = (cached_ollama_endpoint_ == base_url) &&
+                                 (now - ollama_cache_timestamp_ < OLLAMA_CACHE_TTL_MS);
+
+        if (cache_valid && !cached_ollama_models_.empty()) {
+            LOG_I("Using cached Ollama models (%d models, age: %u ms)",
+                  cached_ollama_models_.size(), now - ollama_cache_timestamp_);
+            models = cached_ollama_models_;
+            return true;
+        }
+    }
+
+    LOG_I("Fetching available models from Ollama API");
 
     // Check if we have WiFi connection
     if (WiFi.status() != WL_CONNECTED) {
@@ -1689,6 +1704,15 @@ bool VoiceAssistant::fetchOllamaModels(const std::string& base_url, std::vector<
     }
 
     LOG_I("Successfully fetched %d models from Ollama", models.size());
+
+    // Update cache
+    {
+        std::lock_guard<std::mutex> lock(ollama_cache_mutex_);
+        cached_ollama_models_ = models;
+        cached_ollama_endpoint_ = base_url;
+        ollama_cache_timestamp_ = millis();
+    }
+
     return true;
 }
 
@@ -1729,20 +1753,28 @@ bool VoiceAssistant::shouldRefineOutput(const VoiceCommand& cmd) {
         return false;
     }
 
-    // 2. Output is very long (>200 characters) - likely technical data
+    // 2. lua_exec for prompt_snapshot - NEVER refine (already formatted)
+    if (cmd.command == "lua_exec" &&
+        !cmd.args.empty() &&
+        cmd.args[0].find("prompt_snapshot.lua") != std::string::npos) {
+        LOG_I("lua_exec for prompt_snapshot - skipping refinement (already formatted)");
+        return false;
+    }
+
+    // 3. Output is very long (>200 characters) - likely technical data
     if (cmd.output.size() > 200) {
         LOG_I("Output exceeds 200 chars (%zu), needs refinement", cmd.output.size());
         return true;
     }
 
-    // 3. Output contains JSON structure
+    // 4. Output contains JSON structure
     if (cmd.output.find('{') != std::string::npos ||
         cmd.output.find('[') != std::string::npos) {
         LOG_I("Output contains JSON, needs refinement");
         return true;
     }
 
-    // 4. Lua script commands that use webData (likely produce raw data)
+    // 5. Lua script commands that use webData (likely produce raw data)
     if (cmd.command == "lua_script" &&
         !cmd.args.empty() &&
         (cmd.args[0].find("webData") != std::string::npos ||
@@ -1751,7 +1783,7 @@ bool VoiceAssistant::shouldRefineOutput(const VoiceCommand& cmd) {
         return true;
     }
 
-    // 5. Commands that typically produce technical output
+    // 6. Commands that typically produce technical output
     if (cmd.command == "heap" ||
         cmd.command == "system_status" ||
         cmd.command == "log_tail") {

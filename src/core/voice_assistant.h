@@ -238,6 +238,13 @@ private:
     std::unordered_map<std::string, std::string> prompt_variables_;
     mutable std::mutex prompt_variables_mutex_;
 
+    // Ollama models cache (to avoid repeated API calls)
+    std::vector<std::string> cached_ollama_models_;
+    std::string cached_ollama_endpoint_;
+    uint32_t ollama_cache_timestamp_ = 0;
+    static constexpr uint32_t OLLAMA_CACHE_TTL_MS = 60000; // 60 seconds
+    mutable std::mutex ollama_cache_mutex_;
+
     void captureCommandOutputVariables(const VoiceCommand& cmd);
     std::string composeSystemPrompt(const std::string& override_template,
                                     const VoiceAssistantPromptDefinition& prompt_definition) const;

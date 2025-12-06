@@ -990,10 +990,8 @@ void WebServerManager::handleAssistantPromptPreview() {
     VoiceAssistant& assistant = VoiceAssistant::getInstance();
     std::string error;
 
-    // Execute auto_populate commands to populate variables
-    if (!assistant.executeAutoPopulateCommands(std::string(body.c_str()), error)) {
-        Logger::getInstance().warnf("[WebServer] Auto-populate failed: %s", error.c_str());
-    }
+    // Auto-populate REMOVED: uses cached variables from last execution
+    // Prevents redundant command execution on every preview request
 
     std::string rendered;
     if (!assistant.buildPromptFromJson(std::string(body.c_str()), error, rendered)) {
