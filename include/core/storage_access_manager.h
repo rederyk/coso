@@ -11,6 +11,7 @@ public:
 
     bool readWebData(const std::string& filename, std::string& out) const;
     bool writeWebData(const std::string& filename, const std::string& data) const;
+    bool writeWebData(const std::string& filename, const uint8_t* data, size_t size) const;
     std::vector<std::string> listWebDataFiles() const;
     bool deleteWebData(const std::string& filename_or_path) const;
     std::string getWebDataPath(const std::string& filename) const;
@@ -30,7 +31,7 @@ private:
     bool isAllowedLittleFsPath(const std::string& path) const;
     bool readFromSd(const std::string& path, std::string& out) const;
     bool readFromLittleFs(const std::string& path, std::string& out) const;
-    bool writeToLittleFs(const std::string& path, const std::string& data) const;
+    bool writeToLittleFs(const std::string& path, const uint8_t* data, size_t size) const;
     std::vector<std::string> listSdDirectory(const std::string& path) const;
     std::vector<std::string> listLittleFsDirectory(const std::string& path) const;
 

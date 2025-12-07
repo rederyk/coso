@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <regex>
 #include <ctime>
+#include <memory>
 
 WebDataManager& WebDataManager::getInstance() {
     static WebDataManager instance;
@@ -123,11 +124,14 @@ WebDataManager::RequestResult WebDataManager::fetchOnce(const std::string& url, 
 
     ESP_LOGI(LOG_TAG, "Fetching URL: %s -> %s", url.c_str(), filename.c_str());
 
-    std::string response_data;
+    ByteBuffer response_data;
     result = makeHttpRequest(url, response_data);
 
     if (result.success && !response_data.empty()) {
-        if (StorageAccessManager::getInstance().writeWebData(filename, response_data)) {
+        if (StorageAccessManager::getInstance().writeWebData(
+                filename,
+                response_data.data(),
+                response_data.size())) {
             updateRateLimit(domain);
             ESP_LOGI(LOG_TAG, "Successfully cached %d bytes to %s", response_data.size(), filename.c_str());
         } else {
@@ -311,8 +315,9 @@ std::vector<std::string> WebDataManager::getScheduledTasks() const {
 
 // Private methods implementation
 
-WebDataManager::RequestResult WebDataManager::makeHttpRequest(const std::string& url, std::string& response_data) {
+WebDataManager::RequestResult WebDataManager::makeHttpRequest(const std::string& url, ByteBuffer& response_data) {
     RequestResult result = {false, 0, "", 0};
+    response_data.clear();
 
     // Create WiFiClientSecure on-demand using heap allocation (not stack!)
     // WiFiClientSecure is too large (~16-32KB) for task stack, must use heap
@@ -340,17 +345,76 @@ WebDataManager::RequestResult WebDataManager::makeHttpRequest(const std::string&
 
     if (http_code > 0) {
         if (http_code == HTTP_CODE_OK || http_code == HTTP_CODE_MOVED_PERMANENTLY) {
-            response_data = http.getString().c_str();
+            WiFiClient* stream = http.getStreamPtr();
+            if (!stream) {
+                result.error_message = "HTTP stream unavailable";
+            } else {
+                constexpr size_t kChunkSize = 1024;
+                auto chunk_deleter = [](uint8_t* ptr) {
+                    if (ptr) {
+                        heap_caps_free(ptr);
+                    }
+                };
 
-            // Check size limit
-            if (response_data.size() > max_file_size_) {
-                result.error_message = "Response too large: " + std::to_string(response_data.size()) + " bytes";
-                return result;
+                uint8_t* chunk_ptr = static_cast<uint8_t*>(heap_caps_malloc(kChunkSize, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+                if (!chunk_ptr) {
+                    chunk_ptr = static_cast<uint8_t*>(heap_caps_malloc(kChunkSize, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+                }
+                std::unique_ptr<uint8_t, decltype(chunk_deleter)> chunk(chunk_ptr, chunk_deleter);
+
+                if (!chunk_ptr) {
+                    result.error_message = "Failed to allocate HTTP buffer";
+                } else {
+                    int remaining = http.getSize();
+                    const bool is_chunked = (remaining == -1);
+                    bool stream_error = false;
+
+                    while ((is_chunked && stream->connected()) || (!is_chunked && remaining > 0)) {
+                        size_t available = stream->available();
+                        if (available == 0) {
+                            if (!stream->connected()) {
+                                break;
+                            }
+                            vTaskDelay(pdMS_TO_TICKS(10));
+                            continue;
+                        }
+
+                        size_t to_read = std::min(available, kChunkSize);
+                        int bytes_read = stream->readBytes(chunk.get(), to_read);
+                        if (bytes_read <= 0) {
+                            stream_error = true;
+                            result.error_message = "HTTP stream read failed";
+                            break;
+                        }
+
+                        if (response_data.size() + static_cast<size_t>(bytes_read) > max_file_size_) {
+                            stream_error = true;
+                            result.error_message = "Response too large: " +
+                                std::to_string(response_data.size() + static_cast<size_t>(bytes_read)) + " bytes";
+                            break;
+                        }
+
+                        response_data.insert(response_data.end(), chunk.get(), chunk.get() + bytes_read);
+
+                        if (!is_chunked) {
+                            remaining -= bytes_read;
+                            if (remaining <= 0) {
+                                break;
+                            }
+                        }
+                    }
+
+                    if (!stream_error) {
+                        if (!is_chunked && remaining > 0) {
+                            result.error_message = "Connection closed before full response";
+                        } else {
+                            result.success = true;
+                            result.bytes_received = response_data.size();
+                            ESP_LOGI(LOG_TAG, "HTTP request successful: %d bytes received", result.bytes_received);
+                        }
+                    }
+                }
             }
-
-            result.success = true;
-            result.bytes_received = response_data.size();
-            ESP_LOGI(LOG_TAG, "HTTP request successful: %d bytes received", result.bytes_received);
         } else {
             result.error_message = "HTTP error: " + std::to_string(http_code);
         }

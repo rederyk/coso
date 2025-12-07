@@ -8,6 +8,8 @@
 #include <freertos/queue.h>
 #include <freertos/semphr.h>
 
+#include "utils/psram_allocator.h"
+
 #include <string>
 #include <vector>
 #include <set>
@@ -67,13 +69,15 @@ public:
     void setMaxRequestsPerHour(uint32_t max_requests) { max_requests_per_hour_ = max_requests; }
 
 private:
+    using ByteBuffer = PsramVector<uint8_t>;
+
     WebDataManager();
     ~WebDataManager();
     WebDataManager(const WebDataManager&) = delete;
     WebDataManager& operator=(const WebDataManager&) = delete;
 
     /** HTTP implementation */
-    RequestResult makeHttpRequest(const std::string& url, std::string& response_data);
+    RequestResult makeHttpRequest(const std::string& url, ByteBuffer& response_data);
     bool validateUrl(const std::string& url) const;
     std::string extractDomain(const std::string& url) const;
 

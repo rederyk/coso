@@ -22,58 +22,13 @@
 #include <mutex>
 #include <new>
 
+#include "utils/psram_allocator.h"
+
 const char VOICE_ASSISTANT_PROMPT_JSON_PATH[] = "/voice_assistant_prompt.json";
 
 namespace {
 thread_local VoiceAssistant::LuaSandbox* s_active_lua_sandbox = nullptr;
 constexpr const char* TAG = "VoiceAssistant";
-
-// Allocator that prefers PSRAM for large dynamic containers
-template <typename T>
-struct PsramAllocator {
-    using value_type = T;
-
-    PsramAllocator() noexcept = default;
-    template <typename U>
-    PsramAllocator(const PsramAllocator<U>&) noexcept {}
-
-    T* allocate(std::size_t n) {
-        const size_t bytes = n * sizeof(T);
-        void* ptr = heap_caps_malloc(bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-        if (!ptr) {
-            ptr = heap_caps_malloc(bytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-        }
-        if (!ptr) {
-            throw std::bad_alloc();
-        }
-        return static_cast<T*>(ptr);
-    }
-
-    void deallocate(T* ptr, std::size_t) noexcept {
-        if (ptr) {
-            heap_caps_free(ptr);
-        }
-    }
-
-    template <typename U>
-    struct rebind {
-        using other = PsramAllocator<U>;
-    };
-};
-
-template <typename T, typename U>
-bool operator==(const PsramAllocator<T>&, const PsramAllocator<U>&) noexcept {
-    return true;
-}
-
-template <typename T, typename U>
-bool operator!=(const PsramAllocator<T>&, const PsramAllocator<U>&) noexcept {
-    return false;
-}
-
-using PsramString = std::basic_string<char, std::char_traits<char>, PsramAllocator<char>>;
-template <typename T>
-using PsramVector = std::vector<T, PsramAllocator<T>>;
 
 #define LOG_I(format, ...) Logger::getInstance().infof("[VoiceAssistant] " format, ##__VA_ARGS__)
 #define LOG_E(format, ...) Logger::getInstance().errorf("[VoiceAssistant] " format, ##__VA_ARGS__)
@@ -185,6 +140,7 @@ std::string sanitizePlaceholderName(const std::string& raw) {
 constexpr const char* VOICE_ASSISTANT_FALLBACK_PROMPT_TEMPLATE =
     "You are a helpful voice assistant for an ESP32-S3 device. Respond ONLY with valid JSON in this exact format: "
     "{\"command\": \"<command_name>\", \"args\": [\"<arg1>\", \"<arg2>\", ...], \"text\": \"<your conversational response>\"}. "
+    "Always use double quotes for every JSON string and escape double quotes inside Lua snippets (e.g., webData.fetch_once(\\\"https://example.com\\\", \\\"weather.json\\\")) so the JSON stays valid. "
     "Available commands: {{COMMAND_LIST}}. Bonded BLE hosts: {{BLE_HOSTS}}.";
 
 void* cjson_psram_malloc(size_t size) {

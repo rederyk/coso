@@ -87,6 +87,12 @@ bool StorageAccessManager::readWebData(const std::string& filename, std::string&
 }
 
 bool StorageAccessManager::writeWebData(const std::string& filename, const std::string& data) const {
+    return writeWebData(filename,
+                        reinterpret_cast<const uint8_t*>(data.data()),
+                        data.size());
+}
+
+bool StorageAccessManager::writeWebData(const std::string& filename, const uint8_t* data, size_t size) const {
     const std::string path = getWebDataPath(filename);
     Logger::getInstance().infof("[StorageAccess] writeWebData: filename=%s, path=%s", filename.c_str(), path.c_str());
 
@@ -104,7 +110,7 @@ bool StorageAccessManager::writeWebData(const std::string& filename, const std::
         return false;
     }
 
-    return writeToLittleFs(path, data);
+    return writeToLittleFs(path, data, size);
 }
 
 std::vector<std::string> StorageAccessManager::listWebDataFiles() const {
@@ -156,7 +162,9 @@ bool StorageAccessManager::writeMemory(const std::string& filename, const std::s
     if (path.empty() || !isAllowedLittleFsPath(path)) {
         return false;
     }
-    return writeToLittleFs(path, data);
+    return writeToLittleFs(path,
+                           reinterpret_cast<const uint8_t*>(data.data()),
+                           data.size());
 }
 
 std::vector<std::string> StorageAccessManager::listMemoryFiles() const {
@@ -211,6 +219,20 @@ std::string StorageAccessManager::normalizePath(std::string path) const {
     }
     if (path.front() != '/') {
         path.insert(path.begin(), '/');
+    }
+
+    // Accept paths that include the LittleFS mount prefix as reported by ESP-IDF
+    constexpr const char kLittleFsPrefix[] = "/littlefs";
+    const size_t prefix_len = sizeof(kLittleFsPrefix) - 1;
+    if (path.rfind(kLittleFsPrefix, 0) == 0) {
+        if (path.size() == prefix_len) {
+            path = "/";
+        } else {
+            path.erase(0, prefix_len);
+            if (path.empty()) {
+                path = "/";
+            }
+        }
     }
 
     std::vector<std::string> segments;
@@ -362,7 +384,7 @@ bool StorageAccessManager::readFromLittleFs(const std::string& path, std::string
     return true;
 }
 
-bool StorageAccessManager::writeToLittleFs(const std::string& path, const std::string& data) const {
+bool StorageAccessManager::writeToLittleFs(const std::string& path, const uint8_t* data, size_t size) const {
     if (path.empty()) {
         return false;
     }
@@ -381,10 +403,10 @@ bool StorageAccessManager::writeToLittleFs(const std::string& path, const std::s
         return false;
     }
 
-    size_t written = file.write(reinterpret_cast<const uint8_t*>(data.data()), data.size());
+    size_t written = file.write(data, size);
     file.close();
 
-    if (written != data.size()) {
+    if (written != size) {
         Logger::getInstance().warnf("[StorageAccess] Incomplete write to %s", path.c_str());
         return false;
     }

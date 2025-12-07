@@ -1,14 +1,20 @@
 #include "widgets/weather_widget.h"
 #include <lvgl.h>
 #include <cJSON.h>
+#include <WiFi.h>
 #include <string>
 
-WeatherWidget::WeatherWidget() : web_data(WebDataManager::getInstance()), refresh_timer(nullptr) {}
+WeatherWidget::WeatherWidget()
+    : web_data(WebDataManager::getInstance()), refresh_timer(nullptr), wifi_retry_timer(nullptr) {}
 
 WeatherWidget::~WeatherWidget() {
     if (refresh_timer) {
         lv_timer_del(refresh_timer);
         refresh_timer = nullptr;
+    }
+    if (wifi_retry_timer) {
+        lv_timer_del(wifi_retry_timer);
+        wifi_retry_timer = nullptr;
     }
 }
 
@@ -59,6 +65,34 @@ void WeatherWidget::update() {
 }
 
 void WeatherWidget::fetchWeatherData() {
+    if (!WiFi.isConnected()) {
+        current_weather.valid = false;
+
+        const bool already_owned = lvgl_mutex_is_owned_by_current_task();
+        bool lock_acquired = already_owned;
+        if (!already_owned) {
+            lock_acquired = lvgl_mutex_lock(pdMS_TO_TICKS(50));
+        }
+
+        if (lock_acquired) {
+            if (icon_label) lv_label_set_text(icon_label, "📡");
+            if (temperature_label) lv_label_set_text(temperature_label, "--°C");
+            if (condition_label) lv_label_set_text(condition_label, "Waiting for Wi-Fi...");
+
+            if (!already_owned) {
+                lvgl_mutex_unlock();
+            }
+        }
+
+        scheduleWifiRetry(2000);
+        return;
+    }
+
+    if (wifi_retry_timer) {
+        lv_timer_del(wifi_retry_timer);
+        wifi_retry_timer = nullptr;
+    }
+
     // Fetch weather data from Open-Meteo API
     // Using coordinates for Milan, Italy (can be made configurable later)
     const char* url = "https://api.open-meteo.com/v1/forecast?latitude=45.4642&longitude=9.1900&current_weather=true&windspeed_unit=ms&hourly=temperature_2m&forecast_days=1";
@@ -109,6 +143,28 @@ void WeatherWidget::fetchWeatherData() {
                 lvgl_mutex_unlock();
             }
         }
+
+        if (result.error_message == "WiFi not connected") {
+            scheduleWifiRetry(2000);
+        }
+    }
+}
+
+void WeatherWidget::scheduleWifiRetry(uint32_t delay_ms) {
+    if (wifi_retry_timer) {
+        lv_timer_set_period(wifi_retry_timer, delay_ms);
+        lv_timer_reset(wifi_retry_timer);
+        return;
+    }
+
+    wifi_retry_timer = lv_timer_create([](lv_timer_t* timer) {
+        if (!timer || !timer->user_data) return;
+        auto* self = static_cast<WeatherWidget*>(timer->user_data);
+        self->fetchWeatherData();
+    }, delay_ms, this);
+
+    if (wifi_retry_timer) {
+        lv_timer_set_repeat_count(wifi_retry_timer, 1);
     }
 }
 

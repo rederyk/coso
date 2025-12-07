@@ -22,6 +22,7 @@ private:
     };
 
     void fetchWeatherData();
+    void scheduleWifiRetry(uint32_t delay_ms);
     void parseWeatherJson(const std::string& json_data);
     std::string getWeatherIcon(int weather_code) const;
     std::string getWeatherDescription(int weather_code) const;
@@ -31,6 +32,7 @@ private:
     lv_obj_t* icon_label = nullptr;
     lv_obj_t* container = nullptr;
     lv_timer_t* refresh_timer = nullptr;
+    lv_timer_t* wifi_retry_timer = nullptr;
 
     WeatherData current_weather;
     WebDataManager& web_data;
