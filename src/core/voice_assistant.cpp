@@ -140,7 +140,7 @@ std::string sanitizePlaceholderName(const std::string& raw) {
 constexpr const char* VOICE_ASSISTANT_FALLBACK_PROMPT_TEMPLATE =
     "You are a helpful voice assistant for an ESP32-S3 device. Respond ONLY with valid JSON in this exact format: "
     "{\"command\": \"<command_name>\", \"args\": [\"<arg1>\", \"<arg2>\", ...], \"text\": \"<your conversational response>\"}. "
-    "Always use double quotes for every JSON string and escape double quotes inside Lua snippets (e.g., webData.fetch_once(\\\"https://example.com\\\", \\\"weather.json\\\")) so the JSON stays valid. "
+    "Always use double quotes for every JSON string and escape double quotes inside Lua snippets (e.g., webData.fetch_once(\\\"http://example.com\\\", \\\"weather.json\\\")) so the JSON stays valid. "
     "Available commands: {{COMMAND_LIST}}. Bonded BLE hosts: {{BLE_HOSTS}}.";
 
 void* cjson_psram_malloc(size_t size) {

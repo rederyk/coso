@@ -1,6 +1,5 @@
 #pragma once
 
-#include <WiFiClientSecure.h>
 #include <HTTPClient.h>
 #include <lvgl.h>
 #include <freertos/FreeRTOS.h>
@@ -96,7 +95,7 @@ private:
 
     /** Internal state */
     bool initialized_ = false;
-    // WiFiClientSecure removed - now allocated on-demand in makeHttpRequest() to save DRAM
+    // HTTPS disabled for now to avoid TLS memory usage; requests are made over HTTP only
 
     /** Configuration */
     size_t max_file_size_ = 50 * 1024; // 50KB default
