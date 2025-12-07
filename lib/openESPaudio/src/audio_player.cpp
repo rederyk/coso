@@ -24,10 +24,10 @@ constexpr size_t kRingMin = 12 * 1024;
 constexpr uint32_t kTargetBufferMs = 250;
 constexpr size_t kProducerMinFree = 12 * 1024;
 constexpr size_t kFileChunk = 512;
-constexpr uint32_t kAudioTaskStack = 24576;
-constexpr uint32_t kFileTaskStack = 3072;
+constexpr uint32_t kAudioTaskStack = 8192;
+constexpr uint32_t kFileTaskStack = 2048;
 constexpr uint32_t kI2sWriteTimeout = 200;
-constexpr size_t kI2sChunkBytes = 1536;
+constexpr size_t kI2sChunkBytes = 1024;
 #else
 constexpr const char *kConfigProfile = "DEFAULT";
 constexpr size_t kRingPsram = 64 * 1024;
@@ -36,11 +36,12 @@ constexpr size_t kRingMin = 16 * 1024;
 constexpr uint32_t kTargetBufferMs = 350;
 constexpr size_t kProducerMinFree = 24 * 1024;
 constexpr size_t kFileChunk = 1024;
-constexpr uint32_t kAudioTaskStack = 32768;
-constexpr uint32_t kFileTaskStack = 4096;
+constexpr uint32_t kAudioTaskStack = 8192;
+constexpr uint32_t kFileTaskStack = 2048;
 constexpr uint32_t kI2sWriteTimeout = 250;
-constexpr size_t kI2sChunkBytes = 2048;
+constexpr size_t kI2sChunkBytes = 1024;
 #endif
+
 
 constexpr EventBits_t AUDIO_TASK_DONE_BIT = BIT0;
 } // namespace

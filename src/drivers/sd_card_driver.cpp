@@ -9,7 +9,8 @@
 #include "utils/logger.h"
 
 namespace {
-constexpr const char* MOUNT_POINT = "/sdcard";
+constexpr const char* MOUNT_POINT = "/sd";
+
 
 constexpr gpio_num_t SD_CLK = GPIO_NUM_38;
 constexpr gpio_num_t SD_CMD = GPIO_NUM_40;

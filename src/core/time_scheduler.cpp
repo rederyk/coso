@@ -514,10 +514,23 @@ void TimeScheduler::saveToStorage() {
     cJSON_Delete(root);
 }
 
+
 void TimeScheduler::loadFromStorage() {
     std::string json_data;
     if (!StorageAccessManager::getInstance().readWebData(STORAGE_PATH, json_data)) {
-        ESP_LOGI(LOG_TAG, "No saved events found");
+        // Create default empty events file
+        ESP_LOGI(LOG_TAG, "No saved events found, creating default");
+        cJSON* root = cJSON_CreateObject();
+        cJSON_AddNumberToObject(root, "version", 1);
+        cJSON* events_array = cJSON_CreateArray();
+        cJSON_AddItemToObject(root, "events", events_array);
+        char* json_str = cJSON_PrintUnformatted(root);
+        if (json_str) {
+            StorageAccessManager::getInstance().writeWebData(STORAGE_PATH, json_str);
+            free(json_str);
+        }
+        cJSON_Delete(root);
+        ESP_LOGI(LOG_TAG, "Created default events file");
         return;
     }
 

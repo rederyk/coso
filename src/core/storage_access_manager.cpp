@@ -44,16 +44,35 @@ StorageAccessManager& StorageAccessManager::getInstance() {
     return instance;
 }
 
+
+
 bool StorageAccessManager::begin() {
     if (initialized_) {
         return true;
     }
 
     if (!LittleFS.exists(kWebDataDir)) {
-        LittleFS.mkdir(kWebDataDir);
+        if (!LittleFS.mkdir(kWebDataDir)) {
+            Logger::getInstance().warnf("[StorageAccess] Failed to create LittleFS directory: %s", kWebDataDir);
+        }
     }
     if (!LittleFS.exists(kMemoryDir)) {
-        LittleFS.mkdir(kMemoryDir);
+        if (!LittleFS.mkdir(kMemoryDir)) {
+            Logger::getInstance().warnf("[StorageAccess] Failed to create LittleFS directory: %s", kMemoryDir);
+        }
+    }
+
+    // Ensure webdata directory exists on SD if mounted
+    SdCardDriver& driver = SdCardDriver::getInstance();
+    if (driver.begin()) {
+        std::string webdata_sd = "/sd/webdata";
+        if (!SD_MMC.exists(webdata_sd.c_str())) {
+            if (SD_MMC.mkdir(webdata_sd.c_str())) {
+                Logger::getInstance().infof("[StorageAccess] Created SD webdata directory: %s", webdata_sd.c_str());
+            } else {
+                Logger::getInstance().warnf("[StorageAccess] Failed to create SD webdata directory: %s", webdata_sd.c_str());
+            }
+        }
     }
 
     reloadPolicy();
@@ -165,17 +184,23 @@ bool StorageAccessManager::deleteWebData(const std::string& filename_or_path) co
     }
 
     // Prioritize SD for delete
+
     if (isAllowedSdPath(path)) {
         SdCardDriver& driver = SdCardDriver::getInstance();
         if (driver.begin()) {
             SdMutexGuard guard(driver);
+
             if (guard.locked()) {
-                if (SD_MMC.exists(path.c_str())) {
-                    if (SD_MMC.remove(path.c_str())) {
-                        Logger::getInstance().infof("[StorageAccess] deleteWebData: Successfully deleted from SD: %s", path.c_str());
+                std::string sd_full_path = path;
+                if (sd_full_path.rfind("/sd", 0) != 0) {
+                    sd_full_path = "/sd" + path;
+                }
+                if (SD_MMC.exists(sd_full_path.c_str())) {
+                    if (SD_MMC.remove(sd_full_path.c_str())) {
+                        Logger::getInstance().infof("[StorageAccess] deleteWebData: Successfully deleted from SD: %s", sd_full_path.c_str());
                         return true;
                     } else {
-                        Logger::getInstance().warnf("[StorageAccess] deleteWebData: Failed to delete from SD: %s", path.c_str());
+                        Logger::getInstance().warnf("[StorageAccess] deleteWebData: Failed to delete from SD: %s", sd_full_path.c_str());
                     }
                 }
             }
@@ -402,6 +427,7 @@ bool StorageAccessManager::isAllowedLittleFsPath(const std::string& path) const 
     return false;
 }
 
+
 bool StorageAccessManager::readFromSd(const std::string& path, std::string& out) const {
     SdCardDriver& driver = SdCardDriver::getInstance();
     if (!driver.begin()) {
@@ -414,7 +440,11 @@ bool StorageAccessManager::readFromSd(const std::string& path, std::string& out)
         return false;
     }
 
-    File file = SD_MMC.open(path.c_str(), FILE_READ);
+    std::string sd_path = path;
+    if (sd_path.rfind("/sd", 0) != 0) {
+        sd_path = "/sd" + path;
+    }
+    File file = SD_MMC.open(sd_path.c_str(), FILE_READ);
     if (!file) {
         return false;
     }
@@ -434,6 +464,8 @@ bool StorageAccessManager::readFromSd(const std::string& path, std::string& out)
     }
     return true;
 }
+
+
 
 bool StorageAccessManager::readFromLittleFs(const std::string& path, std::string& out) const {
     if (!LittleFS.exists(path.c_str())) {
@@ -461,17 +493,40 @@ bool StorageAccessManager::readFromLittleFs(const std::string& path, std::string
     return true;
 }
 
+
 bool StorageAccessManager::writeToLittleFs(const std::string& path, const uint8_t* data, size_t size) const {
     if (path.empty()) {
         return false;
     }
 
-    size_t slash_pos = path.find_last_of('/');
-    if (slash_pos != std::string::npos && slash_pos > 0) {
-        std::string parent = path.substr(0, slash_pos);
-        if (!LittleFS.exists(parent.c_str())) {
-            LittleFS.mkdir(parent.c_str());
+    // Recursive directory creation lambda
+    auto ensureLittleFsDirectoryRecursive = [&]() -> bool {
+        if (path.empty()) return true;
+        size_t last_slash = path.find_last_of('/');
+        if (last_slash == std::string::npos || last_slash == 0) return true; // root
+        std::string dir_path = path.substr(0, last_slash);
+
+        std::string current = "/";
+        size_t idx = 1;
+        while (idx < dir_path.length()) {
+            size_t next_slash = dir_path.find('/', idx);
+            if (next_slash == std::string::npos) next_slash = dir_path.length();
+            std::string next_dir = dir_path.substr(0, next_slash);
+            if (next_dir.length() > current.length() && !LittleFS.exists(next_dir.c_str())) {
+                if (!LittleFS.mkdir(next_dir.c_str())) {
+                    Logger::getInstance().warnf("[StorageAccess] Failed to create LittleFS directory: %s", next_dir.c_str());
+                    return false;
+                }
+                current = next_dir;
+            }
+            idx = next_slash + 1;
         }
+        return true;
+    };
+
+    // Ensure directory exists recursively on LittleFS
+    if (!ensureLittleFsDirectoryRecursive()) {
+        return false;
     }
 
     File file = LittleFS.open(path.c_str(), FILE_WRITE);
@@ -491,6 +546,8 @@ bool StorageAccessManager::writeToLittleFs(const std::string& path, const uint8_
     return true;
 }
 
+
+
 bool StorageAccessManager::writeToSd(const std::string& path, const uint8_t* data, size_t size) const {
     SdCardDriver& driver = SdCardDriver::getInstance();
     if (!driver.begin()) {
@@ -504,18 +561,44 @@ bool StorageAccessManager::writeToSd(const std::string& path, const uint8_t* dat
         return false;
     }
 
-    // Ensure directory exists on SD
-    size_t slash_pos = path.find_last_of('/');
-    if (slash_pos != std::string::npos && slash_pos > 0) {
-        std::string parent = path.substr(0, slash_pos);
-        if (!SD_MMC.exists(parent.c_str())) {
-            SD_MMC.mkdir(parent.c_str());
-        }
+    std::string sd_path = path;
+    if (sd_path.rfind("/sd", 0) != 0) {
+        sd_path = "/sd" + path;
     }
 
-    File file = SD_MMC.open(path.c_str(), FILE_WRITE);
+    // Recursive directory creation lambda
+    auto ensureSdDirectoryRecursive = [&]() -> bool {
+        if (sd_path.empty()) return true;
+        size_t last_slash = sd_path.find_last_of('/');
+        if (last_slash == std::string::npos || last_slash <= 3) return true; // /sd is root
+        std::string dir_path = sd_path.substr(0, last_slash);
+
+        std::string current = "/sd";
+        size_t idx = 3; // after "/sd"
+        while (idx < dir_path.length()) {
+            size_t next_slash = dir_path.find('/', idx);
+            if (next_slash == std::string::npos) next_slash = dir_path.length();
+            std::string next_dir = dir_path.substr(0, next_slash);
+            if (next_dir.length() > current.length() && !SD_MMC.exists(next_dir.c_str())) {
+                if (!SD_MMC.mkdir(next_dir.c_str())) {
+                    Logger::getInstance().warnf("[StorageAccess] Failed to create SD directory: %s", next_dir.c_str());
+                    return false;
+                }
+                current = next_dir;
+            }
+            idx = next_slash + 1;
+        }
+        return true;
+    };
+
+    // Ensure directory exists recursively on SD
+    if (!ensureSdDirectoryRecursive()) {
+        return false;
+    }
+
+    File file = SD_MMC.open(sd_path.c_str(), FILE_WRITE);
     if (!file) {
-        Logger::getInstance().warnf("[StorageAccess] Failed to open %s for SD write", path.c_str());
+        Logger::getInstance().warnf("[StorageAccess] Failed to open %s for SD write", sd_path.c_str());
         return false;
     }
 
@@ -523,12 +606,15 @@ bool StorageAccessManager::writeToSd(const std::string& path, const uint8_t* dat
     file.close();
 
     if (written != size) {
-        Logger::getInstance().warnf("[StorageAccess] Incomplete SD write to %s (%zu/%zu bytes)", path.c_str(), written, size);
+        Logger::getInstance().warnf("[StorageAccess] Incomplete SD write to %s (%zu/%zu bytes)", sd_path.c_str(), written, size);
         return false;
     }
-    Logger::getInstance().infof("[StorageAccess] Successfully written to SD: %s (%zu bytes)", path.c_str(), size);
+    Logger::getInstance().infof("[StorageAccess] Successfully written to SD: %s (%zu bytes)", sd_path.c_str(), size);
     return true;
 }
+
+
+
 
 std::vector<std::string> StorageAccessManager::listSdDirectory(const std::string& path) const {
     std::vector<std::string> entries;
@@ -542,7 +628,11 @@ std::vector<std::string> StorageAccessManager::listSdDirectory(const std::string
         return entries;
     }
 
-    File dir = SD_MMC.open(path.c_str());
+    std::string sd_path = path;
+    if (sd_path.rfind("/sd", 0) != 0) {
+        sd_path = "/sd" + path;
+    }
+    File dir = SD_MMC.open(sd_path.c_str());
     if (!dir || !dir.isDirectory()) {
         return entries;
     }
@@ -553,15 +643,13 @@ std::vector<std::string> StorageAccessManager::listSdDirectory(const std::string
             break;
         }
         if (!entry.isDirectory()) {
-            std::string name(entry.name());
-            if (name.rfind(path + "/", 0) == 0 && name.size() > path.size() + 1) {
-                name = name.substr(path.size() + 1);
-            } else if (name == path) {
-                name.clear();
+            std::string full_name = entry.name();
+            std::string name = full_name.substr(sd_path.length() + 1); // Extract relative name
+            if (name.empty()) {
+                entry.close();
+                continue;
             }
-            if (!name.empty()) {
-                entries.push_back(name);
-            }
+            entries.push_back(name);
         }
         entry.close();
     }
@@ -569,6 +657,7 @@ std::vector<std::string> StorageAccessManager::listSdDirectory(const std::string
 
     return entries;
 }
+
 
 std::vector<std::string> StorageAccessManager::listLittleFsDirectory(const std::string& path) const {
     std::vector<std::string> entries;
