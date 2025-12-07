@@ -2791,8 +2791,12 @@ void VoiceAssistant::LuaSandbox::setupSandbox() {
             end
         }
         cjson = _cjson
+        json = _cjson  -- Alias for json module compatibility
         package.preload = package.preload or {}
         package.preload["cjson"] = function()
+            return _cjson
+        end
+        package.preload["json"] = function()
             return _cjson
         end
 
