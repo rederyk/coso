@@ -75,12 +75,12 @@ bool StorageAccessManager::readWebData(const std::string& filename, std::string&
         return false;
     }
 
-    if (isAllowedSdPath(path) && readFromSd(path, out)) {
+    if (isAllowedLittleFsPath(path) && readFromLittleFs(path, out)) {
         return true;
     }
 
-    if (isAllowedLittleFsPath(path)) {
-        return readFromLittleFs(path, out);
+    if (isAllowedSdPath(path)) {
+        return readFromSd(path, out);
     }
 
     return false;
@@ -285,18 +285,19 @@ bool StorageAccessManager::isAllowedSdPath(const std::string& path) const {
     if (sd_allowed_prefixes_.empty()) {
         return false;
     }
+    const std::string normalized = normalizePath(path);
     for (const auto& prefix : sd_allowed_prefixes_) {
         if (prefix.empty()) {
             continue;
         }
-        if (path == prefix) {
+        if (normalized == prefix) {
             return true;
         }
         std::string prefix_with_slash = prefix;
         if (!prefix_with_slash.empty() && prefix_with_slash.back() != '/') {
             prefix_with_slash += "/";
         }
-        if (path.rfind(prefix_with_slash, 0) == 0) {
+        if (normalized.rfind(prefix_with_slash, 0) == 0) {
             return true;
         }
     }
@@ -307,18 +308,19 @@ bool StorageAccessManager::isAllowedLittleFsPath(const std::string& path) const 
     if (littlefs_allowed_prefixes_.empty()) {
         return false;
     }
+    const std::string normalized = normalizePath(path);
     for (const auto& prefix : littlefs_allowed_prefixes_) {
         if (prefix.empty()) {
             continue;
         }
-        if (path == prefix) {
+        if (normalized == prefix) {
             return true;
         }
         std::string prefix_with_slash = prefix;
         if (!prefix_with_slash.empty() && prefix_with_slash.back() != '/') {
             prefix_with_slash += "/";
         }
-        if (path.rfind(prefix_with_slash, 0) == 0) {
+        if (normalized.rfind(prefix_with_slash, 0) == 0) {
             return true;
         }
     }

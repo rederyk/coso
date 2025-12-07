@@ -6,6 +6,7 @@
 #include "core/task_config.h"
 #include "core/system_tasks.h"
 #include "core/web_server_manager.h"
+#include "core/web_data_manager.h"
 
 // Constructor
 WifiManager::WifiManager() {
@@ -70,6 +71,8 @@ void WifiManager::wifi_task(void *pvParameters) {
                 rgb_led.setState(RgbLedManager::LedState::WIFI_CONNECTED);
             }
 
+            WebDataManager::getInstance().notifyWifiReady();
+
             // Initialize and sync time via NTP
             auto& settings = SettingsManager::getInstance();
             auto& time_mgr = TimeManager::getInstance();
@@ -106,6 +109,8 @@ void WifiManager::wifi_task(void *pvParameters) {
             if (rgb_led.isInitialized()) {
                 rgb_led.setState(RgbLedManager::LedState::WIFI_ERROR);
             }
+
+            WebDataManager::getInstance().notifyWifiDisconnected();
             // Notifica la UI dell'errore
             UiMessage msg{};
             msg.type = UiMessageType::WifiStatus;
@@ -129,6 +134,8 @@ void WifiManager::wifi_task(void *pvParameters) {
                 if (rgb_led.isInitialized()) {
                     rgb_led.setState(RgbLedManager::LedState::WIFI_CONNECTED);
                 }
+
+                WebDataManager::getInstance().notifyWifiReady();
 
                 // Re-sync time after reconnection
                 auto& time_mgr = TimeManager::getInstance();
@@ -161,6 +168,7 @@ void WifiManager::wifi_task(void *pvParameters) {
                 msg.type = UiMessageType::WifiStatus;
                 msg.value = 0; // Disconnected
                 SystemTasks::postUiMessage(msg, 0);
+                WebDataManager::getInstance().notifyWifiDisconnected();
             }
             last_status = current_status;
         }

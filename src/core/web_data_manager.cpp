@@ -54,6 +54,7 @@ bool WebDataManager::begin() {
     }
 
     initialized_ = true;
+    wifi_ready_.store(WiFi.isConnected());
 
     // Load configuration from settings (after initialization)
     loadAllowedDomainsFromSettings();
@@ -79,9 +80,11 @@ void WebDataManager::end() {
         }
     }
     scheduled_tasks_.clear();
+    pending_wifi_tasks_.clear();
     xSemaphoreGive(tasks_mutex_);
 
     initialized_ = false;
+    wifi_ready_.store(false);
     ESP_LOGI(LOG_TAG, "WebDataManager shut down");
 }
 
@@ -187,8 +190,13 @@ bool WebDataManager::fetchScheduled(const std::string& url, const std::string& f
 
     ESP_LOGI(LOG_TAG, "Scheduled task created: %s every %d minutes", task_id.c_str(), interval_minutes);
 
-    // Execute immediately for first time
-    executeScheduledDownload(task_id);
+    // Execute immediately for first time, or queue until Wi-Fi becomes available
+    if (isWifiReady()) {
+        executeScheduledDownload(task_id);
+    } else {
+        enqueueWifiPendingTask(task_id);
+        ESP_LOGI(LOG_TAG, "Wi-Fi offline, queued task %s until connection is ready", task_id.c_str());
+    }
 
     return true;
 }
@@ -490,16 +498,57 @@ void WebDataManager::scheduledDownloadTimer(lv_timer_t* timer) {
     }
 }
 
-void WebDataManager::executeScheduledDownload(const std::string& task_id) {
+void WebDataManager::enqueueWifiPendingTask(const std::string& task_id) {
     xSemaphoreTake(tasks_mutex_, portMAX_DELAY);
+    if (scheduled_tasks_.find(task_id) != scheduled_tasks_.end()) {
+        pending_wifi_tasks_.insert(task_id);
+    }
+    xSemaphoreGive(tasks_mutex_);
+}
 
+void WebDataManager::processPendingWifiTasks() {
+    if (!initialized_) {
+        return;
+    }
+
+    std::vector<std::string> tasks_to_run;
+    xSemaphoreTake(tasks_mutex_, portMAX_DELAY);
+    tasks_to_run.assign(pending_wifi_tasks_.begin(), pending_wifi_tasks_.end());
+    pending_wifi_tasks_.clear();
+    xSemaphoreGive(tasks_mutex_);
+
+    for (const auto& task_id : tasks_to_run) {
+        executeScheduledDownload(task_id);
+    }
+}
+
+void WebDataManager::notifyWifiReady() {
+    wifi_ready_.store(true);
+    processPendingWifiTasks();
+}
+
+void WebDataManager::notifyWifiDisconnected() {
+    wifi_ready_.store(false);
+}
+
+void WebDataManager::executeScheduledDownload(const std::string& task_id) {
+    ScheduledTask task;
+
+    xSemaphoreTake(tasks_mutex_, portMAX_DELAY);
     auto it = scheduled_tasks_.find(task_id);
     if (it == scheduled_tasks_.end()) {
         xSemaphoreGive(tasks_mutex_);
         return;
     }
 
-    ScheduledTask& task = it->second;
+    if (!isWifiReady()) {
+        pending_wifi_tasks_.insert(task_id);
+        xSemaphoreGive(tasks_mutex_);
+        ESP_LOGW(LOG_TAG, "Wi-Fi unavailable, deferring scheduled download: %s", task_id.c_str());
+        return;
+    }
+
+    task = it->second;
     xSemaphoreGive(tasks_mutex_);
 
     ESP_LOGI(LOG_TAG, "Executing scheduled download: %s", task_id.c_str());

@@ -10,8 +10,8 @@ constexpr BaseType_t CORE_UI = 1;       // reserve Core 1 for LVGL/UI
 constexpr BaseType_t CORE_WORK = 0;     // worker/comms core
 
 // LVGL/UI task
-// Reduced from 6KB to 4KB to free DRAM for voice assistant
-constexpr uint32_t STACK_LVGL = 4096;  // 4 KB - sufficient for LVGL with PSRAM objects
+// Increased to 6 KB after stack canary trips with heavier UI workloads
+constexpr uint32_t STACK_LVGL = 6144;
 constexpr UBaseType_t PRIO_LVGL = 3;
 
 // WiFi task

@@ -44,6 +44,8 @@ public:
     /** Download methods */
     RequestResult fetchOnce(const std::string& url, const std::string& filename);
     bool fetchScheduled(const std::string& url, const std::string& filename, uint32_t interval_minutes);
+    void notifyWifiReady();
+    void notifyWifiDisconnected();
 
     /** Data access */
     std::string readData(const std::string& filename);
@@ -84,6 +86,9 @@ private:
     /** Scheduling */
     static void scheduledDownloadTimer(lv_timer_t* timer);
     void executeScheduledDownload(const std::string& task_id);
+    void enqueueWifiPendingTask(const std::string& task_id);
+    void processPendingWifiTasks();
+    bool isWifiReady() const { return wifi_ready_.load(); }
 
     /** Rate limiting */
     bool checkRateLimit(const std::string& domain);
@@ -105,6 +110,8 @@ private:
     /** Scheduling */
     std::map<std::string, ScheduledTask> scheduled_tasks_;
     mutable SemaphoreHandle_t tasks_mutex_;
+    std::set<std::string> pending_wifi_tasks_;
+    std::atomic<bool> wifi_ready_{false};
 
     /** Rate limiting (requests per hour per domain) */
     std::map<std::string, std::vector<uint32_t>> request_timestamps_;
