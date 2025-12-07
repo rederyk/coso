@@ -54,15 +54,16 @@ namespace {
         if (path.empty()) {
             path = "/";
         }
-        constexpr const char* SDCARD_PREFIX = "/sdcard";
-        if (path.rfind(SDCARD_PREFIX, 0) == 0) {
-            path.erase(0, strlen(SDCARD_PREFIX));
-            if (path.empty()) {
-                path = "/";
-            }
+
+    constexpr const char* SD_PREFIX = "/sd";
+    if (path.rfind(SD_PREFIX, 0) == 0) {
+        path.erase(0, strlen(SD_PREFIX));
+        if (path.empty()) {
+            path = "/";
         }
-        return path;
     }
+    return path;
+}
 
     std::string combinePath(const std::string& base, const std::string& child) {
         std::string candidate;

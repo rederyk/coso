@@ -1,0 +1,50 @@
+{
+  "namespace": "ble",
+  "description": "Controllo dispositivi BLE: tastiera HID e mouse wireless",
+  "concepts": {
+    "type": "Digita testo come tastiera Bluetooth",
+    "send_key": "Invia tasto o combo (ctrl+c, enter, F5, ecc)",
+    "mouse_move": "Muovi mouse: dx/dy relativi, scroll, click",
+    "click": "Click mouse: left, right, middle"
+  },
+  "usage_examples": [
+    {
+      "task": "Digita testo su PC",
+      "code": "ble.type('AA:BB:CC:DD:EE:FF', 'Ciao mondo!')"
+    },
+    {
+      "task": "Invia combo tastiera",
+      "code": "ble.send_key('AA:BB:CC:DD:EE:FF', 'ctrl+c')"
+    },
+    {
+      "task": "Premi tasto speciale",
+      "code": "ble.send_key('AA:BB:CC:DD:EE:FF', 'enter')"
+    },
+    {
+      "task": "Muovi mouse",
+      "code": "ble.mouse_move('AA:BB:CC:DD:EE:FF', 100, 50, 0, 0)"
+    },
+    {
+      "task": "Click sinistro",
+      "code": "ble.click('AA:BB:CC:DD:EE:FF', 'left')"
+    }
+  ],
+  "special_keys": [
+    "Combo: ctrl+X, shift+X, alt+X, ctrl+alt+del",
+    "Funzioni: F1-F12, enter, escape, tab, backspace, delete",
+    "Frecce: arrow_up, arrow_down, arrow_left, arrow_right",
+    "Navigazione: home, end, pageup, pagedown"
+  ],
+  "mouse_buttons": [
+    "left - Click sinistro",
+    "right - Click destro", 
+    "middle - Click centrale",
+    "Combinabili: left+right"
+  ],
+  "notes": [
+    "Richiede pairing BLE con dispositivo host",
+    "MAC address: formato AA:BB:CC:DD:EE:FF",
+    "Delay consigliato tra comandi: ~50ms per affidabilità",
+    "mouse_move: dx/dy da -128 a +127 (movimento relativo)"
+  ]
+}

@@ -1,0 +1,52 @@
+{
+  "namespace": "audio / radio",
+  "description": "Riproduzione audio: web radio streaming, file locali, controllo playback",
+  "concepts": {
+    "play": "Avvia riproduzione da URL stream o file SD/LittleFS",
+    "stop": "Ferma riproduzione corrente",
+    "pause": "Mette in pausa (buffer continua per stream)",
+    "resume": "Riprende dopo pausa",
+    "status": "Stato completo: cosa suona, posizione, metadata",
+    "seek": "Salta avanti/indietro in secondi (positivo/negativo)",
+    "volume": "Regola volume 0-100%"
+  },
+  "usage_examples": [
+    {
+      "task": "Avvia web radio",
+      "code": "radio.play('http://stream.example.com/radio.mp3')"
+    },
+    {
+      "task": "Riproduci file da SD",
+      "code": "radio.play('/sd/music/song.mp3')"
+    },
+    {
+      "task": "Controlla cosa suona",
+      "code": "local ok, status = radio.status()\nprintln(status)"
+    },
+    {
+      "task": "Pausa e riprendi",
+      "code": "radio.pause()\ndelay(5000)\nradio.resume()"
+    },
+    {
+      "task": "Torna indietro 30 secondi (riascolta)",
+      "code": "radio.seek(-30)"
+    },
+    {
+      "task": "Imposta volume",
+      "code": "radio.set_volume(75)"
+    }
+  ],
+  "features": {
+    "streaming": "HTTP/HTTPS con buffer timeshift (riascolta ultimi minuti)",
+    "local_files": "SD card e LittleFS (MP3, WAV)",
+    "metadata": "Estrazione automatica Title/Artist/Album da ID3 tag",
+    "seek": "Navigazione temporale in stream buffered e file locali",
+    "formats": "MP3, WAV, AAC"
+  },
+  "notes": [
+    "Auto-detection: URL (http/https) vs percorso file locale",
+    "Stream timeshift: buffer circolare permette seek indietro",
+    "Metadata ID3: estratti automaticamente quando disponibili",
+    "Status senza argomenti ritorna: stato, volume, sorgente, metadata, posizione"
+  ]
+}

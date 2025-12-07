@@ -1,7 +1,9 @@
 #include "core/command_center.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cstdlib>
+#include <sstream>
 #include <utility>
 
 #include <Arduino.h>
@@ -10,12 +12,382 @@
 
 #include "drivers/sd_card_driver.h"
 #include "drivers/rgb_led_driver.h"
+#include "core/ble_hid_manager.h"
 #include "core/audio_manager.h"
 #include "core/backlight_manager.h"
+#include "core/time_manager.h"
+#include "core/time_scheduler.h"
+#include "core/voice_assistant.h"
+#include "screens/ble_manager.h"
 #include "utils/logger.h"
 
 namespace {
 constexpr size_t LOG_TAIL_LINES = 10;
+constexpr uint8_t HID_MOD_CTRL = 0x01;
+constexpr uint8_t HID_MOD_SHIFT = 0x02;
+constexpr uint8_t HID_MOD_ALT = 0x04;
+constexpr uint8_t HID_MOD_GUI = 0x08;
+
+constexpr uint8_t HID_KEY_ENTER = 0x28;
+constexpr uint8_t HID_KEY_ESC = 0x29;
+constexpr uint8_t HID_KEY_BACKSPACE = 0x2A;
+constexpr uint8_t HID_KEY_TAB = 0x2B;
+constexpr uint8_t HID_KEY_SPACE = 0x2C;
+constexpr uint8_t HID_KEY_INSERT = 0x49;
+constexpr uint8_t HID_KEY_HOME = 0x4A;
+constexpr uint8_t HID_KEY_PAGE_UP = 0x4B;
+constexpr uint8_t HID_KEY_DELETE = 0x4C;
+constexpr uint8_t HID_KEY_END = 0x4D;
+constexpr uint8_t HID_KEY_PAGE_DOWN = 0x4E;
+constexpr uint8_t HID_KEY_ARROW_RIGHT = 0x4F;
+constexpr uint8_t HID_KEY_ARROW_LEFT = 0x50;
+constexpr uint8_t HID_KEY_ARROW_DOWN = 0x51;
+constexpr uint8_t HID_KEY_ARROW_UP = 0x52;
+constexpr uint8_t HID_KEY_CAPS_LOCK = 0x39;
+constexpr uint8_t HID_KEY_PRINT_SCREEN = 0x46;
+constexpr uint8_t HID_KEY_SCROLL_LOCK = 0x47;
+constexpr uint8_t HID_KEY_PAUSE = 0x48;
+constexpr uint8_t HID_KEY_NUM_LOCK = 0x53;
+constexpr uint8_t HID_KEY_MENU = 0x65;
+
+std::string joinArgs(const std::vector<std::string>& args, size_t start) {
+    if (start >= args.size()) {
+        return {};
+    }
+
+    std::string out;
+    for (size_t i = start; i < args.size(); ++i) {
+        if (!out.empty()) {
+            out.push_back(' ');
+        }
+        out += args[i];
+    }
+    return out;
+}
+
+std::string normalizeMacAddress(const std::string& raw) {
+    std::string hex;
+    hex.reserve(12);
+
+    for (char c : raw) {
+        const unsigned char uc = static_cast<unsigned char>(c);
+        if (std::isxdigit(uc)) {
+            hex.push_back(static_cast<char>(std::toupper(uc)));
+        } else if (uc == ':' || uc == '-' || std::isspace(uc)) {
+            continue;
+        } else {
+            return {};
+        }
+    }
+
+    if (hex.size() != 12) {
+        return {};
+    }
+
+    std::string normalized;
+    normalized.reserve(17);
+    for (size_t i = 0; i < 6; ++i) {
+        if (i > 0) {
+            normalized.push_back(':');
+        }
+        normalized.push_back(hex[i * 2]);
+        normalized.push_back(hex[i * 2 + 1]);
+    }
+    return normalized;
+}
+
+CommandResult validateBleTargetHost(const std::string& raw_mac, std::string& normalized_mac) {
+    BleHidManager& ble = BleHidManager::getInstance();
+
+    if (!ble.isInitialized()) {
+        return {false, "BLE stack not initialized"};
+    }
+    if (!ble.isEnabled()) {
+        return {false, "BLE disabled"};
+    }
+
+    normalized_mac = normalizeMacAddress(raw_mac);
+    if (normalized_mac.empty()) {
+        return {false, "Invalid MAC address"};
+    }
+
+    const auto bonded = ble.getBondedPeers();
+    if (bonded.empty()) {
+        return {false, "No bonded BLE hosts"};
+    }
+
+    auto match = std::find_if(bonded.begin(), bonded.end(),
+        [&](const BleHidManager::BondedPeer& peer) {
+            const std::string candidate = normalizeMacAddress(peer.address.toString());
+            return !candidate.empty() && candidate == normalized_mac;
+        });
+
+    if (match == bonded.end()) {
+        return {false, "Host " + normalized_mac + " not bonded"};
+    }
+
+    if (!match->isConnected) {
+        return {false, "Host " + normalized_mac + " not connected"};
+    }
+
+    normalized_mac = match->address.toString();
+    return {true, ""};
+}
+
+bool parseByteToken(const std::string& token, uint8_t& value) {
+    if (token.empty()) {
+        return false;
+    }
+    char* end = nullptr;
+    unsigned long parsed = std::strtoul(token.c_str(), &end, 0);
+    if (!end || *end != '\0') {
+        return false;
+    }
+    if (parsed > 0xFF) {
+        return false;
+    }
+    value = static_cast<uint8_t>(parsed);
+    return true;
+}
+
+bool parseInt8Token(const std::string& token, int8_t& value) {
+    if (token.empty()) {
+        return false;
+    }
+    char* end = nullptr;
+    long parsed = std::strtol(token.c_str(), &end, 10);
+    if (!end || *end != '\0') {
+        return false;
+    }
+    if (parsed < -128 || parsed > 127) {
+        return false;
+    }
+    value = static_cast<int8_t>(parsed);
+    return true;
+}
+
+bool parseMouseButtonsToken(const std::string& token, uint8_t& mask) {
+    if (parseByteToken(token, mask)) {
+        return true;
+    }
+
+    std::string lower;
+    lower.reserve(token.size());
+    for (char c : token) {
+        const unsigned char uc = static_cast<unsigned char>(c);
+        if (std::isspace(uc)) {
+            continue;
+        }
+        lower.push_back(static_cast<char>(std::tolower(uc)));
+    }
+
+    if (lower.empty()) {
+        return false;
+    }
+
+    auto decode = [](const std::string& part, uint8_t& bit) -> bool {
+        if (part == "left" || part == "l" || part == "primary") {
+            bit = 0x01;
+            return true;
+        }
+        if (part == "right" || part == "r" || part == "secondary") {
+            bit = 0x02;
+            return true;
+        }
+        if (part == "middle" || part == "m" || part == "wheel") {
+            bit = 0x04;
+            return true;
+        }
+        return false;
+    };
+
+    size_t start = 0;
+    mask = 0;
+    while (start < lower.size()) {
+        size_t pos = lower.find('+', start);
+        std::string part = lower.substr(start, pos - start);
+        if (part.empty()) {
+            return false;
+        }
+        uint8_t bit = 0;
+        if (!decode(part, bit)) {
+            return false;
+        }
+        mask |= bit;
+        if (pos == std::string::npos) {
+            break;
+        }
+        start = pos + 1;
+    }
+
+    return mask != 0;
+}
+
+std::string trimCopy(const std::string& text) {
+    const auto first = text.find_first_not_of(" \t\r\n");
+    if (first == std::string::npos) {
+        return {};
+    }
+    const auto last = text.find_last_not_of(" \t\r\n");
+    return text.substr(first, last - first + 1);
+}
+
+std::string canonicalizeKeyToken(const std::string& token) {
+    std::string out;
+    out.reserve(token.size());
+    for (char c : token) {
+        const unsigned char uc = static_cast<unsigned char>(c);
+        if (std::isalnum(uc)) {
+            out.push_back(static_cast<char>(std::tolower(uc)));
+        }
+    }
+    return out;
+}
+
+struct KeyNameEntry {
+    const char* name;
+    uint8_t keycode;
+    uint8_t implicit_modifier;
+};
+
+constexpr KeyNameEntry NAMED_KEY_ENTRIES[] = {
+    {"enter", HID_KEY_ENTER, 0},
+    {"return", HID_KEY_ENTER, 0},
+    {"escape", HID_KEY_ESC, 0},
+    {"esc", HID_KEY_ESC, 0},
+    {"space", HID_KEY_SPACE, 0},
+    {"spacebar", HID_KEY_SPACE, 0},
+    {"tab", HID_KEY_TAB, 0},
+    {"backspace", HID_KEY_BACKSPACE, 0},
+    {"delete", HID_KEY_DELETE, 0},
+    {"del", HID_KEY_DELETE, 0},
+    {"insert", HID_KEY_INSERT, 0},
+    {"ins", HID_KEY_INSERT, 0},
+    {"home", HID_KEY_HOME, 0},
+    {"end", HID_KEY_END, 0},
+    {"pageup", HID_KEY_PAGE_UP, 0},
+    {"pgup", HID_KEY_PAGE_UP, 0},
+    {"pagedown", HID_KEY_PAGE_DOWN, 0},
+    {"pgdown", HID_KEY_PAGE_DOWN, 0},
+    {"arrowup", HID_KEY_ARROW_UP, 0},
+    {"up", HID_KEY_ARROW_UP, 0},
+    {"arrowdown", HID_KEY_ARROW_DOWN, 0},
+    {"down", HID_KEY_ARROW_DOWN, 0},
+    {"arrowleft", HID_KEY_ARROW_LEFT, 0},
+    {"left", HID_KEY_ARROW_LEFT, 0},
+    {"arrowright", HID_KEY_ARROW_RIGHT, 0},
+    {"right", HID_KEY_ARROW_RIGHT, 0},
+    {"capslock", HID_KEY_CAPS_LOCK, 0},
+    {"printscreen", HID_KEY_PRINT_SCREEN, 0},
+    {"prtsc", HID_KEY_PRINT_SCREEN, 0},
+    {"scrolllock", HID_KEY_SCROLL_LOCK, 0},
+    {"pause", HID_KEY_PAUSE, 0},
+    {"break", HID_KEY_PAUSE, 0},
+    {"numlock", HID_KEY_NUM_LOCK, 0},
+    {"menu", HID_KEY_MENU, 0}
+};
+
+bool lookupNamedKeyCode(const std::string& canonical, uint8_t& keycode, uint8_t& implicit_modifier) {
+    implicit_modifier = 0;
+
+    if (canonical.size() == 1) {
+        char c = canonical[0];
+        if (c >= 'a' && c <= 'z') {
+            keycode = static_cast<uint8_t>(0x04 + (c - 'a'));
+            return true;
+        }
+        if (c >= '1' && c <= '9') {
+            keycode = static_cast<uint8_t>(0x1D + (c - '0'));
+            return true;
+        }
+        if (c == '0') {
+            keycode = 0x27;
+            return true;
+        }
+    }
+
+    if (canonical.size() > 1 && canonical[0] == 'f') {
+        char* end = nullptr;
+        long number = std::strtol(canonical.c_str() + 1, &end, 10);
+        if (end && *end == '\0' && number >= 1 && number <= 12) {
+            keycode = static_cast<uint8_t>(0x3A + (number - 1));
+            return true;
+        }
+    }
+
+    for (const auto& entry : NAMED_KEY_ENTRIES) {
+        if (canonical == entry.name) {
+            keycode = entry.keycode;
+            implicit_modifier = entry.implicit_modifier;
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool parseKeyComboToken(const std::string& token, uint8_t& keycode, uint8_t& modifier) {
+    std::string trimmed = trimCopy(token);
+    if (trimmed.empty()) {
+        return false;
+    }
+
+    keycode = 0;
+    modifier = 0;
+    bool found_key = false;
+
+    size_t start = 0;
+    while (start < trimmed.size()) {
+        size_t plus_pos = trimmed.find('+', start);
+        std::string part = trimCopy(trimmed.substr(start, plus_pos - start));
+        if (part.empty()) {
+            return false;
+        }
+
+        std::string canonical = canonicalizeKeyToken(part);
+        if (canonical.empty()) {
+            return false;
+        }
+
+        if (canonical == "ctrl" || canonical == "control") {
+            modifier |= HID_MOD_CTRL;
+        } else if (canonical == "shift") {
+            modifier |= HID_MOD_SHIFT;
+        } else if (canonical == "alt" || canonical == "option") {
+            modifier |= HID_MOD_ALT;
+        } else if (canonical == "super" || canonical == "meta" || canonical == "cmd" ||
+                   canonical == "win" || canonical == "gui") {
+            modifier |= HID_MOD_GUI;
+        } else {
+            uint8_t implicit_modifier = 0;
+            uint8_t candidate = 0;
+            if (!lookupNamedKeyCode(canonical, candidate, implicit_modifier)) {
+                return false;
+            }
+            if (found_key) {
+                return false;
+            }
+            keycode = candidate;
+            modifier |= implicit_modifier;
+            found_key = true;
+        }
+
+        if (plus_pos == std::string::npos) {
+            break;
+        }
+        start = plus_pos + 1;
+    }
+
+    return found_key;
+}
+
+bool parseKeyToken(const std::string& token, uint8_t& keycode, uint8_t& modifier) {
+    modifier = 0;
+    if (parseByteToken(token, keycode)) {
+        return true;
+    }
+    return parseKeyComboToken(token, keycode, modifier);
+}
 }  // namespace
 
 CommandCenter& CommandCenter::getInstance() {
@@ -145,6 +517,55 @@ void CommandCenter::registerBuiltins() {
         return CommandResult{false, "SD card not mounted"};
     });
 
+    // Time commands
+    registerCommand("time", "Get current date and time", [](const std::vector<std::string>&) {
+        auto& time_mgr = TimeManager::getInstance();
+        if (!time_mgr.isSynchronized()) {
+            return CommandResult{false, "Time not synchronized. Connect to WiFi first."};
+        }
+        std::string time_str = time_mgr.getTimeString("%Y-%m-%d %H:%M:%S %Z");
+        return CommandResult{true, time_str};
+    });
+
+    registerCommand("time_unix", "Get current Unix timestamp", [](const std::vector<std::string>&) {
+        auto& time_mgr = TimeManager::getInstance();
+        if (!time_mgr.isSynchronized()) {
+            return CommandResult{false, "Time not synchronized"};
+        }
+        time_t now = time_mgr.now();
+        return CommandResult{true, "timestamp=" + std::to_string(now)};
+    });
+
+    registerCommand("time_sync", "Manually sync time via NTP", [](const std::vector<std::string>&) {
+        auto& time_mgr = TimeManager::getInstance();
+        if (!time_mgr.isInitialized()) {
+            return CommandResult{false, "TimeManager not initialized. Connect to WiFi first."};
+        }
+        bool success = time_mgr.syncNow(10000);
+        if (success) {
+            std::string time_str = time_mgr.getTimeString();
+            return CommandResult{true, "Time synced: " + time_str};
+        } else {
+            return CommandResult{false, "NTP sync failed"};
+        }
+    });
+
+    registerCommand("time_status", "Get time synchronization status", [](const std::vector<std::string>&) {
+        auto& time_mgr = TimeManager::getInstance();
+        auto status = time_mgr.getSyncStatus();
+
+        std::string msg = "synchronized=" + std::string(status.synchronized ? "true" : "false");
+        msg += " sync_count=" + std::to_string(status.sync_count);
+        msg += " sync_failures=" + std::to_string(status.sync_failures);
+        msg += " ntp_server=" + status.ntp_server;
+        if (status.synchronized) {
+            msg += " last_sync=" + std::to_string(status.last_sync);
+            msg += " current_time=" + std::to_string(time_mgr.now());
+        }
+
+        return CommandResult{true, msg};
+    });
+
     // Tail logs
     registerCommand("log_tail", "Return the last buffered log lines",
         [](const std::vector<std::string>& args) {
@@ -172,15 +593,74 @@ void CommandCenter::registerBuiltins() {
     // Voice assistant commands
 
     // Radio control
-    registerCommand("radio_play", "Play radio station by name (e.g., 'jazz', 'rock', 'news')",
+    registerCommand("radio_play", "Play radio stream or file (URL or SD path). Without args, returns status",
         [](const std::vector<std::string>& args) {
+            AudioManager& audio = AudioManager::getInstance();
+
+            // No args: return radio/playback status
             if (args.empty()) {
-                return CommandResult{false, "Usage: radio_play <genre/name>"};
+                std::ostringstream status;
+
+                PlayerState state = audio.getState();
+                const char* state_str = "UNKNOWN";
+                switch (state) {
+                    case PlayerState::STOPPED: state_str = "STOPPED"; break;
+                    case PlayerState::PLAYING: state_str = "PLAYING"; break;
+                    case PlayerState::PAUSED: state_str = "PAUSED"; break;
+                    case PlayerState::ENDED: state_str = "ENDED"; break;
+                    case PlayerState::ERROR: state_str = "ERROR"; break;
+                }
+
+                status << "State: " << state_str << "\n";
+                status << "Volume: " << audio.getVolume() << "%\n";
+
+                SourceType source_type = audio.getSourceType();
+                const char* source_str = "NONE";
+                switch (source_type) {
+                    case SourceType::LITTLEFS: source_str = "LITTLEFS"; break;
+                    case SourceType::SD_CARD: source_str = "SD_CARD"; break;
+                    case SourceType::HTTP_STREAM: source_str = "HTTP_STREAM (Timeshift)"; break;
+                }
+                status << "Source: " << source_str << "\n";
+
+                const Metadata& meta = audio.getMetadata();
+                if (meta.title.length() > 0) status << "Title: " << meta.title << "\n";
+                if (meta.artist.length() > 0) status << "Artist: " << meta.artist << "\n";
+
+                uint32_t pos_sec = audio.getCurrentPositionMs() / 1000;
+                uint32_t dur_sec = audio.getTotalDurationMs() / 1000;
+
+                if (source_type == SourceType::HTTP_STREAM) {
+                    status << "Position: " << pos_sec << "s";
+                    if (dur_sec > 0) {
+                        status << " / " << dur_sec << "s (buffered)";
+                    }
+                } else if (dur_sec > 0) {
+                    status << "Position: " << pos_sec << "s / " << dur_sec << "s ("
+                           << ((pos_sec * 100) / dur_sec) << "%)";
+                }
+
+                return CommandResult{true, status.str()};
             }
-            std::string genre = args[0];
-            // TODO: Implement radio selection logic
-            std::string msg = "Playing " + genre + " station (placeholder)";
-            return CommandResult{true, msg};
+
+            // With args: play URL or file
+            std::string source = args[0];
+            bool success = false;
+
+            // Detect if it's a URL (http/https) or file path
+            if (source.find("http://") == 0 || source.find("https://") == 0) {
+                // It's a radio stream URL
+                success = audio.playRadio(source.c_str());
+                return CommandResult{success, success ?
+                    "Radio stream started: " + source :
+                    "Failed to start radio stream"};
+            } else {
+                // It's a file path (SD card or LittleFS)
+                success = audio.playFile(source.c_str());
+                return CommandResult{success, success ?
+                    "Playing file: " + source :
+                    "Failed to play file"};
+            }
         });
 
     // WiFi control
@@ -205,6 +685,141 @@ void CommandCenter::registerBuiltins() {
             std::string msg = "Pairing with '" + device_name + "' (placeholder)";
             // TODO: Implement BT pairing logic
             return CommandResult{true, msg};
+        });
+
+    registerCommand("bt_type", "Send text to a bonded BLE host",
+        [](const std::vector<std::string>& args) {
+            if (args.size() < 2) {
+                return CommandResult{false, "Usage: bt_type <host_mac> <text>"};
+            }
+
+            std::string normalized_mac;
+            CommandResult validation = validateBleTargetHost(args[0], normalized_mac);
+            if (!validation.success) {
+                return validation;
+            }
+
+            std::string text = joinArgs(args, 1);
+            if (text.empty()) {
+                return CommandResult{false, "Text payload required"};
+            }
+
+            std::string preview = text;
+            constexpr size_t kPreviewLen = 48;
+            if (preview.size() > kPreviewLen) {
+                preview = preview.substr(0, kPreviewLen) + "...";
+            }
+
+            if (!BleManager::getInstance().sendText(text, BleHidTarget::ALL, normalized_mac)) {
+                return CommandResult{false, "BLE queue busy, try again"};
+            }
+
+            Logger::getInstance().infof("[CommandCenter] bt_type -> %s : %s",
+                normalized_mac.c_str(), preview.c_str());
+            return CommandResult{true, "Text sent to " + normalized_mac};
+        });
+
+    registerCommand("bt_send_key", "Send HID keycode to bonded BLE host",
+        [](const std::vector<std::string>& args) {
+            if (args.size() < 2) {
+                return CommandResult{false, "Usage: bt_send_key <host_mac> <keycode_or_combo> [modifier]"};
+            }
+
+            std::string normalized_mac;
+            CommandResult validation = validateBleTargetHost(args[0], normalized_mac);
+            if (!validation.success) {
+                return validation;
+            }
+
+            uint8_t keycode = 0;
+            uint8_t modifier = 0;
+            if (!parseKeyToken(args[1], keycode, modifier)) {
+                return CommandResult{false, "Invalid key token (use HID code or combo like ctrl+enter)"};
+            }
+
+            if (args.size() >= 3) {
+                if (!parseByteToken(args[2], modifier)) {
+                    return CommandResult{false, "Invalid modifier (use decimal or 0xNN)"};
+                }
+            }
+
+            if (!BleManager::getInstance().sendKey(keycode, modifier, BleHidTarget::ALL, normalized_mac)) {
+                return CommandResult{false, "BLE queue busy, try again"};
+            }
+
+            Logger::getInstance().infof("[CommandCenter] bt_send_key -> %s key=0x%02X mod=0x%02X",
+                normalized_mac.c_str(), keycode, modifier);
+            return CommandResult{true, "Key sent to " + normalized_mac};
+        });
+
+    registerCommand("bt_mouse_move", "Send relative mouse movement to BLE host",
+        [](const std::vector<std::string>& args) {
+            if (args.size() < 3) {
+                return CommandResult{false, "Usage: bt_mouse_move <host_mac> <dx> <dy> [wheel] [buttons]"};
+            }
+
+            std::string normalized_mac;
+            CommandResult validation = validateBleTargetHost(args[0], normalized_mac);
+            if (!validation.success) {
+                return validation;
+            }
+
+            int8_t dx = 0;
+            int8_t dy = 0;
+            if (!parseInt8Token(args[1], dx) || !parseInt8Token(args[2], dy)) {
+                return CommandResult{false, "dx/dy must be integers between -128 and 127"};
+            }
+
+            int8_t wheel = 0;
+            if (args.size() >= 4) {
+                if (!parseInt8Token(args[3], wheel)) {
+                    return CommandResult{false, "wheel must be integer between -128 and 127"};
+                }
+            }
+
+            uint8_t buttons = 0;
+            if (args.size() >= 5) {
+                if (!parseMouseButtonsToken(args[4], buttons)) {
+                    return CommandResult{false, "Invalid mouse buttons (use 0xNN or left/right/middle)"};
+                }
+            }
+
+            if (!BleManager::getInstance().sendMouseMove(dx, dy, wheel, buttons, BleHidTarget::ALL, normalized_mac)) {
+                return CommandResult{false, "BLE queue busy, try again"};
+            }
+
+            Logger::getInstance().infof("[CommandCenter] bt_mouse_move -> %s dx=%d dy=%d wheel=%d btn=%u",
+                normalized_mac.c_str(), dx, dy, wheel, buttons);
+            return CommandResult{true, "Mouse event sent to " + normalized_mac};
+        });
+
+    registerCommand("bt_click", "Send mouse click to BLE host",
+        [](const std::vector<std::string>& args) {
+            if (args.size() < 2) {
+                return CommandResult{false, "Usage: bt_click <host_mac> <buttons>"};
+            }
+
+            std::string normalized_mac;
+            CommandResult validation = validateBleTargetHost(args[0], normalized_mac);
+            if (!validation.success) {
+                return validation;
+            }
+
+            uint8_t buttons = 0;
+            if (!parseMouseButtonsToken(args[1], buttons)) {
+                return CommandResult{false, "Invalid buttons (use 0xNN or left/right/middle)"};
+            }
+            if (buttons == 0) {
+                return CommandResult{false, "Button mask must be > 0"};
+            }
+
+            if (!BleManager::getInstance().mouseClick(buttons, BleHidTarget::ALL, normalized_mac)) {
+                return CommandResult{false, "BLE queue busy, try again"};
+            }
+
+            Logger::getInstance().infof("[CommandCenter] bt_click -> %s buttons=0x%02X",
+                normalized_mac.c_str(), buttons);
+            return CommandResult{true, "Click sent to " + normalized_mac};
         });
 
     // Volume control
@@ -274,5 +889,192 @@ void CommandCenter::registerBuiltins() {
                              " sd_card=" + sd_status +
                              " wifi=" + wifi_status;
             return CommandResult{true, msg};
+        });
+
+    registerCommand("lua_exec", "Execute Lua script and return output",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                return CommandResult{false, "Usage: lua_exec <script>"};
+            }
+
+            // Get Lua engine from VoiceAssistant
+            VoiceAssistant& va = VoiceAssistant::getInstance();
+            CommandResult result = va.executeLuaScript(args[0]);
+
+            return result;
+        });
+
+    // ============ CALENDAR / SCHEDULER COMMANDS ============
+
+    registerCommand("calendar_list", "List all calendar events",
+        [](const std::vector<std::string>& args) {
+            auto& scheduler = TimeScheduler::getInstance();
+            auto events = scheduler.listEvents();
+
+            if (events.empty()) {
+                return CommandResult{true, "No calendar events"};
+            }
+
+            std::string output = "Calendar Events:\n";
+            for (const auto& evt : events) {
+                output += "- [" + evt.id + "] " + evt.name;
+                output += " (" + std::to_string(evt.hour) + ":" +
+                          (evt.minute < 10 ? "0" : "") + std::to_string(evt.minute) + ")";
+                output += evt.enabled ? " [ENABLED]" : " [DISABLED]";
+                output += "\n";
+            }
+
+            return CommandResult{true, output};
+        });
+
+    registerCommand("calendar_create_alarm", "Create alarm (one-shot event)",
+        [](const std::vector<std::string>& args) {
+            // Args: name, YYYY-MM-DD, HH:MM, lua_script
+            if (args.size() < 4) {
+                return CommandResult{false,
+                    "Usage: calendar_create_alarm <name> <YYYY-MM-DD> <HH:MM> <lua_script>\n"
+                    "Example: calendar_create_alarm 'Wake Up' 2025-12-05 07:00 'println(\"Good morning!\")'"};
+            }
+
+            TimeScheduler::CalendarEvent event;
+            event.name = args[0];
+            event.type = TimeScheduler::EventType::OneShot;
+            event.enabled = true;
+
+            // Parse date (YYYY-MM-DD)
+            if (sscanf(args[1].c_str(), "%hu-%hhu-%hhu",
+                      &event.year, &event.month, &event.day) != 3) {
+                return CommandResult{false, "Invalid date format. Use YYYY-MM-DD"};
+            }
+
+            // Parse time (HH:MM)
+            int hour, minute;
+            if (sscanf(args[2].c_str(), "%d:%d", &hour, &minute) != 2) {
+                return CommandResult{false, "Invalid time format. Use HH:MM"};
+            }
+            event.hour = hour;
+            event.minute = minute;
+            event.weekdays = 0; // Not used for one-shot
+
+            event.lua_script = args[3];
+
+            auto& scheduler = TimeScheduler::getInstance();
+            std::string id = scheduler.createEvent(event);
+
+            if (id.empty()) {
+                return CommandResult{false, "Failed to create alarm"};
+            }
+
+            return CommandResult{true, "Alarm created: " + id};
+        });
+
+    registerCommand("calendar_create_recurring", "Create recurring event (weekdays)",
+        [](const std::vector<std::string>& args) {
+            // Args: name, HH:MM, weekdays_mask, lua_script
+            // weekdays_mask: 0=Sun, 1=Mon, ..., 6=Sat
+            // Example: 62 = 0b0111110 = Mon-Fri
+            if (args.size() < 4) {
+                return CommandResult{false,
+                    "Usage: calendar_create_recurring <name> <HH:MM> <weekdays> <lua_script>\n"
+                    "Weekdays: bit mask (1=Mon,2=Tue,4=Wed,8=Thu,16=Fri,32=Sat,64=Sun)\n"
+                    "Example Mon-Fri: 62 (0b0111110)\n"
+                    "Example: calendar_create_recurring 'Morning Coffee' 07:00 62 'println(\"Coffee time!\")'"};
+            }
+
+            TimeScheduler::CalendarEvent event;
+            event.name = args[0];
+            event.type = TimeScheduler::EventType::Recurring;
+            event.enabled = true;
+
+            // Parse time (HH:MM)
+            int hour, minute;
+            if (sscanf(args[1].c_str(), "%d:%d", &hour, &minute) != 2) {
+                return CommandResult{false, "Invalid time format. Use HH:MM"};
+            }
+            event.hour = hour;
+            event.minute = minute;
+
+            // Parse weekdays mask
+            event.weekdays = std::strtoul(args[2].c_str(), nullptr, 10);
+            if (event.weekdays == 0 || event.weekdays > 127) {
+                return CommandResult{false, "Invalid weekdays mask (1-127)"};
+            }
+
+            // One-shot fields not used
+            event.year = 0;
+            event.month = 0;
+            event.day = 0;
+
+            event.lua_script = args[3];
+
+            auto& scheduler = TimeScheduler::getInstance();
+            std::string id = scheduler.createEvent(event);
+
+            if (id.empty()) {
+                return CommandResult{false, "Failed to create event"};
+            }
+
+            return CommandResult{true, "Recurring event created: " + id};
+        });
+
+    registerCommand("calendar_delete", "Delete calendar event",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                return CommandResult{false, "Usage: calendar_delete <event_id>"};
+            }
+
+            auto& scheduler = TimeScheduler::getInstance();
+            bool ok = scheduler.deleteEvent(args[0]);
+
+            return CommandResult{ok, ok ? "Event deleted" : "Event not found"};
+        });
+
+    registerCommand("calendar_enable", "Enable or disable event",
+        [](const std::vector<std::string>& args) {
+            if (args.size() < 2) {
+                return CommandResult{false, "Usage: calendar_enable <event_id> <true|false>"};
+            }
+
+            bool enable = (args[1] == "true" || args[1] == "1");
+            auto& scheduler = TimeScheduler::getInstance();
+            bool ok = scheduler.enableEvent(args[0], enable);
+
+            return CommandResult{ok, ok ? "Event updated" : "Event not found"};
+        });
+
+    registerCommand("calendar_run", "Execute event immediately",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                return CommandResult{false, "Usage: calendar_run <event_id>"};
+            }
+
+            auto& scheduler = TimeScheduler::getInstance();
+            bool ok = scheduler.executeEventNow(args[0]);
+
+            return CommandResult{ok, ok ? "Event executed" : "Event not found or failed"};
+        });
+
+    registerCommand("calendar_history", "Get execution history",
+        [](const std::vector<std::string>& args) {
+            auto& scheduler = TimeScheduler::getInstance();
+            std::string event_id = args.empty() ? "" : args[0];
+            auto history = scheduler.getHistory(event_id, 10);
+
+            if (history.empty()) {
+                return CommandResult{true, "No execution history"};
+            }
+
+            std::string output = "Execution History:\n";
+            for (const auto& record : history) {
+                output += "- Event: " + record.event_id;
+                output += " | " + std::string(record.success ? "SUCCESS" : "FAILED");
+                output += " | " + std::to_string(record.duration_ms) + "ms";
+                if (!record.error.empty()) {
+                    output += " | Error: " + record.error;
+                }
+                output += "\n";
+            }
+
+            return CommandResult{true, output};
         });
 }

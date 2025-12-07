@@ -34,8 +34,6 @@ void BacklightManager::begin() {
 void BacklightManager::setBrightness(uint8_t percent) {
     if (percent > 100) {
         percent = 100;
-    } else if (percent == 0) {
-        percent = 1;
     }
     current_brightness_ = percent;
     applyPWM(percent);

@@ -1,5 +1,6 @@
 #include "touch_driver.h"
 #include "core/display_manager.h"
+#include "lvgl_power_manager.h"
 #include <Wire.h>
 #include <Arduino.h>
 #include <algorithm>
@@ -165,6 +166,9 @@ void touch_driver_read(lv_indev_drv_t* indev_drv, lv_indev_data_t* data) {
     uint8_t num_touches = readRegister(FT6336_REG_NUM_TOUCHES);
 
     if (num_touches > 0) {
+        // Notify power manager of touch activity
+        LVGLPowerMgr.onTouchDetected();
+
         // Leggi coordinate
         uint8_t xh = readRegister(FT6336_REG_TOUCH1_XH);
         uint8_t xl = readRegister(FT6336_REG_TOUCH1_XL);
@@ -187,4 +191,11 @@ void touch_driver_read(lv_indev_drv_t* indev_drv, lv_indev_data_t* data) {
         data->state = LV_INDEV_STATE_RELEASED;
         touch_detected = false;
     }
+}
+
+bool touch_driver_has_touch() {
+    if (!touch_available) {
+        return false;
+    }
+    return readRegister(FT6336_REG_NUM_TOUCHES) > 0;
 }

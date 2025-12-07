@@ -68,7 +68,7 @@
 
 /*Number of the intermediate memory buffer used during rendering and other internal processing mechanisms.
  *You will see an error log message if there wasn't enough buffers. */
-#define LV_MEM_BUF_MAX_NUM 16
+#define LV_MEM_BUF_MAX_NUM 8  /* Reduced from 16 to save ~2KB DRAM */
 
 /*Use the standard `memcpy` and `memset` instead of LVGL's own functions. (Might or might not be faster).*/
 #define LV_MEMCPY_MEMSET_STD 0
@@ -136,8 +136,8 @@
  * "Transformed layers" (where transform_angle/zoom properties are used) use larger buffers
  * and can't be drawn in chunks. So these settings affects only widgets with opacity.
  */
-#define LV_LAYER_SIMPLE_BUF_SIZE          (24 * 1024)
-#define LV_LAYER_SIMPLE_FALLBACK_BUF_SIZE (3 * 1024)
+#define LV_LAYER_SIMPLE_BUF_SIZE          (8 * 1024)  /* Reduced from 24KB to save ~16KB DRAM */
+#define LV_LAYER_SIMPLE_FALLBACK_BUF_SIZE (2 * 1024)  /* Reduced from 3KB to save ~1KB DRAM */
 
 /*Default image cache size. Image caching keeps the images opened.
  *If only the built-in image formats are used there is no real advantage of caching. (I.e. if no new image decoder is added)
@@ -479,7 +479,7 @@
 
 #define LV_USE_BTNMATRIX  1
 
-#define LV_USE_CANVAS     1
+#define LV_USE_CANVAS     1  /* KEEP - used in circular_color_picker widget */
 
 #define LV_USE_CHECKBOX   1
 
@@ -518,9 +518,9 @@
 /*-----------
  * Widgets
  *----------*/
-#define LV_USE_ANIMIMG    1
+#define LV_USE_ANIMIMG    0  /* Disabled - not used - saves ~0.5KB */
 
-#define LV_USE_CALENDAR   1
+#define LV_USE_CALENDAR   0  /* Disabled - not used - saves ~2KB */
 #if LV_USE_CALENDAR
     #define LV_CALENDAR_WEEK_STARTS_MONDAY 0
     #if LV_CALENDAR_WEEK_STARTS_MONDAY
@@ -534,39 +534,39 @@
     #define LV_USE_CALENDAR_HEADER_DROPDOWN 1
 #endif  /*LV_USE_CALENDAR*/
 
-#define LV_USE_CHART      1
+#define LV_USE_CHART      0  /* Disabled - not used - saves ~2KB */
 
-#define LV_USE_COLORWHEEL 1
+#define LV_USE_COLORWHEEL 0  /* Disabled - using custom circular_color_picker - saves ~1.5KB */
 
-#define LV_USE_IMGBTN     1
+#define LV_USE_IMGBTN     0  /* Disabled - not used - saves ~0.5KB */
 
-#define LV_USE_KEYBOARD   1
+#define LV_USE_KEYBOARD   1  /* KEEP - used in keyboard_manager */
 
-#define LV_USE_LED        1
+#define LV_USE_LED        0  /* Disabled - not used - saves ~0.3KB */
 
-#define LV_USE_LIST       1
+#define LV_USE_LIST       1  /* KEEP - used in wifi_settings, sd_explorer */
 
-#define LV_USE_MENU       1
+#define LV_USE_MENU       0  /* Disabled - not used - saves ~1KB */
 
-#define LV_USE_METER      1
+#define LV_USE_METER      0  /* Disabled - not used - saves ~2KB */
 
-#define LV_USE_MSGBOX     1
+#define LV_USE_MSGBOX     1  /* KEEP - used in info, sd_explorer, developer screens */
 
-#define LV_USE_SPAN       1
+#define LV_USE_SPAN       0  /* Disabled - not used - saves ~1KB */
 #if LV_USE_SPAN
     /*A line text can contain maximum num of span descriptor */
     #define LV_SPAN_SNIPPET_STACK_SIZE 64
 #endif
 
-#define LV_USE_SPINBOX    1
+#define LV_USE_SPINBOX    1  /* KEEP - used in ble_settings_screen */
 
-#define LV_USE_SPINNER    1
+#define LV_USE_SPINNER    1  /* KEEP - used in ble_settings */
 
-#define LV_USE_TABVIEW    1
+#define LV_USE_TABVIEW    1  /* KEEP - might be used */
 
-#define LV_USE_TILEVIEW   1
+#define LV_USE_TILEVIEW   0  /* Disabled - not used - saves ~1KB */
 
-#define LV_USE_WIN        1
+#define LV_USE_WIN        0  /* Disabled - not used - saves ~0.5KB */
 
 /*-----------
  * Themes
@@ -580,17 +580,17 @@
     #define LV_THEME_DEFAULT_DARK 0
 
     /*1: Enable grow on press*/
-    #define LV_THEME_DEFAULT_GROW 1
+    #define LV_THEME_DEFAULT_GROW 0  /* Disabled to save ~1KB DRAM */
 
     /*Default transition time in [ms]*/
-    #define LV_THEME_DEFAULT_TRANSITION_TIME 80
+    #define LV_THEME_DEFAULT_TRANSITION_TIME 40  /* Reduced from 80ms for snappier feel */
 #endif /*LV_USE_THEME_DEFAULT*/
 
 /*A very simple theme that is a good starting point for a custom theme*/
-#define LV_USE_THEME_BASIC 1
+#define LV_USE_THEME_BASIC 0  /* Disabled - not used - saves ~1KB */
 
 /*A theme designed for monochrome displays*/
-#define LV_USE_THEME_MONO 1
+#define LV_USE_THEME_MONO 0  /* Disabled - not used - saves ~1KB */
 
 /*-----------
  * Layouts

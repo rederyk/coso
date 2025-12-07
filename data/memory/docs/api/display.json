@@ -1,0 +1,20 @@
+{
+  "namespace": "display",
+  "description": "Controllo luminosità display",
+  "functions": {
+    "brightness_up": {
+      "signature": "display.brightness_up() -> boolean",
+      "description": "Aumenta luminosità display",
+      "examples": [{"code": "display.brightness_up()"}]
+    },
+    "brightness_down": {
+      "signature": "display.brightness_down() -> boolean",
+      "description": "Diminuisce luminosità display",
+      "examples": [{"code": "display.brightness_down()"}]
+    }
+  },
+  "notes": [
+    "Display: IPS 2.8\" 320x240 (ILI9341)",
+    "Luminosità: incrementi 20%, minimo 10%"
+  ]
+}

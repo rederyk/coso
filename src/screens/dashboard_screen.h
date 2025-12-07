@@ -4,6 +4,7 @@
 #include "core/settings_manager.h"
 #include "widgets/clock_widget.h"
 #include "widgets/system_info_widget.h"
+#include "widgets/weather_widget.h"
 
 class DashboardScreen : public Screen {
 public:
@@ -19,6 +20,7 @@ private:
 
     SystemInfoWidget system_widget;
     ClockWidget clock_widget;
+    WeatherWidget weather_widget;
     lv_obj_t* header_label = nullptr;
     lv_obj_t* status_bar = nullptr;
     lv_obj_t* wifi_status_label = nullptr;

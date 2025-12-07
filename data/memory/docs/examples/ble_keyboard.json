@@ -1,0 +1,63 @@
+{
+  "ble_type_text": {
+    "name": "BLE HID Digita Testo",
+    "description": "Esempio di come digitare del testo tramite emulazione tastiera BLE HID.",
+    "scenario": [
+      {
+        "step": 1,
+        "description": "Digita una stringa di testo sul dispositivo BLE connesso.",
+        "command": "lua_script",
+        "args_template": [
+          "ble.type('{HOST_MAC_ADDRESS}', '{TEXT_TO_TYPE}')"
+        ],
+        "placeholders": {
+          "{HOST_MAC_ADDRESS}": "Indirizzo MAC del dispositivo host BLE (es. A1:B2:C3:D4:E5:F6)",
+          "{TEXT_TO_TYPE}": "Il testo da digitare (es. 'Hello World!')"
+        },
+        "expected_output_type": "void",
+        "output_example": ""
+      }
+    ],
+    "notes": [
+      "Assicurarsi che il dispositivo sia accoppiato e connesso tramite BLE HID.",
+      "L'LLM deve sostituire i placeholder con i valori appropriati forniti dall'utente."
+    ]
+  },
+  "ble_press_release_key": {
+    "name": "BLE HID Pressione/Rilascio Tasto",
+    "description": "Esempio di come simulare la pressione e il rilascio di un tasto speciale o combinazione di tasti.",
+    "scenario": [
+      {
+        "step": 1,
+        "description": "Simula la pressione di un tasto (es. CTRL).",
+        "command": "lua_script",
+        "args_template": [
+          "ble.press('{HOST_MAC_ADDRESS}', '{KEY_TO_PRESS}')"
+        ],
+        "placeholders": {
+          "{HOST_MAC_ADDRESS}": "Indirizzo MAC del dispositivo host BLE",
+          "{KEY_TO_PRESS}": "Nome del tasto da premere (es. 'CTRL', 'SHIFT', 'ENTER')"
+        },
+        "expected_output_type": "void",
+        "output_example": ""
+      },
+      {
+        "step": 2,
+        "description": "Simula il rilascio di tutti i tasti premuti.",
+        "command": "lua_script",
+        "args_template": [
+          "ble.release('{HOST_MAC_ADDRESS}')"
+        ],
+        "placeholders": {
+          "{HOST_MAC_ADDRESS}": "Indirizzo MAC del dispositivo host BLE"
+        },
+        "expected_output_type": "void",
+        "output_example": ""
+      }
+    ],
+    "notes": [
+      "Consultare la documentazione ble.json per la lista dei tasti speciali supportati.",
+      "Utilizzare `ble.click()` per un'azione di pressione/rilascio singola."
+    ]
+  }
+}

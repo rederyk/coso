@@ -308,20 +308,21 @@ void BleHidManager::handleServerConnect(ble_gap_conn_desc* desc) {
         peer.conn_handle = desc->conn_handle;
         peer.address = NimBLEAddress(desc->peer_ota_addr).toString();
 
+        // Temporarily disable throttling to diagnose connection issues
         // Check if this peer recently disconnected (within last 2 seconds)
-        uint32_t now = millis();
-        constexpr uint32_t reconnect_throttle_ms = 2000;
-        auto recent = std::find_if(recent_disconnects_.begin(), recent_disconnects_.end(),
-            [&](const ConnectedPeer& p) { return p.address == peer.address; });
-        if (recent != recent_disconnects_.end() && (now - recent->last_disconnect_time) < reconnect_throttle_ms) {
-            // Too soon after disconnect - reject this connection to break the loop
-            Logger::getInstance().warnf("[BLE HID] Throttling rapid reconnect from %s (%u ms since disconnect)",
-                peer.address.c_str(), now - recent->last_disconnect_time);
-            if (server_) {
-                server_->disconnect(peer.conn_handle);
-            }
-            return;
-        }
+        // uint32_t now = millis();
+        // constexpr uint32_t reconnect_throttle_ms = 2000;
+        // auto recent = std::find_if(recent_disconnects_.begin(), recent_disconnects_.end(),
+        //     [&](const ConnectedPeer& p) { return p.address == peer.address; });
+        // if (recent != recent_disconnects_.end() && (now - recent->last_disconnect_time) < reconnect_throttle_ms) {
+        //     // Too soon after disconnect - reject this connection to break the loop
+        //     Logger::getInstance().warnf("[BLE HID] Throttling rapid reconnect from %s (%u ms since disconnect)",
+        //         peer.address.c_str(), now - recent->last_disconnect_time);
+        //     if (server_) {
+        //         server_->disconnect(peer.conn_handle);
+        //     }
+        //     return;
+        // }
 
         // Check for existing connection with same address
         auto dup = std::find_if(connected_peers_.begin(), connected_peers_.end(),
@@ -346,6 +347,26 @@ void BleHidManager::handleServerConnect(ble_gap_conn_desc* desc) {
         connected_peers_.push_back(peer);
         Logger::getInstance().infof("[BLE HID] Client connected (%s), total: %d", peer.address.c_str(), connected_peers_.size());
 
+        // Update connection parameters for stability
+        // min_interval: 7.5ms (units of 1.25ms, so 6 = 7.5ms)
+        // max_interval: 15ms (12 = 15ms)
+        // latency: 0 (slave can skip 0 events)
+        // supervision_timeout: 4000ms (400 units of 10ms)
+        ble_gap_upd_params params;
+        params.itvl_min = 6;   // 7.5ms - fast response
+        params.itvl_max = 12;  // 15ms - balanced
+        params.latency = 0;    // No latency for HID
+        params.supervision_timeout = 400;  // 4 seconds
+        params.min_ce_len = 0;
+        params.max_ce_len = 0;
+
+        int rc = ble_gap_update_params(peer.conn_handle, &params);
+        if (rc != 0) {
+            Logger::getInstance().warnf("[BLE HID] Failed to update connection params: %d", rc);
+        } else {
+            Logger::getInstance().info("[BLE HID] Connection parameters updated");
+        }
+
         // Remove from recent disconnects if present
         recent_disconnects_.erase(std::remove_if(recent_disconnects_.begin(), recent_disconnects_.end(),
             [&](const ConnectedPeer& p) { return p.address == peer.address; }), recent_disconnects_.end());
@@ -365,7 +386,7 @@ void BleHidManager::handleServerConnect(ble_gap_conn_desc* desc) {
     // Only if auto advertising is enabled
     if (auto_advertising_ && connected_peers_.size() < max_connections_allowed_) {
         // Give adequate delay to stabilize the connection before restarting advertising
-        vTaskDelay(2000 / portTICK_PERIOD_MS);  // Increased from 1s to 2s
+        vTaskDelay(5000 / portTICK_PERIOD_MS);  // Increased to 5s for better stability
         ensureAdvertising();
     } else if (connected_peers_.size() >= max_connections_allowed_) {
         // Max connections reached, stop advertising
@@ -415,7 +436,7 @@ void BleHidManager::handleServerDisconnect(ble_gap_conn_desc* desc) {
     // Only restart advertising if auto advertising is enabled
     if (auto_advertising_) {
         // Give a longer delay before restarting advertising to avoid rapid reconnection loops
-        vTaskDelay(3000 / portTICK_PERIOD_MS);  // Increased from 2.1s to 3s
+        vTaskDelay(5000 / portTICK_PERIOD_MS);  // Increased to 5s to match connect delay
         ensureAdvertising();
     }
 

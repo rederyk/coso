@@ -1,0 +1,33 @@
+{
+  "namespace": "gpio",
+  "description": "Controllo pin GPIO digitali",
+  "functions": {
+    "write": {
+      "signature": "gpio.write(pin, value)",
+      "description": "Scrive HIGH/LOW su pin",
+      "examples": [
+        {"code": "gpio.write(23, true)", "description": "Accende pin 23"},
+        {"code": "gpio.write(25, false)", "description": "Spegne pin 25"}
+      ]
+    },
+    "read": {
+      "signature": "gpio.read(pin) -> boolean",
+      "description": "Legge stato pin",
+      "examples": [
+        {"code": "local value = gpio.read(26)\nif value then println('HIGH') end"}
+      ]
+    },
+    "toggle": {
+      "signature": "gpio.toggle(pin)",
+      "description": "Inverte stato pin",
+      "examples": [
+        {"code": "gpio.toggle(23)", "description": "Blink LED"}
+      ]
+    }
+  },
+  "notes": [
+    "Tensione: 3.3V (NON 5V tollerante!)",
+    "Corrente max: ~40mA per pin",
+    "Pin comuni ESP32-S3: 0-48 (verificare pinout per pin riservati)"
+  ]
+}

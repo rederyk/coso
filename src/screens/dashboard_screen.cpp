@@ -68,6 +68,7 @@ void DashboardScreen::build(lv_obj_t* parent) {
 
     system_widget.create(layout);
     clock_widget.create(layout);
+    weather_widget.create(layout);
 
     applyTheme(snapshot);
     updateStatusIcons();

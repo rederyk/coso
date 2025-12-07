@@ -142,3 +142,41 @@ void AppManager::handleAsyncReload(void* user_data) {
     manager->reloadScreens();
     manager->reload_pending = false;
 }
+
+void AppManager::destroyUI() {
+    if (!root_parent) {
+        return;
+    }
+
+    for (auto& entry : apps) {
+        Screen* screen = entry.second.screen;
+        if (!screen) {
+            continue;
+        }
+        screen->onHide();
+        screen->destroyRoot();
+    }
+
+    current_screen = nullptr;
+    dock.hide();
+    dock.destroy();
+}
+
+void AppManager::restoreUI(const std::string& target_app_id) {
+    if (!root_parent) {
+        return;
+    }
+
+    dock.init();
+
+    std::string app_to_launch = target_app_id;
+    if (app_to_launch.empty()) {
+        if (!apps.empty()) {
+            app_to_launch = apps.begin()->first;
+        } else {
+            return;
+        }
+    }
+
+    launchApp(app_to_launch.c_str());
+}

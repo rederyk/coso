@@ -18,6 +18,8 @@
 #include "core/settings_manager.h"
 #include "core/wifi_manager.h"
 #include "core/web_server_manager.h"
+#include "core/web_data_manager.h"
+#include "core/memory_manager.h"
 #include "core/system_tasks.h"
 #include "core/ble_hid_manager.h"
 #include "core/task_config.h"
@@ -44,9 +46,14 @@
 #include "screens/microphone_test_screen.h"
 #include "screens/voice_assistant_settings_screen.h"
 #include "core/audio_manager.h"
+#include "core/microphone_manager.h"
+#include "core/conversation_buffer.h"
+#include "core/time_scheduler.h"
+// #include "core/voice_assistant.h"  // Temporarily disabled due to include issues
 #include "ui/ui_symbols.h"
 #include "utils/logger.h"
 #include "utils/lvgl_mutex.h"
+#include "lvgl_power_manager.h"
 
 // ========== CONFIGURAZIONE BUFFER LVGL ==========
 // Modifica LVGL_BUFFER_MODE in platformio.ini per testare diverse modalità:
@@ -196,6 +203,8 @@ static void lv_tick_handler(void*) {
     lv_tick_inc(1);
 }
 
+static TaskHandle_t s_lvgl_task_handle = nullptr;
+
 static void lvgl_task(void*) {
     while (true) {
         if (lvgl_mutex_lock(pdMS_TO_TICKS(100))) {
@@ -310,6 +319,10 @@ void setup() {
         logger.warn("[Settings] Initialization failed - persistent settings disabled");
     }
 
+    if (!ConversationBuffer::getInstance().begin()) {
+        logger.warn("[VoiceAssistant] Conversation buffer unavailable");
+    }
+
     // Initialize and start WiFi and BLE managers
     wifi_manager.init();
     wifi_manager.start();
@@ -332,6 +345,52 @@ void setup() {
     AudioManager& audio_manager = AudioManager::getInstance();
     audio_manager.begin();
     logger.info("[Audio] Audio manager ready");
+
+    // Initialize Microphone Manager
+    logger.info("[MicMgr] Initializing microphone manager");
+    MicrophoneManager& mic_manager = MicrophoneManager::getInstance();
+    if (mic_manager.begin()) {
+        logger.info("[MicMgr] Microphone manager ready");
+    } else {
+        logger.warn("[MicMgr] Microphone manager initialization failed");
+    }
+
+    // Initialize Web Data Manager
+    logger.info("[WebData] Initializing web data manager");
+    WebDataManager& web_data_manager = WebDataManager::getInstance();
+    if (web_data_manager.begin()) {
+        logger.info("[WebData] Web data manager ready");
+    } else {
+        logger.warn("[WebData] Web data manager initialization failed");
+    }
+
+    // Initialize Memory Manager
+    logger.info("[Memory] Initializing memory manager");
+    MemoryManager& memory_manager = MemoryManager::getInstance();
+    if (memory_manager.init()) {
+        logger.info("[Memory] Memory manager ready");
+    } else {
+        logger.warn("[Memory] Memory manager initialization failed");
+    }
+
+    // Initialize Time Scheduler (Calendar/Alarms)
+    logger.info("[Scheduler] Initializing time scheduler");
+    TimeScheduler& time_scheduler = TimeScheduler::getInstance();
+    if (time_scheduler.begin()) {
+        logger.info("[Scheduler] Time scheduler ready");
+    } else {
+        logger.warn("[Scheduler] Time scheduler initialization failed");
+    }
+
+    // Initialize Voice Assistant (if enabled in settings)
+    // TODO: Enable after fixing include issues
+    // logger.info("[VoiceAssistant] Initializing voice assistant");
+    // VoiceAssistant& voice_assistant = VoiceAssistant::getInstance();
+    // if (voice_assistant.begin()) {
+    //     logger.info("[VoiceAssistant] Voice assistant initialized successfully");
+    // } else {
+    //     logger.warn("[VoiceAssistant] Voice assistant initialization failed or disabled");
+    // }
 
     touch_driver_init();
     bool has_touch = touch_driver_available();
@@ -589,10 +648,22 @@ void setup() {
 
     logger.info("[System] Memory logging started (every 60 seconds)");
 
+    // Initialize LVGL Power Manager
+    logger.info("[LVGLPower] Initializing LVGL Power Manager");
+    LVGLPowerMgr.init();
+    LVGLPowerMgr.setAutoSuspendEnabled(false);  // DISABLED for now - causes freezes
+    LVGLPowerMgr.setAutoSuspendTimeout(30000);  // 30 seconds idle timeout
+    logger.info("[LVGLPower] Power manager ready - manual mode only");
+    logger.warn("[LVGLPower] Auto-suspend DISABLED - use manual switchToVoiceMode() instead");
+    LVGLPowerMgr.printMemoryStats();
 
 }
 
 void loop() {
+    // Update LVGL Power Manager (checks for auto-suspend)
+    // NOTE: Auto-suspend disabled for now, so this just resets idle timer
+    LVGLPowerMgr.update();
+
     // Audio manager tick (required for playback)
     AudioManager::getInstance().tick();
 

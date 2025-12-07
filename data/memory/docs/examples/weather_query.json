@@ -1,0 +1,37 @@
+{
+  "weather_query": {
+    "name": "Query Meteo per Città Italiana",
+    "description": "Esempio di query in due passaggi per ottenere dati meteo di una città italiana, usando prima le coordinate e poi l'API Open-Meteo.",
+    "scenario": [
+      {
+        "step": 1,
+        "description": "Recupera le coordinate della città dal file docs/reference/cities.json",
+        "command": "lua_script",
+        "args": ["local cities = memory.read_file('docs/reference/cities.json'); println(cities)"],
+        "expected_output_type": "json",
+        "output_example": "{\"Milano\": {\"lat\": 45.4642, \"lon\": 9.1900}, ...}"
+      },
+      {
+        "step": 2,
+        "description": "Utilizza le coordinate ottenute per chiamare l'API Open-Meteo tramite webData.fetch_once",
+        "command": "lua_script",
+        "args_template": [
+          "local city_lat = {LATITUDE_VALUE}",
+          "local city_lon = {LONGITUDE_VALUE}",
+          "local url = 'https://api.open-meteo.com/v1/forecast?latitude=' .. city_lat .. '&longitude=' .. city_lon .. '&current=temperature_2m,weather_code,wind_speed_10m&timezone=Europe/Rome'",
+          "webData.fetch_once(url, 'weather_data.json'); println(memory.read_file('docs/weather_data.json'))"
+        ],
+        "placeholders": {
+          "{LATITUDE_VALUE}": "Latitudine della città (e.g., 45.4642)",
+          "{LONGITUDE_VALUE}": "Longitudine della città (e.g., 9.1900)"
+        },
+        "expected_output_type": "json",
+        "output_example": "{\"latitude\": 45.46, \"longitude\": 9.19, \"current\": {\"temperature_2m\": 15.2, ...}}"
+      }
+    ],
+    "notes": [
+      "Questo scenario dimostra come l'LLM può consultare la documentazione dinamica per risolvere query complesse.",
+      "L'LLM deve estrarre le coordinate dal primo output per costruire il secondo comando."
+    ]
+  }
+}

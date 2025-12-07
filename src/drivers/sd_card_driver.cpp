@@ -9,7 +9,8 @@
 #include "utils/logger.h"
 
 namespace {
-constexpr const char* MOUNT_POINT = "/sdcard";
+constexpr const char* MOUNT_POINT = "/sd";
+
 
 constexpr gpio_num_t SD_CLK = GPIO_NUM_38;
 constexpr gpio_num_t SD_CMD = GPIO_NUM_40;
@@ -176,6 +177,41 @@ std::vector<SdCardEntry> SdCardDriver::listDirectory(const char* path, size_t ma
         return a.name < b.name;
     });
     return entries;
+}
+
+bool SdCardDriver::removePath(const char* path) {
+    if (!path || path[0] == '\0' || strcmp(path, "/") == 0) {
+        last_error_ = "Invalid path";
+        return false;
+    }
+    if (!ensureMounted()) {
+        last_error_ = "Card not mounted";
+        return false;
+    }
+
+    File entry = SD_MMC.open(path);
+    if (!entry) {
+        last_error_ = "Path not found";
+        return false;
+    }
+
+    bool success = true;
+    if (entry.isDirectory()) {
+        entry.close();
+        success = deleteRecursive(path);
+    } else {
+        entry.close();
+        success = SD_MMC.remove(path);
+    }
+
+    if (!success) {
+        last_error_ = "Delete failed";
+        return false;
+    }
+
+    refreshStats();
+    last_error_.clear();
+    return true;
 }
 
 bool SdCardDriver::formatCard() {

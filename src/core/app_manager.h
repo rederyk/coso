@@ -16,6 +16,10 @@ public:
     void launchApp(const char* id);
     void reloadScreens();
     void requestReload();
+    void destroyUI();
+    void restoreUI(const std::string& target_app_id);
+    const std::string& getCurrentAppId() const { return current_app_id; }
+    bool isInitialized() const { return root_parent != nullptr; }
     DockController* getDock() { return &dock; }
 
 private:

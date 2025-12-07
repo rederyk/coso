@@ -4,6 +4,11 @@
 #include "utils/color_utils.h"
 #include "core/voice_assistant.h"
 #include "core/app_manager.h"
+#include "core/keyboard_manager.h"
+#include <algorithm>
+
+// Forward declaration to avoid include issues
+class VoiceAssistant;
 
 namespace {
 lv_obj_t* create_fixed_card(lv_obj_t* parent, const char* title, lv_color_t bg_color = lv_color_hex(0x10182c)) {
@@ -73,13 +78,15 @@ void VoiceAssistantSettingsScreen::build(lv_obj_t* parent) {
     lv_obj_set_width(title_label, lv_pct(100));
 
     // Trigger assistant button card
-    trigger_card = create_fixed_card(root, "Trigger Assistant");
+    trigger_card = create_fixed_card(root, "Voice Assistant");
     trigger_button = lv_btn_create(trigger_card);
     lv_obj_set_height(trigger_button, 50);
-    lv_obj_add_event_cb(trigger_button, handleTriggerAssistantButton, LV_EVENT_CLICKED, this);
+    lv_obj_add_event_cb(trigger_button, handleTriggerPressed, LV_EVENT_PRESSED, this);
+    lv_obj_add_event_cb(trigger_button, handleTriggerReleased, LV_EVENT_RELEASED, this);
     lv_obj_set_style_bg_color(trigger_button, lv_color_hex(0x00aa44), 0); // Green trigger button
-    lv_obj_t* trigger_btn_label = lv_label_create(trigger_button);
-    lv_label_set_text(trigger_btn_label, LV_SYMBOL_AUDIO " Skip Activation & Listen");
+    lv_obj_set_style_bg_color(trigger_button, lv_color_hex(0xaa0000), LV_STATE_PRESSED); // Red when pressed
+    trigger_btn_label = lv_label_create(trigger_button);
+    lv_label_set_text(trigger_btn_label, LV_SYMBOL_AUDIO " Hold to Talk");
     lv_obj_center(trigger_btn_label);
     lv_obj_set_style_text_font(trigger_btn_label, &lv_font_montserrat_16, 0);
     lv_obj_set_style_text_color(trigger_btn_label, lv_color_hex(0xffffff), 0);
@@ -89,6 +96,11 @@ void VoiceAssistantSettingsScreen::build(lv_obj_t* parent) {
     enabled_switch = lv_switch_create(enabled_card);
     lv_obj_add_event_cb(enabled_switch, handleEnabledSwitch, LV_EVENT_VALUE_CHANGED, this);
 
+    // Local API Mode switch card
+    local_mode_card = create_fixed_card(root, "Use Local APIs (Docker)");
+    local_mode_switch = lv_switch_create(local_mode_card);
+    lv_obj_add_event_cb(local_mode_switch, handleLocalModeSwitch, LV_EVENT_VALUE_CHANGED, this);
+
     // API Key input card
     api_card = create_fixed_card(root, "OpenAI API Key");
     api_key_input = lv_textarea_create(api_card);
@@ -96,6 +108,7 @@ void VoiceAssistantSettingsScreen::build(lv_obj_t* parent) {
     lv_textarea_set_password_mode(api_key_input, true);
     lv_textarea_set_one_line(api_key_input, true);
     lv_obj_set_width(api_key_input, lv_pct(100));
+    lv_obj_add_event_cb(api_key_input, handleTextAreaFocused, LV_EVENT_FOCUSED, this);
     lv_obj_add_event_cb(api_key_input, handleApiKeyInput, LV_EVENT_READY, this);
     api_key_hint = lv_label_create(api_card);
     lv_label_set_text(api_key_hint, "Required for Whisper and GPT APIs");
@@ -108,11 +121,71 @@ void VoiceAssistantSettingsScreen::build(lv_obj_t* parent) {
     lv_textarea_set_placeholder_text(endpoint_input, "https://api.openai.com/v1");
     lv_textarea_set_one_line(endpoint_input, true);
     lv_obj_set_width(endpoint_input, lv_pct(100));
+    lv_obj_add_event_cb(endpoint_input, handleTextAreaFocused, LV_EVENT_FOCUSED, this);
     lv_obj_add_event_cb(endpoint_input, handleEndpointInput, LV_EVENT_READY, this);
     endpoint_hint = lv_label_create(endpoint_card);
     lv_label_set_text(endpoint_hint, "Usually default OpenAI endpoint");
     lv_obj_set_style_text_font(endpoint_hint, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(endpoint_hint, lv_color_hex(0xa0a0a0), 0);
+
+    // Whisper STT Endpoint card
+    whisper_card = create_fixed_card(root, "Whisper STT Endpoint");
+    whisper_endpoint_input = lv_textarea_create(whisper_card);
+    lv_textarea_set_placeholder_text(whisper_endpoint_input, "http://192.168.1.51:8002/v1/audio/transcriptions");
+    lv_textarea_set_one_line(whisper_endpoint_input, true);
+    lv_obj_set_width(whisper_endpoint_input, lv_pct(100));
+    lv_obj_add_event_cb(whisper_endpoint_input, handleTextAreaFocused, LV_EVENT_FOCUSED, this);
+    lv_obj_add_event_cb(whisper_endpoint_input, handleWhisperEndpointInput, LV_EVENT_READY, this);
+    whisper_hint = lv_label_create(whisper_card);
+    lv_label_set_text(whisper_hint, "Cloud or Local Whisper endpoint");
+    lv_obj_set_style_text_font(whisper_hint, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(whisper_hint, lv_color_hex(0xa0a0a0), 0);
+
+    // LLM Endpoint card
+    llm_card = create_fixed_card(root, "LLM Endpoint");
+    llm_endpoint_input = lv_textarea_create(llm_card);
+    lv_textarea_set_placeholder_text(llm_endpoint_input, "http://192.168.1.51:11434/v1/chat/completions");
+    lv_textarea_set_one_line(llm_endpoint_input, true);
+    lv_obj_set_width(llm_endpoint_input, lv_pct(100));
+    lv_obj_add_event_cb(llm_endpoint_input, handleTextAreaFocused, LV_EVENT_FOCUSED, this);
+    lv_obj_add_event_cb(llm_endpoint_input, handleLlmEndpointInput, LV_EVENT_READY, this);
+    llm_hint = lv_label_create(llm_card);
+    lv_label_set_text(llm_hint, "Cloud or Local LLM endpoint");
+    lv_obj_set_style_text_font(llm_hint, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(llm_hint, lv_color_hex(0xa0a0a0), 0);
+
+    // LLM Model card with dropdown and refresh button
+    llm_model_card = create_fixed_card(root, "LLM Model");
+    lv_obj_set_height(llm_model_card, 110); // Increased height for dropdown and button
+
+    // Horizontal container for dropdown and refresh button
+    lv_obj_t* model_controls = lv_obj_create(llm_model_card);
+    lv_obj_remove_style_all(model_controls);
+    lv_obj_set_width(model_controls, lv_pct(100));
+    lv_obj_set_height(model_controls, LV_SIZE_CONTENT);
+    lv_obj_set_layout(model_controls, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(model_controls, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(model_controls, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_column(model_controls, 8, 0);
+
+    // Dropdown for model selection
+    llm_model_dropdown = lv_dropdown_create(model_controls);
+    lv_obj_set_flex_grow(llm_model_dropdown, 1); // Take remaining space
+    lv_dropdown_set_options(llm_model_dropdown, "Loading...");
+    lv_obj_add_event_cb(llm_model_dropdown, handleLlmModelDropdown, LV_EVENT_VALUE_CHANGED, this);
+
+    // Refresh button
+    refresh_models_btn = lv_btn_create(model_controls);
+    lv_obj_set_size(refresh_models_btn, 50, 40);
+    lv_obj_t* refresh_label = lv_label_create(refresh_models_btn);
+    lv_label_set_text(refresh_label, LV_SYMBOL_REFRESH);
+    lv_obj_center(refresh_label);
+    lv_obj_add_event_cb(refresh_models_btn, handleRefreshModels, LV_EVENT_CLICKED, this);
+
+    llm_model_hint = lv_label_create(llm_model_card);
+    lv_label_set_text(llm_model_hint, "Select model or refresh list");
+    lv_obj_set_style_text_font(llm_model_hint, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(llm_model_hint, lv_color_hex(0xa0a0a0), 0);
 
     applySnapshot(snapshot);
 
@@ -128,7 +201,27 @@ void VoiceAssistantSettingsScreen::build(lv_obj_t* parent) {
 
 void VoiceAssistantSettingsScreen::onShow() {
     Logger::getInstance().info(LV_SYMBOL_AUDIO " Voice assistant settings screen shown");
+
+    // Initialize VoiceAssistant if not already done
+    // Note: We do this here because VoiceAssistant is not initialized at system startup
+    static bool voice_assistant_initialized = false;
+    if (!voice_assistant_initialized) {
+        Logger::getInstance().info("[VoiceAssistant] Initializing voice assistant from settings screen");
+        if (VoiceAssistant::getInstance().begin()) {
+            Logger::getInstance().info("[VoiceAssistant] Voice assistant initialized successfully");
+            voice_assistant_initialized = true;
+        } else {
+            Logger::getInstance().warn("[VoiceAssistant] Voice assistant initialization failed");
+        }
+    }
+
     applySnapshot(SettingsManager::getInstance().getSnapshot());
+
+    // Refresh available models from Ollama API (only if in local mode)
+    const SettingsSnapshot& snapshot = SettingsManager::getInstance().getSnapshot();
+    if (snapshot.localApiMode) {
+        refreshAvailableModels();
+    }
 }
 
 void VoiceAssistantSettingsScreen::onHide() {
@@ -144,11 +237,39 @@ void VoiceAssistantSettingsScreen::applySnapshot(const SettingsSnapshot& snapsho
             lv_obj_add_state(enabled_switch, LV_STATE_CHECKED);
         }
     }
+    if (local_mode_switch) {
+        lv_obj_clear_state(local_mode_switch, LV_STATE_CHECKED);
+        if (snapshot.localApiMode) {
+            lv_obj_add_state(local_mode_switch, LV_STATE_CHECKED);
+        }
+    }
     if (api_key_input) {
         lv_textarea_set_text(api_key_input, snapshot.openAiApiKey.c_str());
     }
     if (endpoint_input) {
         lv_textarea_set_text(endpoint_input, snapshot.openAiEndpoint.c_str());
+    }
+    if (whisper_endpoint_input) {
+        // Show appropriate endpoint based on local mode
+        std::string endpoint = snapshot.localApiMode ? snapshot.whisperLocalEndpoint : snapshot.whisperCloudEndpoint;
+        lv_textarea_set_text(whisper_endpoint_input, endpoint.c_str());
+    }
+    if (llm_endpoint_input) {
+        // Show appropriate endpoint based on local mode
+        std::string endpoint = snapshot.localApiMode ? snapshot.llmLocalEndpoint : snapshot.llmCloudEndpoint;
+        lv_textarea_set_text(llm_endpoint_input, endpoint.c_str());
+    }
+    if (llm_model_input) {
+        lv_textarea_set_text(llm_model_input, snapshot.llmModel.c_str());
+    }
+
+    // Update dropdown selection if the model changed
+    if (llm_model_dropdown && !available_models_.empty()) {
+        auto it = std::find(available_models_.begin(), available_models_.end(), snapshot.llmModel);
+        if (it != available_models_.end()) {
+            uint16_t idx = std::distance(available_models_.begin(), it);
+            lv_dropdown_set_selected(llm_model_dropdown, idx);
+        }
     }
 
     applyThemeStyles(snapshot);
@@ -193,8 +314,12 @@ void VoiceAssistantSettingsScreen::applyThemeStyles(const SettingsSnapshot& snap
 
     style_card(trigger_card);
     style_card(enabled_card);
+    style_card(local_mode_card);
     style_card(api_card);
     style_card(endpoint_card);
+    style_card(whisper_card);
+    style_card(llm_card);
+    style_card(llm_model_card);
 
     if (trigger_button) {
         lv_obj_set_style_bg_color(trigger_button, accent, 0);
@@ -208,12 +333,32 @@ void VoiceAssistantSettingsScreen::applyThemeStyles(const SettingsSnapshot& snap
     }
 }
 
-void VoiceAssistantSettingsScreen::handleTriggerAssistantButton(lv_event_t* e) {
+void VoiceAssistantSettingsScreen::handleTriggerPressed(lv_event_t* e) {
     auto* screen = static_cast<VoiceAssistantSettingsScreen*>(lv_event_get_user_data(e));
     if (!screen) return;
 
-    VoiceAssistant::getInstance().triggerListening();
-    Logger::getInstance().info(LV_SYMBOL_AUDIO " Manual voice assistant trigger initiated");
+    // Start recording
+    VoiceAssistant::getInstance().startRecording();
+    Logger::getInstance().info(LV_SYMBOL_AUDIO " Voice recording started");
+
+    // Update button text to show recording state
+    if (screen->trigger_btn_label) {
+        lv_label_set_text(screen->trigger_btn_label, LV_SYMBOL_AUDIO " Recording... (Release to Process)");
+    }
+}
+
+void VoiceAssistantSettingsScreen::handleTriggerReleased(lv_event_t* e) {
+    auto* screen = static_cast<VoiceAssistantSettingsScreen*>(lv_event_get_user_data(e));
+    if (!screen) return;
+
+    // Stop recording and process
+    VoiceAssistant::getInstance().stopRecordingAndProcess();
+    Logger::getInstance().info(LV_SYMBOL_AUDIO " Voice recording stopped, processing...");
+
+    // Reset button text
+    if (screen->trigger_btn_label) {
+        lv_label_set_text(screen->trigger_btn_label, LV_SYMBOL_AUDIO " Hold to Talk");
+    }
 }
 
 void VoiceAssistantSettingsScreen::handleApiKeyInput(lv_event_t* e) {
@@ -246,4 +391,176 @@ void VoiceAssistantSettingsScreen::handleEnabledSwitch(lv_event_t* e) {
     bool checked = lv_obj_has_state(switch_obj, LV_STATE_CHECKED);
     SettingsManager::getInstance().setVoiceAssistantEnabled(checked);
     Logger::getInstance().infof(LV_SYMBOL_AUDIO " Voice assistant %s", checked ? "enabled" : "disabled");
+
+    // If enabling, try to initialize VoiceAssistant now
+    if (checked) {
+        static bool voice_assistant_initialized = false;
+        if (!voice_assistant_initialized) {
+            Logger::getInstance().info("[VoiceAssistant] Initializing voice assistant after enable");
+            if (VoiceAssistant::getInstance().begin()) {
+                Logger::getInstance().info("[VoiceAssistant] Voice assistant initialized successfully");
+                voice_assistant_initialized = true;
+            } else {
+                Logger::getInstance().warn("[VoiceAssistant] Voice assistant initialization failed");
+            }
+        }
+    }
+}
+
+void VoiceAssistantSettingsScreen::handleLocalModeSwitch(lv_event_t* e) {
+    auto* screen = static_cast<VoiceAssistantSettingsScreen*>(lv_event_get_user_data(e));
+    if (!screen || screen->updating_from_manager) return;
+
+    lv_obj_t* switch_obj = lv_event_get_target(e);
+    bool checked = lv_obj_has_state(switch_obj, LV_STATE_CHECKED);
+    SettingsManager::getInstance().setLocalApiMode(checked);
+    Logger::getInstance().infof(LV_SYMBOL_AUDIO " Local API mode %s", checked ? "enabled" : "disabled");
+
+    // Update endpoint displays to show appropriate values
+    screen->applySnapshot(SettingsManager::getInstance().getSnapshot());
+
+    // Refresh available models when switching modes
+    screen->refreshAvailableModels();
+}
+
+void VoiceAssistantSettingsScreen::handleWhisperEndpointInput(lv_event_t* e) {
+    auto* screen = static_cast<VoiceAssistantSettingsScreen*>(lv_event_get_user_data(e));
+    if (!screen || screen->updating_from_manager) return;
+
+    lv_obj_t* textarea = lv_event_get_target(e);
+    const char* text = lv_textarea_get_text(textarea);
+    if (text) {
+        const SettingsSnapshot& snapshot = SettingsManager::getInstance().getSnapshot();
+        if (snapshot.localApiMode) {
+            SettingsManager::getInstance().setWhisperLocalEndpoint(text);
+        } else {
+            SettingsManager::getInstance().setWhisperCloudEndpoint(text);
+        }
+    }
+}
+
+void VoiceAssistantSettingsScreen::handleLlmEndpointInput(lv_event_t* e) {
+    auto* screen = static_cast<VoiceAssistantSettingsScreen*>(lv_event_get_user_data(e));
+    if (!screen || screen->updating_from_manager) return;
+
+    lv_obj_t* textarea = lv_event_get_target(e);
+    const char* text = lv_textarea_get_text(textarea);
+    if (text) {
+        const SettingsSnapshot& snapshot = SettingsManager::getInstance().getSnapshot();
+        if (snapshot.localApiMode) {
+            SettingsManager::getInstance().setLlmLocalEndpoint(text);
+            // Refresh available models when endpoint changes
+            screen->refreshAvailableModels();
+        } else {
+            SettingsManager::getInstance().setLlmCloudEndpoint(text);
+        }
+    }
+}
+
+void VoiceAssistantSettingsScreen::handleLlmModelInput(lv_event_t* e) {
+    auto* screen = static_cast<VoiceAssistantSettingsScreen*>(lv_event_get_user_data(e));
+    if (!screen || screen->updating_from_manager) return;
+
+    lv_obj_t* textarea = lv_event_get_target(e);
+    const char* text = lv_textarea_get_text(textarea);
+    if (text) {
+        SettingsManager::getInstance().setLlmModel(text);
+    }
+}
+
+void VoiceAssistantSettingsScreen::handleLlmModelDropdown(lv_event_t* e) {
+    auto* screen = static_cast<VoiceAssistantSettingsScreen*>(lv_event_get_user_data(e));
+    if (!screen || screen->updating_from_manager) return;
+
+    lv_obj_t* dropdown = lv_event_get_target(e);
+    uint16_t selected_idx = lv_dropdown_get_selected(dropdown);
+
+    if (selected_idx < screen->available_models_.size()) {
+        const std::string& selected_model = screen->available_models_[selected_idx];
+        SettingsManager::getInstance().setLlmModel(selected_model);
+        Logger::getInstance().infof(LV_SYMBOL_AUDIO " LLM model changed to: %s", selected_model.c_str());
+    }
+}
+
+void VoiceAssistantSettingsScreen::handleRefreshModels(lv_event_t* e) {
+    auto* screen = static_cast<VoiceAssistantSettingsScreen*>(lv_event_get_user_data(e));
+    if (!screen) return;
+
+    Logger::getInstance().info(LV_SYMBOL_AUDIO " Refreshing available models...");
+    screen->refreshAvailableModels();
+}
+
+void VoiceAssistantSettingsScreen::refreshAvailableModels() {
+    if (!llm_model_dropdown) return;
+
+    const SettingsSnapshot& snapshot = SettingsManager::getInstance().getSnapshot();
+
+    // Only fetch models when in local mode
+    if (!snapshot.localApiMode) {
+        // In cloud mode, just show a text input or predefined list
+        lv_dropdown_set_options(llm_model_dropdown, "gpt-4\ngpt-3.5-turbo\ngpt-4-turbo");
+        available_models_.clear();
+        available_models_.push_back("gpt-4");
+        available_models_.push_back("gpt-3.5-turbo");
+        available_models_.push_back("gpt-4-turbo");
+        return;
+    }
+
+    // Update hint to show loading
+    if (llm_model_hint) {
+        lv_label_set_text(llm_model_hint, "Loading models from Ollama...");
+    }
+
+    // Fetch models from Ollama API
+    std::vector<std::string> models;
+    bool success = VoiceAssistant::getInstance().fetchOllamaModels(snapshot.llmLocalEndpoint, models);
+
+    if (success && !models.empty()) {
+        available_models_ = models;
+
+        // Build dropdown options string (newline-separated)
+        std::string options;
+        for (size_t i = 0; i < models.size(); i++) {
+            if (i > 0) options += "\n";
+            options += models[i];
+        }
+
+        lv_dropdown_set_options(llm_model_dropdown, options.c_str());
+
+        // Select current model if it exists in the list
+        auto it = std::find(models.begin(), models.end(), snapshot.llmModel);
+        if (it != models.end()) {
+            uint16_t idx = std::distance(models.begin(), it);
+            lv_dropdown_set_selected(llm_model_dropdown, idx);
+        }
+
+        if (llm_model_hint) {
+            lv_label_set_text_fmt(llm_model_hint, "Found %d models", models.size());
+        }
+
+        Logger::getInstance().infof(LV_SYMBOL_AUDIO " Loaded %d models from Ollama", models.size());
+    } else {
+        // Failed to fetch models
+        lv_dropdown_set_options(llm_model_dropdown, "Error: No models found");
+        available_models_.clear();
+
+        if (llm_model_hint) {
+            lv_label_set_text(llm_model_hint, "Failed to load models. Check connection.");
+        }
+
+        Logger::getInstance().warn(LV_SYMBOL_AUDIO " Failed to fetch models from Ollama");
+    }
+}
+
+void VoiceAssistantSettingsScreen::handleTextAreaFocused(lv_event_t* e) {
+    lv_obj_t* textarea = lv_event_get_target(e);
+    if (!textarea) return;
+
+    // Show keyboard when text area is focused
+    KeyboardManager::getInstance().showForTextArea(textarea, [textarea](const char* text) {
+        // When user presses OK/Enter, trigger the READY event to save the value
+        if (text) {
+            lv_event_send(textarea, LV_EVENT_READY, nullptr);
+        }
+    });
 }

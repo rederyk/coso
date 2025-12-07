@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/theme_palette.h"
+#include "core/voice_assistant_prompt.h"
 #include <cstdint>
 #include <functional>
 #include <string>
@@ -39,6 +40,28 @@ struct SettingsSnapshot {
     std::string openAiApiKey;
     std::string openAiEndpoint = "https://api.openai.com/v1";
     bool voiceAssistantEnabled = false;
+    bool localApiMode = false;  // Toggle between cloud and local Docker APIs
+    std::string dockerHostIp = "192.168.1.51";  // IP of Docker host for local APIs
+    std::string voiceAssistantSystemPromptTemplate;  // Leave empty to use LittleFS prompt by default
+
+    // Whisper STT endpoints
+    std::string whisperCloudEndpoint = "https://api.openai.com/v1/audio/transcriptions";
+    std::string whisperLocalEndpoint = "http://192.168.1.51:8002/v1/audio/transcriptions";
+
+    // LLM/GPT endpoints
+    std::string llmCloudEndpoint = "https://api.openai.com/v1/chat/completions";
+    std::string llmLocalEndpoint = "http://192.168.1.51:11434/v1/chat/completions";
+    std::string llmModel = "llama3.2:3b";  // Model name for LLM requests
+
+    // TTS (Text-to-Speech) endpoints
+    bool ttsEnabled = false;
+    std::string ttsCloudEndpoint = "https://api.openai.com/v1/audio/speech";
+    std::string ttsLocalEndpoint = "http://192.168.1.51:7778/v1/audio/speech";
+    std::string ttsVoice = "if_sara";  // Voice name for TTS (Local: if_sara, af_heart; OpenAI: alloy, echo, fable, onyx, nova, shimmer)
+    std::string ttsModel = "hexgrad/Kokoro-82M";  // TTS model name (Local: hexgrad/Kokoro-82M; OpenAI: tts-1)
+    float ttsSpeed = 1.0f;  // Speech speed (0.25 to 4.0)
+    std::string ttsOutputFormat = "mp3";  // Output format: mp3, opus, aac, flac
+    std::string ttsOutputPath = "/memory/audio";  // Where to save TTS audio files
 
     // Theme
     std::string theme;
@@ -50,6 +73,24 @@ struct SettingsSnapshot {
     uint32_t dockIconSymbolColor = 0xffffff;
     uint8_t dockIconRadius = 24;
     uint8_t borderRadius = 12;
+
+    // Time & NTP
+    std::string timezone = "CET-1CEST,M3.5.0,M10.5.0/3";  // Europe/Rome
+    std::string ntpServer = "pool.ntp.org";
+    std::string ntpServer2 = "time.google.com";
+    std::string ntpServer3 = "time.cloudflare.com";
+    bool autoTimeSync = true;
+    uint32_t timeSyncIntervalHours = 1;
+
+    // Web Data Manager
+    std::vector<std::string> webDataAllowedDomains;
+    size_t webDataMaxFileSizeKb = 50;
+    uint32_t webDataMaxRequestsPerHour = 10;
+    uint32_t webDataRequestTimeoutMs = 10000;
+
+    // Storage access whitelist
+    std::vector<std::string> storageAllowedSdPaths;
+    std::vector<std::string> storageAllowedLittleFsPaths;
 
     // System
     std::string version;
@@ -92,6 +133,24 @@ public:
         VoiceAssistantEnabled,
         OpenAIApiKey,
         OpenAIEndpoint,
+        LocalApiMode,
+        DockerHostIp,
+        WhisperCloudEndpoint,
+        WhisperLocalEndpoint,
+        LlmCloudEndpoint,
+        LlmLocalEndpoint,
+        LlmModel,
+        VoiceAssistantSystemPrompt,
+
+        // TTS
+        TtsEnabled,
+        TtsCloudEndpoint,
+        TtsLocalEndpoint,
+        TtsVoice,
+        TtsModel,
+        TtsSpeed,
+        TtsOutputFormat,
+        TtsOutputPath,
 
         // Theme
         Theme,
@@ -104,9 +163,20 @@ public:
         ThemeDockIconRadius,
         ThemeBorderRadius,
 
+        // Time & NTP
+        Timezone,
+        NtpServer,
+        NtpServer2,
+        NtpServer3,
+        AutoTimeSync,
+        TimeSyncIntervalHours,
+
         // System
         Version,
-        BootCount
+        BootCount,
+
+        StorageSdWhitelist,
+        StorageLittleFsWhitelist
     };
 
     using Callback = std::function<void(SettingKey, const SettingsSnapshot&)>;
@@ -201,6 +271,11 @@ public:
     bool getAudioEnabled() const { return current_.audioEnabled; }
     void setAudioEnabled(bool enabled);
 
+    const std::string& getVoiceAssistantSystemPromptTemplate() const {
+        return current_.voiceAssistantSystemPromptTemplate;
+    }
+    void setVoiceAssistantSystemPromptTemplate(const std::string& prompt);
+
     // Voice Assistant
     const std::string& getOpenAiApiKey() const { return current_.openAiApiKey; }
     void setOpenAiApiKey(const std::string& key);
@@ -210,6 +285,94 @@ public:
 
     bool getVoiceAssistantEnabled() const { return current_.voiceAssistantEnabled; }
     void setVoiceAssistantEnabled(bool enabled);
+
+    bool getLocalApiMode() const { return current_.localApiMode; }
+    void setLocalApiMode(bool enabled);
+
+    const std::string& getDockerHostIp() const { return current_.dockerHostIp; }
+    void setDockerHostIp(const std::string& ip);
+
+    const std::string& getWhisperCloudEndpoint() const { return current_.whisperCloudEndpoint; }
+    void setWhisperCloudEndpoint(const std::string& endpoint);
+
+    const std::string& getWhisperLocalEndpoint() const { return current_.whisperLocalEndpoint; }
+    void setWhisperLocalEndpoint(const std::string& endpoint);
+
+    const std::string& getLlmCloudEndpoint() const { return current_.llmCloudEndpoint; }
+    void setLlmCloudEndpoint(const std::string& endpoint);
+
+    const std::string& getLlmLocalEndpoint() const { return current_.llmLocalEndpoint; }
+    void setLlmLocalEndpoint(const std::string& endpoint);
+
+    const std::string& getLlmModel() const { return current_.llmModel; }
+    void setLlmModel(const std::string& model);
+
+    // TTS
+    bool getTtsEnabled() const { return current_.ttsEnabled; }
+    void setTtsEnabled(bool enabled);
+
+    const std::string& getTtsCloudEndpoint() const { return current_.ttsCloudEndpoint; }
+    void setTtsCloudEndpoint(const std::string& endpoint);
+
+    const std::string& getTtsLocalEndpoint() const { return current_.ttsLocalEndpoint; }
+    void setTtsLocalEndpoint(const std::string& endpoint);
+
+    const std::string& getTtsVoice() const { return current_.ttsVoice; }
+    void setTtsVoice(const std::string& voice);
+
+    const std::string& getTtsModel() const { return current_.ttsModel; }
+    void setTtsModel(const std::string& model);
+
+    float getTtsSpeed() const { return current_.ttsSpeed; }
+    void setTtsSpeed(float speed);
+
+    const std::string& getTtsOutputFormat() const { return current_.ttsOutputFormat; }
+    void setTtsOutputFormat(const std::string& format);
+
+    const std::string& getTtsOutputPath() const { return current_.ttsOutputPath; }
+    void setTtsOutputPath(const std::string& path);
+
+    // Time & NTP
+    const std::string& getTimezone() const { return current_.timezone; }
+    void setTimezone(const std::string& tz);
+
+    const std::string& getNtpServer() const { return current_.ntpServer; }
+    void setNtpServer(const std::string& server);
+
+    const std::string& getNtpServer2() const { return current_.ntpServer2; }
+    void setNtpServer2(const std::string& server);
+
+    const std::string& getNtpServer3() const { return current_.ntpServer3; }
+    void setNtpServer3(const std::string& server);
+
+    bool getAutoTimeSync() const { return current_.autoTimeSync; }
+    void setAutoTimeSync(bool enabled);
+
+    uint32_t getTimeSyncIntervalHours() const { return current_.timeSyncIntervalHours; }
+    void setTimeSyncIntervalHours(uint32_t hours);
+
+    // Web Data Manager
+    const std::vector<std::string>& getWebDataAllowedDomains() const { return current_.webDataAllowedDomains; }
+    void setWebDataAllowedDomains(const std::vector<std::string>& domains);
+
+    size_t getWebDataMaxFileSizeKb() const { return current_.webDataMaxFileSizeKb; }
+    void setWebDataMaxFileSizeKb(size_t sizeKb);
+
+    uint32_t getWebDataMaxRequestsPerHour() const { return current_.webDataMaxRequestsPerHour; }
+    void setWebDataMaxRequestsPerHour(uint32_t maxRequests);
+
+    uint32_t getWebDataRequestTimeoutMs() const { return current_.webDataRequestTimeoutMs; }
+    void setWebDataRequestTimeoutMs(uint32_t timeoutMs);
+
+    const std::vector<std::string>& getStorageAllowedSdPaths() const {
+        return current_.storageAllowedSdPaths;
+    }
+    void setStorageAllowedSdPaths(const std::vector<std::string>& paths);
+
+    const std::vector<std::string>& getStorageAllowedLittleFsPaths() const {
+        return current_.storageAllowedLittleFsPaths;
+    }
+    void setStorageAllowedLittleFsPaths(const std::vector<std::string>& paths);
 
     // System
     uint32_t getBootCount() const { return current_.bootCount; }

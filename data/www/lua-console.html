@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="en" data-page="lua">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ESP32 Lua Console</title>
+  <link rel="stylesheet" href="app-nav.css">
+  <style>
+    :root {
+      --bg: #01030a;
+      --panel: rgba(16, 24, 44, 0.95);
+      --panel-border: rgba(255, 255, 255, 0.08);
+      --accent: #4cf8d2;
+      --accent-strong: #2abf9a;
+      --muted: #a2b0cb;
+      --text: #f5f7ff;
+      --danger: #ff7b7b;
+      --success: #6cffb8;
+      --border: rgba(255, 255, 255, 0.08);
+      --shadow: 0 20px 45px rgba(1, 2, 8, 0.6);
+      font-family: "Inter", "Space Grotesk", system-ui, -apple-system, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: radial-gradient(circle at 20% -10%, rgba(76, 248, 210, 0.15), transparent 40%),
+                  radial-gradient(circle at 80% 0%, rgba(54, 109, 232, 0.2), transparent 35%),
+                  linear-gradient(180deg, #02040c 0%, #050712 60%, #01030a 100%);
+      color: var(--text);
+      padding: 24px;
+      display: flex;
+      justify-content: center;
+    }
+    main {
+      width: 100%;
+      max-width: 1024px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--panel-border);
+      border-radius: 18px;
+      padding: 22px;
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(20px);
+    }
+    .panel-heading {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 12px;
+    }
+    h1, h2 {
+      margin: 4px 0;
+      letter-spacing: 0.5px;
+    }
+    h1 {
+      font-size: 2rem;
+    }
+    h2 {
+      font-size: 1.6rem;
+    }
+    .eyebrow {
+      margin: 0;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .status-pill {
+      padding: 6px 14px;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+      min-width: 160px;
+      text-align: center;
+      transition: background 0.2s ease, border-color 0.2s ease;
+    }
+    .status-pill[data-state="success"] {
+      background: rgba(108, 255, 184, 0.15);
+      border-color: rgba(108, 255, 184, 0.4);
+      color: #00ff9f;
+    }
+    .status-pill[data-state="error"] {
+      background: rgba(255, 123, 123, 0.15);
+      border-color: rgba(255, 123, 123, 0.4);
+      color: #ff9b9b;
+    }
+    .status-pill[data-state="busy"] {
+      background: rgba(255, 255, 255, 0.1);
+      border-color: rgba(255, 255, 255, 0.35);
+    }
+    .status-pill[data-state="warn"] {
+      background: rgba(255, 188, 97, 0.2);
+      border-color: rgba(255, 188, 97, 0.4);
+      color: #ffc285;
+    }
+    .status-pill[data-state="info"] {
+      background: rgba(76, 248, 210, 0.15);
+      border-color: rgba(76, 248, 210, 0.4);
+      color: #4cf8d2;
+    }
+    .status-pill[data-state="ready"] {
+      background: rgba(76, 248, 210, 0.2);
+      border-color: rgba(76, 248, 210, 0.45);
+      color: #2abf9a;
+    }
+    .helper-text {
+      margin: 0;
+      font-size: 14px;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+    .editor {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-top: 12px;
+    }
+    .editor label {
+      font-size: 14px;
+      font-weight: 600;
+      letter-spacing: 0.4px;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    textarea {
+      width: 100%;
+      min-height: 260px;
+      border-radius: 14px;
+      border: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.04);
+      color: var(--text);
+      padding: 16px;
+      font-family: "JetBrains Mono", "Fira Code", Consolas, monospace;
+      font-size: 14px;
+      resize: vertical;
+      line-height: 1.6;
+      transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+    textarea:focus {
+      border-color: rgba(76, 248, 210, 0.6);
+      box-shadow: 0 0 0 2px rgba(76, 248, 210, 0.2);
+      outline: none;
+    }
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 14px;
+    }
+    button {
+      border: none;
+      border-radius: 12px;
+      padding: 12px 20px;
+      font-weight: 700;
+      font-size: 15px;
+      cursor: pointer;
+      transition: transform 0.15s ease, box-shadow 0.2s ease;
+    }
+    button.primary {
+      background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+      color: #04100d;
+      box-shadow: 0 12px 28px rgba(76, 248, 210, 0.3);
+    }
+    button.secondary {
+      background: rgba(255, 255, 255, 0.06);
+      color: var(--text);
+      box-shadow: none;
+    }
+    button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none;
+    }
+    button:hover:not(:disabled) {
+      transform: translateY(-1px);
+    }
+    .result {
+      margin-top: 18px;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 16px;
+      background: rgba(255, 255, 255, 0.03);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      min-height: 220px;
+    }
+    .result[data-state="success"] {
+      border-color: var(--success);
+    }
+    .result[data-state="error"] {
+      border-color: var(--danger);
+    }
+    .result .label {
+      font-size: 12px;
+      letter-spacing: 0.6px;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+    .result pre {
+      margin: 0;
+      font-family: "JetBrains Mono", monospace;
+      font-size: 14px;
+      background: rgba(255, 255, 255, 0.04);
+      border-radius: 10px;
+      padding: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      color: #cffce6;
+      white-space: pre-wrap;
+      word-break: break-word;
+      max-height: 360px;
+      overflow-y: auto;
+      scrollbar-width: thin;
+    }
+    .result-script {
+      margin: 10px 0 0;
+      font-size: 13px;
+      color: var(--muted);
+      font-family: "JetBrains Mono", monospace;
+      white-space: pre-wrap;
+      word-break: break-word;
+      max-height: 160px;
+      overflow-y: auto;
+      padding: 8px;
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+    }
+    .sample-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 12px;
+      margin-top: 12px;
+    }
+    .sample-btn {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 14px;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      text-align: left;
+      color: var(--text);
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: border-color 0.2s ease, transform 0.2s ease, background 0.2s ease;
+    }
+    .sample-btn span {
+      display: block;
+    }
+    .sample-btn small {
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 400;
+    }
+    .sample-btn:hover {
+      border-color: rgba(76, 248, 210, 0.6);
+      background: rgba(76, 248, 210, 0.08);
+      transform: translateY(-2px);
+    }
+    @media (max-width: 640px) {
+      body { padding: 14px; }
+      .panel { padding: 18px; }
+      .panel-heading { flex-direction: column; align-items: flex-start; }
+      .actions { flex-direction: column; }
+      button.primary { width: 100%; }
+      button.secondary { width: 100%; }
+      textarea { min-height: 200px; }
+    }
+  </style>
+</head>
+<body>
+  <main data-app-nav>
+    <section class="panel">
+      <div class="panel-heading">
+        <div>
+          <p class="eyebrow">Scripting sandbox</p>
+          <h1>Lua console</h1>
+        </div>
+        <div id="status" class="status-pill" data-state="ready">Ready to run</div>
+      </div>
+      <p class="helper-text">
+        Scrivi uno script Lua utilizzando le API sicure esportate dal voice assistant (gpio, ble, audio, display,
+        system, webData e delay). Il server esegue il codice nel sandbox e restituisce subito lo stato.
+      </p>
+      <div class="editor">
+        <label for="lua-script">Script Lua</label>
+        <textarea id="lua-script" spellcheck="false" placeholder="Esempio: gpio.write(23, true); delay(500); gpio.write(23, false);"></textarea>
+      </div>
+      <div class="actions">
+        <button id="run-btn" class="primary">Run script</button>
+        <button id="clear-btn" class="secondary" type="button">Clear editor</button>
+      </div>
+      <div id="lua-result" class="result" data-state="idle" aria-live="polite">
+        <div class="label">Result</div>
+        <pre id="result-message">Nessuna esecuzione ancora.</pre>
+        <pre id="result-script" class="result-script" aria-label="Script preview"></pre>
+      </div>
+    </section>
+    <section class="panel">
+      <div class="panel-heading">
+        <div>
+          <p class="eyebrow">Quick samples</p>
+          <h2>Esempi utili</h2>
+        </div>
+      </div>
+      <p class="helper-text">Carica rapidamente uno snippet predefinito per testare servizi comuni.</p>
+      <div class="sample-grid" id="sample-grid"></div>
+    </section>
+  </main>
+  <script src="app-nav.js" defer></script>
+  <script>
+    (function () {
+      const samples = [
+        {
+          label: 'Blink LED',
+          description: 'Toggle GPIO 23 con 500 ms di ritardo',
+          script: `gpio.write(23, true)
+delay(500)
+gpio.write(23, false)`
+        },
+        {
+          label: 'Fetch weather',
+          description: 'Scarica il meteo corrente su weather.json',
+          script: `webData.fetch_once('https://api.open-meteo.com/v1/forecast?latitude=45.4642&longitude=9.1900&current_weather=true', 'weather.json')
+println('Weather cached')`
+        },
+        {
+          label: 'Read saved data',
+          description: 'Leggi i dati scaricati e stampali',
+          script: `local data = webData.read_data('weather.json')
+println('Contenuto:', data)`
+        },
+        {
+          label: 'BLE text',
+          description: 'Invia una stringa a un dispositivo BLE tramite bt_type',
+          script: `ble.type('AA:BB:CC:DD:EE:FF', 'Ciao dalla console Lua!')`
+        }
+      ];
+
+      const statusEl = document.getElementById('status');
+      const scriptInput = document.getElementById('lua-script');
+      const runBtn = document.getElementById('run-btn');
+      const clearBtn = document.getElementById('clear-btn');
+      const resultBlock = document.getElementById('lua-result');
+      const resultMessage = document.getElementById('result-message');
+      const resultScript = document.getElementById('result-script');
+      const sampleGrid = document.getElementById('sample-grid');
+
+      const setStatus = (text, tone = 'ready') => {
+        statusEl.textContent = text;
+        statusEl.dataset.state = tone;
+      };
+
+      const formatScriptPreview = (text) => {
+        if (!text) {
+          return '';
+        }
+        return text.trim();
+      };
+
+      const showResult = (message, script, success) => {
+        resultMessage.textContent = message || 'Nessuna risposta';
+        const preview = formatScriptPreview(script);
+        resultScript.textContent = preview ? `Script:\n${preview}` : '';
+        if (success === true) {
+          resultBlock.dataset.state = 'success';
+        } else if (success === false) {
+          resultBlock.dataset.state = 'error';
+        } else {
+          resultBlock.dataset.state = 'idle';
+        }
+      };
+
+      const runScript = async () => {
+        const script = scriptInput.value;
+        if (!script.trim()) {
+          setStatus('Inserisci uno script prima di eseguire', 'warn');
+          showResult('Lo script è vuoto', '', false);
+          return;
+        }
+        runBtn.disabled = true;
+        runBtn.textContent = 'Running…';
+        setStatus('Esecuzione in corso…', 'busy');
+        try {
+          const response = await fetch('/api/lua/execute', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ script })
+          });
+          const payload = await response.json();
+          const ok = response.ok && payload.status === 'success';
+          setStatus(ok ? 'Script eseguito' : 'Errore durante l\'esecuzione', ok ? 'success' : 'error');
+          showResult(payload.message, payload.script || script, ok);
+        } catch (err) {
+          setStatus('Errore di rete', 'error');
+          showResult(err.message || 'Richiesta fallita', script, false);
+        } finally {
+          runBtn.disabled = false;
+          runBtn.textContent = 'Run script';
+        }
+      };
+
+      runBtn.addEventListener('click', runScript);
+      clearBtn.addEventListener('click', () => {
+        scriptInput.value = '';
+        setStatus('Editor ripulito', 'info');
+        showResult('Editor pronto', '', true);
+      });
+      scriptInput.addEventListener('keydown', (event) => {
+        if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'enter') {
+          event.preventDefault();
+          runScript();
+        }
+      });
+
+      const seedSamples = () => {
+        samples.forEach((sample) => {
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'sample-btn';
+          button.dataset.script = sample.script;
+          button.dataset.label = sample.label;
+          button.innerHTML = `<span>${sample.label}</span><small>${sample.description}</small>`;
+          sampleGrid.appendChild(button);
+        });
+      };
+
+      sampleGrid.addEventListener('click', (event) => {
+        const button = event.target.closest('button[data-script]');
+        if (!button) return;
+        scriptInput.value = button.dataset.script;
+        setStatus(`Caricato «${button.dataset.label || 'sample'}»`, 'info');
+      });
+
+      seedSamples();
+      setStatus('Pronto per l\'esecuzione', 'ready');
+      showResult('Nessuna esecuzione ancora.', '', null);
+    }());
+  </script>
+</body>
+</html>

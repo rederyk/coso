@@ -88,6 +88,8 @@ void SettingsManager::reset() {
     notify(SettingKey::BleEnabled);
     notify(SettingKey::BleAdvertising);
     notify(SettingKey::BleMaxConnections);
+    notify(SettingKey::StorageSdWhitelist);
+    notify(SettingKey::StorageLittleFsWhitelist);
 }
 
 void SettingsManager::setWifiSsid(const std::string& ssid) {
@@ -341,6 +343,7 @@ void SettingsManager::loadDefaults() {
     current_.openAiApiKey.clear();
     current_.openAiEndpoint = "https://api.openai.com/v1";
     current_.voiceAssistantEnabled = false;
+    current_.voiceAssistantSystemPromptTemplate.clear();
 
     // Theme
     current_.theme = DEFAULT_THEME;
@@ -352,6 +355,15 @@ void SettingsManager::loadDefaults() {
     current_.dockIconSymbolColor = DEFAULT_DOCK_ICON_SYMBOL_COLOR;
     current_.dockIconRadius = DEFAULT_DOCK_ICON_RADIUS;
     current_.borderRadius = DEFAULT_BORDER_RADIUS;
+
+    // Web Data Manager
+    current_.webDataAllowedDomains = {"api.open-meteo.com", "newsapi.org", "httpbin.org", "wttr.in"};
+    current_.webDataMaxFileSizeKb = 50;
+    current_.webDataMaxRequestsPerHour = 10;
+    current_.webDataRequestTimeoutMs = 10000;
+
+    current_.storageAllowedSdPaths = {"/webdata","/memory","/userDir"};
+    current_.storageAllowedLittleFsPaths = {"/webdata", "/memory"};
 
     // System
     current_.version = DEFAULT_VERSION;
@@ -735,6 +747,257 @@ void SettingsManager::setVoiceAssistantEnabled(bool enabled) {
     current_.voiceAssistantEnabled = enabled;
     persistSnapshot();
     notify(SettingKey::VoiceAssistantEnabled);
+}
+
+void SettingsManager::setLocalApiMode(bool enabled) {
+    if (!initialized_ || enabled == current_.localApiMode) {
+        return;
+    }
+    current_.localApiMode = enabled;
+    persistSnapshot();
+    notify(SettingKey::LocalApiMode);
+}
+
+void SettingsManager::setDockerHostIp(const std::string& ip) {
+    if (!initialized_ || ip == current_.dockerHostIp) {
+        return;
+    }
+    current_.dockerHostIp = ip;
+    persistSnapshot();
+    notify(SettingKey::DockerHostIp);
+}
+
+void SettingsManager::setWhisperCloudEndpoint(const std::string& endpoint) {
+    if (!initialized_ || endpoint == current_.whisperCloudEndpoint) {
+        return;
+    }
+    current_.whisperCloudEndpoint = endpoint;
+    persistSnapshot();
+    notify(SettingKey::WhisperCloudEndpoint);
+}
+
+void SettingsManager::setWhisperLocalEndpoint(const std::string& endpoint) {
+    if (!initialized_ || endpoint == current_.whisperLocalEndpoint) {
+        return;
+    }
+    current_.whisperLocalEndpoint = endpoint;
+    persistSnapshot();
+    notify(SettingKey::WhisperLocalEndpoint);
+}
+
+void SettingsManager::setLlmCloudEndpoint(const std::string& endpoint) {
+    if (!initialized_ || endpoint == current_.llmCloudEndpoint) {
+        return;
+    }
+    current_.llmCloudEndpoint = endpoint;
+    persistSnapshot();
+    notify(SettingKey::LlmCloudEndpoint);
+}
+
+void SettingsManager::setLlmLocalEndpoint(const std::string& endpoint) {
+    if (!initialized_ || endpoint == current_.llmLocalEndpoint) {
+        return;
+    }
+    current_.llmLocalEndpoint = endpoint;
+    persistSnapshot();
+    notify(SettingKey::LlmLocalEndpoint);
+}
+
+void SettingsManager::setLlmModel(const std::string& model) {
+    if (!initialized_ || model == current_.llmModel) {
+        return;
+    }
+    current_.llmModel = model;
+    persistSnapshot();
+    notify(SettingKey::LlmModel);
+}
+
+void SettingsManager::setTtsEnabled(bool enabled) {
+    if (!initialized_ || enabled == current_.ttsEnabled) {
+        return;
+    }
+    current_.ttsEnabled = enabled;
+    persistSnapshot();
+    notify(SettingKey::TtsEnabled);
+}
+
+void SettingsManager::setTtsCloudEndpoint(const std::string& endpoint) {
+    if (!initialized_ || endpoint == current_.ttsCloudEndpoint) {
+        return;
+    }
+    current_.ttsCloudEndpoint = endpoint;
+    persistSnapshot();
+    notify(SettingKey::TtsCloudEndpoint);
+}
+
+void SettingsManager::setTtsLocalEndpoint(const std::string& endpoint) {
+    if (!initialized_ || endpoint == current_.ttsLocalEndpoint) {
+        return;
+    }
+    current_.ttsLocalEndpoint = endpoint;
+    persistSnapshot();
+    notify(SettingKey::TtsLocalEndpoint);
+}
+
+void SettingsManager::setTtsVoice(const std::string& voice) {
+    if (!initialized_ || voice == current_.ttsVoice) {
+        return;
+    }
+    current_.ttsVoice = voice;
+    persistSnapshot();
+    notify(SettingKey::TtsVoice);
+}
+
+void SettingsManager::setTtsModel(const std::string& model) {
+    if (!initialized_ || model == current_.ttsModel) {
+        return;
+    }
+    current_.ttsModel = model;
+    persistSnapshot();
+    notify(SettingKey::TtsModel);
+}
+
+void SettingsManager::setTtsSpeed(float speed) {
+    if (!initialized_ || speed == current_.ttsSpeed) {
+        return;
+    }
+    current_.ttsSpeed = speed;
+    persistSnapshot();
+    notify(SettingKey::TtsSpeed);
+}
+
+void SettingsManager::setTtsOutputFormat(const std::string& format) {
+    if (!initialized_ || format == current_.ttsOutputFormat) {
+        return;
+    }
+    current_.ttsOutputFormat = format;
+    persistSnapshot();
+    notify(SettingKey::TtsOutputFormat);
+}
+
+void SettingsManager::setTtsOutputPath(const std::string& path) {
+    if (!initialized_ || path == current_.ttsOutputPath) {
+        return;
+    }
+    current_.ttsOutputPath = path;
+    persistSnapshot();
+    notify(SettingKey::TtsOutputPath);
+}
+
+void SettingsManager::setVoiceAssistantSystemPromptTemplate(const std::string& prompt) {
+    if (!initialized_ || prompt == current_.voiceAssistantSystemPromptTemplate) {
+        return;
+    }
+    current_.voiceAssistantSystemPromptTemplate = prompt;
+    persistSnapshot();
+    notify(SettingKey::VoiceAssistantSystemPrompt);
+}
+
+// Time & NTP setters
+void SettingsManager::setTimezone(const std::string& tz) {
+    if (!initialized_ || tz == current_.timezone) {
+        return;
+    }
+    current_.timezone = tz;
+    persistSnapshot();
+    notify(SettingKey::Timezone);
+}
+
+void SettingsManager::setNtpServer(const std::string& server) {
+    if (!initialized_ || server == current_.ntpServer) {
+        return;
+    }
+    current_.ntpServer = server;
+    persistSnapshot();
+    notify(SettingKey::NtpServer);
+}
+
+void SettingsManager::setNtpServer2(const std::string& server) {
+    if (!initialized_ || server == current_.ntpServer2) {
+        return;
+    }
+    current_.ntpServer2 = server;
+    persistSnapshot();
+    notify(SettingKey::NtpServer2);
+}
+
+void SettingsManager::setNtpServer3(const std::string& server) {
+    if (!initialized_ || server == current_.ntpServer3) {
+        return;
+    }
+    current_.ntpServer3 = server;
+    persistSnapshot();
+    notify(SettingKey::NtpServer3);
+}
+
+void SettingsManager::setAutoTimeSync(bool enabled) {
+    if (!initialized_ || enabled == current_.autoTimeSync) {
+        return;
+    }
+    current_.autoTimeSync = enabled;
+    persistSnapshot();
+    notify(SettingKey::AutoTimeSync);
+}
+
+void SettingsManager::setTimeSyncIntervalHours(uint32_t hours) {
+    if (!initialized_ || hours == current_.timeSyncIntervalHours) {
+        return;
+    }
+    current_.timeSyncIntervalHours = hours;
+    persistSnapshot();
+    notify(SettingKey::TimeSyncIntervalHours);
+}
+
+// Web Data Manager setters
+void SettingsManager::setWebDataAllowedDomains(const std::vector<std::string>& domains) {
+    if (!initialized_ || domains == current_.webDataAllowedDomains) {
+        return;
+    }
+    current_.webDataAllowedDomains = domains;
+    persistSnapshot();
+    // Note: No specific SettingKey for web data manager settings yet
+}
+
+void SettingsManager::setWebDataMaxFileSizeKb(size_t sizeKb) {
+    if (!initialized_ || sizeKb == current_.webDataMaxFileSizeKb) {
+        return;
+    }
+    current_.webDataMaxFileSizeKb = sizeKb;
+    persistSnapshot();
+}
+
+void SettingsManager::setWebDataMaxRequestsPerHour(uint32_t maxRequests) {
+    if (!initialized_ || maxRequests == current_.webDataMaxRequestsPerHour) {
+        return;
+    }
+    current_.webDataMaxRequestsPerHour = maxRequests;
+    persistSnapshot();
+}
+
+void SettingsManager::setWebDataRequestTimeoutMs(uint32_t timeoutMs) {
+    if (!initialized_ || timeoutMs == current_.webDataRequestTimeoutMs) {
+        return;
+    }
+    current_.webDataRequestTimeoutMs = timeoutMs;
+    persistSnapshot();
+}
+
+void SettingsManager::setStorageAllowedSdPaths(const std::vector<std::string>& paths) {
+    if (!initialized_ || paths == current_.storageAllowedSdPaths) {
+        return;
+    }
+    current_.storageAllowedSdPaths = paths;
+    persistSnapshot();
+    notify(SettingKey::StorageSdWhitelist);
+}
+
+void SettingsManager::setStorageAllowedLittleFsPaths(const std::vector<std::string>& paths) {
+    if (!initialized_ || paths == current_.storageAllowedLittleFsPaths) {
+        return;
+    }
+    current_.storageAllowedLittleFsPaths = paths;
+    persistSnapshot();
+    notify(SettingKey::StorageLittleFsWhitelist);
 }
 
 void SettingsManager::notify(SettingKey key) {

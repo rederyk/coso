@@ -1,0 +1,35 @@
+{
+  "namespace": "system",
+  "description": "Informazioni di sistema e diagnostica dispositivo",
+  "functions": {
+    "ping": {
+      "signature": "system.ping() -> string",
+      "description": "Test connettività (risponde 'pong')",
+      "examples": [{"code": "system.ping()"}]
+    },
+    "uptime": {
+      "signature": "system.uptime() -> string",
+      "description": "Secondi dall'ultimo boot",
+      "examples": [{"code": "local ok, uptime = system.uptime()\nprintln('Uptime: ' .. uptime .. ' secondi')"}]
+    },
+    "heap": {
+      "signature": "system.heap() -> string",
+      "description": "Memoria RAM/PSRAM disponibile",
+      "examples": [{"code": "local ok, heap = system.heap()\nprintln(heap)"}]
+    },
+    "sd_status": {
+      "signature": "system.sd_status() -> string",
+      "description": "Stato SD card: montata, spazio totale/usato",
+      "examples": [{"code": "local ok, status = system.sd_status()\nprintln(status)"}]
+    },
+    "status": {
+      "signature": "system.status() -> string",
+      "description": "Status completo: heap, PSRAM, SD, WiFi",
+      "examples": [{"code": "local ok, status = system.status()\nprintln(status)"}]
+    }
+  },
+  "notes": [
+    "Tutte le funzioni ritornano (success, message)",
+    "Formato output: testo human-readable multi-line"
+  ]
+}

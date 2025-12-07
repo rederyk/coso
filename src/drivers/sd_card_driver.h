@@ -28,6 +28,7 @@ public:
     const std::string& lastError() const { return last_error_; }
 
     std::vector<SdCardEntry> listDirectory(const char* path, size_t max_entries = 32);
+    bool removePath(const char* path);
 
     // SD mutex operations for thread safety
     bool acquireSdMutex(TickType_t timeout_ms = portMAX_DELAY);

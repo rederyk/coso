@@ -44,6 +44,20 @@ void fillJsonFromSnapshot(const SettingsSnapshot& snapshot, JsonDocument& doc) {
     audio["volume"] = snapshot.audioVolume;
     audio["enabled"] = snapshot.audioEnabled;
 
+    // Voice Assistant
+    JsonObject voiceAssistant = doc["voiceAssistant"].to<JsonObject>();
+    voiceAssistant["enabled"] = snapshot.voiceAssistantEnabled;
+    voiceAssistant["openAiApiKey"] = snapshot.openAiApiKey;
+    voiceAssistant["openAiEndpoint"] = snapshot.openAiEndpoint;
+    voiceAssistant["localApiMode"] = snapshot.localApiMode;
+    voiceAssistant["dockerHostIp"] = snapshot.dockerHostIp;
+    voiceAssistant["whisperCloudEndpoint"] = snapshot.whisperCloudEndpoint;
+    voiceAssistant["whisperLocalEndpoint"] = snapshot.whisperLocalEndpoint;
+    voiceAssistant["llmCloudEndpoint"] = snapshot.llmCloudEndpoint;
+    voiceAssistant["llmLocalEndpoint"] = snapshot.llmLocalEndpoint;
+    voiceAssistant["llmModel"] = snapshot.llmModel;
+    voiceAssistant["systemPromptTemplate"] = snapshot.voiceAssistantSystemPromptTemplate;
+
     // Theme palette
     JsonObject palette = doc["palette"].to<JsonObject>();
     palette["primary"] = snapshot.primaryColor;
@@ -53,6 +67,21 @@ void fillJsonFromSnapshot(const SettingsSnapshot& snapshot, JsonDocument& doc) {
     palette["dockIconBackground"] = snapshot.dockIconBackgroundColor;
     palette["dockIconSymbol"] = snapshot.dockIconSymbolColor;
     palette["dockIconRadius"] = snapshot.dockIconRadius;
+
+    // Storage access whitelist
+    JsonObject storage = doc["storage"].to<JsonObject>();
+    JsonArray sd_allowed = storage["sdAllowedPaths"].to<JsonArray>();
+    for (const auto& path : snapshot.storageAllowedSdPaths) {
+        if (!path.empty()) {
+            sd_allowed.add(path);
+        }
+    }
+    JsonArray littlefs_allowed = storage["littleFsAllowedPaths"].to<JsonArray>();
+    for (const auto& path : snapshot.storageAllowedLittleFsPaths) {
+        if (!path.empty()) {
+            littlefs_allowed.add(path);
+        }
+    }
 
     // System
     JsonObject system = doc["system"].to<JsonObject>();
@@ -92,6 +121,20 @@ void fillSnapshotFromJson(SettingsSnapshot& snapshot, const JsonDocument& doc) {
     snapshot.audioVolume = doc["audio"]["volume"] | snapshot.audioVolume;
     snapshot.audioEnabled = doc["audio"]["enabled"] | snapshot.audioEnabled;
 
+    // Voice Assistant
+    snapshot.voiceAssistantEnabled = doc["voiceAssistant"]["enabled"] | snapshot.voiceAssistantEnabled;
+    snapshot.openAiApiKey = doc["voiceAssistant"]["openAiApiKey"] | snapshot.openAiApiKey;
+    snapshot.openAiEndpoint = doc["voiceAssistant"]["openAiEndpoint"] | snapshot.openAiEndpoint;
+    snapshot.localApiMode = doc["voiceAssistant"]["localApiMode"] | snapshot.localApiMode;
+    snapshot.dockerHostIp = doc["voiceAssistant"]["dockerHostIp"] | snapshot.dockerHostIp;
+    snapshot.whisperCloudEndpoint = doc["voiceAssistant"]["whisperCloudEndpoint"] | snapshot.whisperCloudEndpoint;
+    snapshot.whisperLocalEndpoint = doc["voiceAssistant"]["whisperLocalEndpoint"] | snapshot.whisperLocalEndpoint;
+    snapshot.llmCloudEndpoint = doc["voiceAssistant"]["llmCloudEndpoint"] | snapshot.llmCloudEndpoint;
+    snapshot.llmLocalEndpoint = doc["voiceAssistant"]["llmLocalEndpoint"] | snapshot.llmLocalEndpoint;
+    snapshot.llmModel = doc["voiceAssistant"]["llmModel"] | snapshot.llmModel;
+    snapshot.voiceAssistantSystemPromptTemplate =
+        doc["voiceAssistant"]["systemPromptTemplate"] | snapshot.voiceAssistantSystemPromptTemplate;
+
     // Theme palette
     snapshot.primaryColor = doc["palette"]["primary"] | snapshot.primaryColor;
     snapshot.accentColor = doc["palette"]["accent"] | snapshot.accentColor;
@@ -102,6 +145,27 @@ void fillSnapshotFromJson(SettingsSnapshot& snapshot, const JsonDocument& doc) {
     snapshot.dockIconSymbolColor =
         doc["palette"]["dockIconSymbol"] | snapshot.dockIconSymbolColor;
     snapshot.dockIconRadius = doc["palette"]["dockIconRadius"] | snapshot.dockIconRadius;
+
+    JsonArrayConst sd_allowed = doc["storage"]["sdAllowedPaths"].as<JsonArrayConst>();
+    if (!sd_allowed.isNull()) {
+        snapshot.storageAllowedSdPaths.clear();
+        for (JsonVariantConst entry : sd_allowed) {
+            const char* path = entry | "";
+            if (path && path[0] != '\0') {
+                snapshot.storageAllowedSdPaths.push_back(path);
+            }
+        }
+    }
+    JsonArrayConst littlefs_allowed = doc["storage"]["littleFsAllowedPaths"].as<JsonArrayConst>();
+    if (!littlefs_allowed.isNull()) {
+        snapshot.storageAllowedLittleFsPaths.clear();
+        for (JsonVariantConst entry : littlefs_allowed) {
+            const char* path = entry | "";
+            if (path && path[0] != '\0') {
+                snapshot.storageAllowedLittleFsPaths.push_back(path);
+            }
+        }
+    }
 
     // System
     snapshot.version = doc["system"]["version"] | snapshot.version;

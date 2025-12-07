@@ -1,0 +1,62 @@
+{
+  "namespace": "memory",
+  "description": "File system persistente (flash storage)",
+  "functions": {
+    "read_file": {
+      "signature": "memory.read_file(path) -> string",
+      "description": "Legge contenuto file",
+      "examples": [
+        {"code": "local content = memory.read_file('notes.txt')\nprintln(content)"}
+      ]
+    },
+    "write_file": {
+      "signature": "memory.write_file(path, content) -> boolean",
+      "description": "Scrive/sovrascrive file",
+      "examples": [
+        {"code": "memory.write_file('todo.txt', 'Comprare latte\\nChiamare Mario')"}
+      ]
+    },
+    "append_file": {
+      "signature": "memory.append_file(path, content) -> boolean",
+      "description": "Aggiunge contenuto a fine file",
+      "examples": [
+        {"code": "memory.append_file('log.txt', 'Evento registrato\\n')"}
+      ]
+    },
+    "prepend_file": {
+      "signature": "memory.prepend_file(path, content) -> boolean",
+      "description": "Aggiunge contenuto a inizio file",
+      "examples": [
+        {"code": "memory.prepend_file('log.txt', 'NUOVO LOG\\n')"}
+      ]
+    },
+    "delete_file": {
+      "signature": "memory.delete_file(path) -> boolean",
+      "description": "Elimina file",
+      "examples": [
+        {"code": "memory.delete_file('old_data.txt')"}
+      ]
+    },
+    "list_files": {
+      "signature": "memory.list_files() -> string",
+      "description": "Lista file in memory",
+      "examples": [
+        {"code": "local files = memory.list_files()\nprintln(files)"}
+      ]
+    },
+    "grep_files": {
+      "signature": "memory.grep_files(pattern) -> string",
+      "description": "Cerca pattern in tutti i file",
+      "examples": [
+        {"code": "local results = memory.grep_files('TODO')\nprintln(results)"}
+      ]
+    }
+  },
+  "notes": [
+    "Storage: LittleFS su flash (~1MB)",
+    "Path: relativi a /data/memory/",
+    "Supporta sottodirectory: 'logs/error.txt'",
+    "Encoding: UTF-8",
+    "Dati persistono tra reboot"
+  ]
+}

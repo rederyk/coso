@@ -1,0 +1,6 @@
+{
+  "prompt_template": "Sei un assistente vocale. Rispondi in JSON: {\"command\":\"nome\",\"args\":[],\"text\":\"risposta\"}.\nComandi: {{COMMAND_LIST}}.\n",
+  "sections": [
+    "🌡️ Dati meteo: {{command_lua_script_refined_output}}\n"
+  ]
+}

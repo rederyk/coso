@@ -1,0 +1,60 @@
+{
+  "namespace": "tts (Text-to-Speech)",
+  "description": "Sintesi vocale tramite TTS WebUI (OpenAI-compatible API) - genera e salva file audio da testo",
+  "concepts": {
+    "speak": "Converte testo in audio e salva in memoria (path configurabile)",
+    "output_path": "File salvati in /memory/audio/ (configurabile)",
+    "formats": "mp3, opus, aac, flac (default: mp3)",
+    "voices": "alloy, echo, fable, onyx, nova, shimmer (OpenAI voices)",
+    "speed": "0.25 - 4.0 (default: 1.0)"
+  },
+  "usage_examples": [
+    {
+      "task": "Genera audio vocale da testo",
+      "code": "local file_path = tts.speak('Ciao, questa è una risposta vocale')\nif file_path then\n  println('Audio salvato: ' .. file_path)\nelse\n  println('Errore TTS')\nend"
+    },
+    {
+      "task": "Risposta vocale condizionale",
+      "code": "local user_wants_voice = string.find(user_input, 'parlami') or string.find(user_input, 'a voce')\nif user_wants_voice then\n  local audio = tts.speak('Ecco la tua risposta vocale')\n  if audio then\n    return audio\n  end\nend"
+    },
+    {
+      "task": "TTS per notifiche importanti",
+      "code": "if alert_level == 'critical' then\n  tts.speak('Attenzione! Evento critico rilevato')\nend"
+    }
+  ],
+  "features": {
+    "api_compatible": "OpenAI TTS API compatible (cloud e locale TTS WebUI)",
+    "local_mode": "Supporta TTS WebUI locale su http://localhost:7778",
+    "cloud_mode": "Supporta OpenAI cloud TTS con API key",
+    "file_storage": "Salva automaticamente audio in memoria con timestamp",
+    "auto_config": "Usa settings locali/cloud in base a localApiMode"
+  },
+  "configuration": {
+    "endpoint_local": "http://192.168.1.51:7778/v1/audio/speech (TTS WebUI)",
+    "endpoint_cloud": "https://api.openai.com/v1/audio/speech (OpenAI)",
+    "default_voice": "alloy",
+    "default_model": "tts-1",
+    "default_speed": 1.0,
+    "output_format": "mp3"
+  },
+  "return_values": {
+    "success": "Ritorna percorso file salvato (es: '/memory/audio/tts_20250112_143022.mp3')",
+    "failure": "Ritorna nil + messaggio errore"
+  },
+  "when_to_use": [
+    "Utente chiede esplicitamente risposta vocale ('parlami', 'dimmi a voce')",
+    "TTS globalmente abilitato nelle settings (ttsEnabled = true)",
+    "Notifiche critiche o alert importanti",
+    "Feedback vocale per azioni importanti",
+    "Assistenza accessibilità per utenti con difficoltà visive"
+  ],
+  "notes": [
+    "TTS deve essere abilitato in settings (ttsEnabled)",
+    "Richiede connessione WiFi attiva",
+    "File salvati automaticamente con timestamp nel nome",
+    "Formato filename: tts_YYYYMMDD_HHMMSS.{format}",
+    "Directory creata automaticamente se non esiste",
+    "API key necessaria solo per cloud mode",
+    "Timeout default: 30 secondi per richiesta"
+  ]
+}

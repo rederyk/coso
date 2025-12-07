@@ -1,0 +1,339 @@
+{
+  "title": "Calendar - Scenari d'Uso Pratici",
+  "description": "Esempi completi di conversazioni utente-IA per la creazione di eventi calendario",
+  "scenarios": [
+    {
+      "category": "Sveglie Personali",
+      "examples": [
+        {
+          "user_request": "Crea una sveglia per domani alle 7",
+          "ai_response": {
+            "command": "calendar_create_alarm",
+            "args": ["Sveglia Mattina", "2025-12-06", "07:00", "println('🌅 Buongiorno! Ora di svegliarsi!')"],
+            "text": "Ho creato una sveglia per domani 6 dicembre alle 7:00"
+          }
+        },
+        {
+          "user_request": "Voglio una sveglia che suoni dal lunedì al venerdì alle 7:30",
+          "ai_response": {
+            "command": "calendar_create_recurring",
+            "args": ["Sveglia Lavoro", "07:30", "62", "for i=1,5 do gpio.toggle(23);delay(500);end;println('⏰ Ora di alzarsi!')"],
+            "text": "Ho creato una sveglia ricorrente dal Lunedì al Venerdì alle 7:30 con LED lampeggiante",
+            "notes": "weekdays_mask=62 corrisponde a Lun-Ven (0b0111110)"
+          }
+        },
+        {
+          "user_request": "Nel weekend voglio svegliarmi alle 9",
+          "ai_response": {
+            "command": "calendar_create_recurring",
+            "args": ["Sveglia Weekend", "09:00", "65", "println('😴 Weekend! Riposa bene!')"],
+            "text": "Perfetto! Ho aggiunto una sveglia per Sabato e Domenica alle 9:00",
+            "notes": "weekdays_mask=65 corrisponde a Sab+Dom (0b1000001)"
+          }
+        }
+      ]
+    },
+    {
+      "category": "Promemoria Salute",
+      "examples": [
+        {
+          "user_request": "Ricordami di prendere la medicina ogni giorno alle 8 di mattina e alle 8 di sera",
+          "ai_response": [
+            {
+              "command": "calendar_create_recurring",
+              "args": ["Medicina Mattina", "08:00", "127", "println('💊 Ricorda: prendere la medicina mattutina!')"],
+              "text": "Ho creato il primo promemoria per le 8 di mattina"
+            },
+            {
+              "command": "calendar_create_recurring",
+              "args": ["Medicina Sera", "20:00", "127", "println('💊 Ricorda: prendere la medicina serale!')"],
+              "text": "E il secondo per le 20:00. Ora hai due promemoria giornalieri",
+              "notes": "weekdays_mask=127 = tutti i giorni (0b1111111)"
+            }
+          ]
+        },
+        {
+          "user_request": "Ricordami di bere acqua ogni 2 ore durante il giorno",
+          "ai_response": {
+            "multiple_commands": true,
+            "times": ["10:00", "12:00", "14:00", "16:00", "18:00", "20:00"],
+            "pattern": {
+              "command": "calendar_create_recurring",
+              "args": ["Idratazione HH:MM", "HH:MM", "127", "println('💧 Ricordati di bere acqua!')"]
+            },
+            "text": "Ho creato 6 promemoria di idratazione dalle 10:00 alle 20:00, ogni 2 ore"
+          }
+        }
+      ]
+    },
+    {
+      "category": "Automazione Casa Intelligente",
+      "examples": [
+        {
+          "user_request": "Accendi le luci ogni sera alle 19",
+          "ai_response": {
+            "command": "calendar_create_recurring",
+            "args": ["Luci Serali", "19:00", "127", "gpio.write(23,true);println('💡 Luci accese automaticamente')"],
+            "text": "Ho programmato l'accensione automatica delle luci ogni sera alle 19:00"
+          }
+        },
+        {
+          "user_request": "Spegni le luci a mezzanotte",
+          "ai_response": {
+            "command": "calendar_create_recurring",
+            "args": ["Luci Spente", "00:00", "127", "gpio.write(23,false);println('🌙 Luci spente, buonanotte')"],
+            "text": "Fatto! Le luci si spegneranno automaticamente a mezzanotte"
+          }
+        },
+        {
+          "user_request": "Controlla il meteo ogni mattina alle 7 e dimmi la temperatura",
+          "ai_response": {
+            "command": "calendar_create_recurring",
+            "args": ["Meteo Mattina", "07:00", "127", "local c=docs.reference.cities();webData.fetch_once('https://api.open-meteo.com/v1/forecast?latitude='..c.Milano.lat..'&longitude='..c.Milano.lon..'&current=temperature_2m,weather_code','weather_morning.json');local w=webData.read_data('weather_morning.json');println('🌤️ Meteo aggiornato: '..w)"],
+            "text": "Ho creato un evento che scarica i dati meteo ogni mattina alle 7:00. I dati saranno salvati in weather_morning.json",
+            "notes": "Usa docs.reference.cities() per ottenere coordinate Milano"
+          }
+        }
+      ]
+    },
+    {
+      "category": "Produttività e Lavoro",
+      "examples": [
+        {
+          "user_request": "Ricordami la riunione di domani alle 14",
+          "ai_response": {
+            "command": "calendar_create_alarm",
+            "args": ["Riunione Importante", "2025-12-06", "14:00", "println('⏰ Riunione tra 5 minuti! Prepara i documenti')"],
+            "text": "Ho creato un promemoria per la riunione domani 6 dicembre alle 14:00"
+          }
+        },
+        {
+          "user_request": "Ogni lunedì e mercoledì alle 18 fai un backup delle configurazioni",
+          "ai_response": {
+            "command": "calendar_create_recurring",
+            "args": ["Backup Settimanale", "18:00", "10", "local ts=uptime();local cfg=system.status();memory.write_file('backup_'..ts..'.json',cfg);println('💾 Backup configurazioni salvato')"],
+            "text": "Ho programmato backup automatici ogni Lunedì e Mercoledì alle 18:00",
+            "notes": "weekdays_mask=10 = Lun(2)+Mer(8) = 2+8=10"
+          }
+        },
+        {
+          "user_request": "Dalle 9 alle 17, ogni ora nei giorni lavorativi, ricordami di fare una pausa",
+          "ai_response": {
+            "multiple_commands": true,
+            "times": ["09:00", "10:00", "11:00", "12:00", "13:00", "14:00", "15:00", "16:00", "17:00"],
+            "pattern": {
+              "command": "calendar_create_recurring",
+              "args": ["Pausa HH:MM", "HH:MM", "62", "println('☕ Pausa! Alzati e muoviti un po\\'')"]
+            },
+            "text": "Ho creato 9 promemoria di pausa orari, dal Lunedì al Venerdì dalle 9 alle 17",
+            "notes": "weekdays_mask=62 = Lun-Ven"
+          }
+        }
+      ]
+    },
+    {
+      "category": "Intrattenimento",
+      "examples": [
+        {
+          "user_request": "Ogni mattina alle 7 avvia la mia radio preferita",
+          "ai_response": {
+            "command": "calendar_create_recurring",
+            "args": ["Radio Mattina", "07:00", "127", "radio.play('http://stream.example.com/morning.mp3');delay(2000);radio.set_volume(50);println('📻 Radio mattutina avviata')"],
+            "text": "Ho programmato l'avvio automatico della radio ogni mattina alle 7:00 con volume al 50%"
+          }
+        },
+        {
+          "user_request": "Il venerdì sera alle 20 metti musica rilassante",
+          "ai_response": {
+            "command": "calendar_create_recurring",
+            "args": ["Musica Venerdì", "20:00", "32", "radio.play('/sd/music/relax_playlist.mp3');println('🎵 Musica rilassante del venerdì')"],
+            "text": "Perfetto! Ogni Venerdì sera alle 20:00 partirà la musica rilassante",
+            "notes": "weekdays_mask=32 = solo Venerdì"
+          }
+        }
+      ]
+    },
+    {
+      "category": "Gestione Eventi",
+      "examples": [
+        {
+          "user_request": "Mostra i miei allarmi",
+          "ai_response": {
+            "command": "calendar_list",
+            "args": [],
+            "text": "Ecco tutti i tuoi eventi e allarmi programmati:"
+          }
+        },
+        {
+          "user_request": "Elimina l'allarme delle 8",
+          "ai_response": [
+            {
+              "command": "calendar_list",
+              "args": [],
+              "text": "Cerco l'allarme delle 8 tra i tuoi eventi..."
+            },
+            {
+              "command": "calendar_delete",
+              "args": ["evt_12345678"],
+              "text": "Ho eliminato l'allarme delle 8",
+              "notes": "Prima lista per trovare ID corretto, poi elimina"
+            }
+          ]
+        },
+        {
+          "user_request": "Disattiva gli allarmi per questa settimana",
+          "ai_response": {
+            "command": "calendar_enable",
+            "args": ["evt_allarmo_lavoro", "false"],
+            "text": "Ho disabilitato gli allarmi. Potrai riattivarli quando vuoi",
+            "notes": "Usa enable(id, false) invece di eliminare per disattivazione temporanea"
+          }
+        },
+        {
+          "user_request": "Fai partire subito l'allarme del mattino per testarlo",
+          "ai_response": {
+            "command": "calendar_run",
+            "args": ["evt_sveglia_mattina"],
+            "text": "Eseguo l'allarme immediatamente per testarlo!",
+            "notes": "calendar_run esegue evento senza aspettare orario schedulato"
+          }
+        },
+        {
+          "user_request": "Mostra quando sono stati eseguiti gli ultimi allarmi",
+          "ai_response": {
+            "command": "calendar_history",
+            "args": [],
+            "text": "Ecco lo storico delle ultime esecuzioni:",
+            "notes": "Mostra timestamp, successo/errore, durata, output"
+          }
+        }
+      ]
+    },
+    {
+      "category": "Scenari Complessi Multi-Step",
+      "examples": [
+        {
+          "user_request": "Setup completo sveglie: settimana alle 7:30, weekend alle 9",
+          "ai_response": [
+            {
+              "command": "calendar_create_recurring",
+              "args": ["Sveglia Settimanale", "07:30", "62", "for i=1,5 do gpio.toggle(23);delay(500);end;println('⏰ Buongiorno! Ora di lavorare')"],
+              "text": "Primo step: sveglia Lun-Ven alle 7:30 creata"
+            },
+            {
+              "command": "calendar_create_recurring",
+              "args": ["Sveglia Weekend", "09:00", "65", "println('😴 Buon weekend! Riposa ancora un po\\'')"],
+              "text": "Secondo step: sveglia Sab-Dom alle 9:00 creata. Setup completo!"
+            }
+          ]
+        },
+        {
+          "user_request": "Routine smart home: luci alle 19, meteo alle 7, backup alle 2 di notte",
+          "ai_response": [
+            {
+              "command": "calendar_create_recurring",
+              "args": ["Meteo Mattina", "07:00", "127", "local c=docs.reference.cities();webData.fetch_once('https://api.open-meteo.com/v1/forecast?latitude='..c.Milano.lat..'&longitude='..c.Milano.lon..'&current=temperature_2m','weather.json');println('🌤️ Meteo aggiornato')"],
+              "text": "1/3: Meteo automatico ore 7 creato"
+            },
+            {
+              "command": "calendar_create_recurring",
+              "args": ["Luci Serali", "19:00", "127", "gpio.write(23,true);println('💡 Luci accese')"],
+              "text": "2/3: Accensione luci ore 19 creata"
+            },
+            {
+              "command": "calendar_create_recurring",
+              "args": ["Backup Notturno", "02:00", "127", "local cfg=system.status();memory.write_file('backup_config.json',cfg);println('💾 Backup completato')"],
+              "text": "3/3: Backup notturno ore 2 creato. Routine smart home completa!"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "common_weekdays_patterns": {
+    "description": "Pattern comuni di giorni settimana per quick reference",
+    "patterns": {
+      "Tutti i giorni": {
+        "mask": "127",
+        "binary": "0b1111111",
+        "days": "Dom+Lun+Mar+Mer+Gio+Ven+Sab"
+      },
+      "Giorni lavorativi": {
+        "mask": "62",
+        "binary": "0b0111110",
+        "days": "Lun+Mar+Mer+Gio+Ven"
+      },
+      "Weekend": {
+        "mask": "65",
+        "binary": "0b1000001",
+        "days": "Sab+Dom"
+      },
+      "Solo Lunedì": {
+        "mask": "2",
+        "binary": "0b0000010",
+        "days": "Lun"
+      },
+      "Solo Domenica": {
+        "mask": "1",
+        "binary": "0b0000001",
+        "days": "Dom"
+      },
+      "Lun-Mer-Ven": {
+        "mask": "42",
+        "binary": "0b0101010",
+        "days": "Lun+Mer+Ven",
+        "calculation": "2+8+32=42"
+      },
+      "Mar-Gio": {
+        "mask": "20",
+        "binary": "0b0010100",
+        "days": "Mar+Gio",
+        "calculation": "4+16=20"
+      },
+      "Lun-Mer": {
+        "mask": "10",
+        "binary": "0b0001010",
+        "days": "Lun+Mer",
+        "calculation": "2+8=10"
+      }
+    }
+  },
+  "script_templates": {
+    "description": "Template script Lua riutilizzabili per scenari comuni",
+    "templates": {
+      "led_blink": "for i=1,5 do gpio.toggle(23);delay(500);end;println('Lampeggio completato')",
+      "simple_notification": "println('⏰ Promemoria evento!')",
+      "fetch_weather": "local c=docs.reference.cities();webData.fetch_once('https://api.open-meteo.com/v1/forecast?latitude='..c.Milano.lat..'&longitude='..c.Milano.lon..'&current=temperature_2m','weather.json');println('Meteo scaricato')",
+      "gpio_on": "gpio.write(23,true);println('GPIO 23 acceso')",
+      "gpio_off": "gpio.write(23,false);println('GPIO 23 spento')",
+      "play_radio": "radio.play('http://stream.url.com/radio.mp3');delay(2000);radio.set_volume(50);println('Radio avviata')",
+      "backup_config": "local cfg=system.status();memory.write_file('backup_config.json',cfg);println('Backup salvato')",
+      "ble_notification": "ble.type('Promemoria evento importante');delay(100);ble.send_key('RETURN');println('Notifica BLE inviata')"
+    }
+  },
+  "ai_decision_tree": {
+    "description": "Albero decisionale per l'IA nella scelta del comando calendar corretto",
+    "steps": [
+      {
+        "question": "L'evento si ripete o è una tantum?",
+        "one_time": "Usa calendar_create_alarm (richiede data specifica YYYY-MM-DD)",
+        "recurring": "Usa calendar_create_recurring (richiede weekdays mask)"
+      },
+      {
+        "question": "Quali giorni della settimana?",
+        "all_days": "weekdays_mask = 127",
+        "weekdays": "weekdays_mask = 62",
+        "weekend": "weekdays_mask = 65",
+        "custom": "Somma valori: Dom=1, Lun=2, Mar=4, Mer=8, Gio=16, Ven=32, Sab=64"
+      },
+      {
+        "question": "Che azione deve fare?",
+        "simple_notification": "println('messaggio')",
+        "gpio_control": "gpio.write(pin, value) o gpio.toggle(pin)",
+        "audio": "radio.play(url) o radio.stop()",
+        "web_data": "webData.fetch_once(url, file)",
+        "complex": "Combina più API nello stesso script"
+      }
+    ]
+  }
+}

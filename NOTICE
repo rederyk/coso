@@ -8,7 +8,10 @@ Third-party components:
 - LVGL (MIT) — lvgl/lvgl
 - ArduinoJson (MIT) — bblanchon/ArduinoJson
 - NimBLE-Arduino (Apache-2.0) — h2zero/NimBLE-Arduino
+- openESPaudio (MIT) — lib/openESPaudio
 - TFT_eSPI (MIT) — lib/TFT_eSPI/license.txt
+- cJSON (MIT) — https://github.com/DaveGamble/cJSON
+- Esp32Lua (MIT) — https://github.com/fischer-simon/Esp32Lua
 - Fonts for optional emoji/text generation:
   - NotoSansSymbols2 (SIL Open Font License 1.1) — tools/fonts/NotoSansSymbols2-Regular.ttf
   - Montserrat (SIL Open Font License 1.1) — tools/fonts/Montserrat-Regular.ttf

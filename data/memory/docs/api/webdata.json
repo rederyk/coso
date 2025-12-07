@@ -1,0 +1,41 @@
+{
+  "namespace": "webData",
+  "description": "Download e cache dati HTTP/HTTPS",
+  "functions": {
+    "fetch_once": {
+      "signature": "webData.fetch_once(url, filename) -> boolean",
+      "description": "Scarica dati da URL (una tantum)",
+      "examples": [
+        {"code": "webData.fetch_once('https://api.open-meteo.com/v1/forecast?latitude=45.46&longitude=9.19&current=temperature_2m', 'weather.json')"}
+      ]
+    },
+    "fetch_scheduled": {
+      "signature": "webData.fetch_scheduled(url, filename, minutes) -> boolean",
+      "description": "Scarica con aggiornamento periodico",
+      "examples": [
+        {"code": "webData.fetch_scheduled('https://api.weather.com/current', 'weather.json', 30)", "description": "Aggiorna ogni 30 min"}
+      ]
+    },
+    "read_data": {
+      "signature": "webData.read_data(filename) -> string",
+      "description": "Legge file scaricato",
+      "examples": [
+        {"code": "local content = webData.read_data('weather.json')\nprintln(content)"}
+      ]
+    },
+    "list_files": {
+      "signature": "webData.list_files() -> string",
+      "description": "Lista file cache",
+      "examples": [
+        {"code": "println(webData.list_files())"}
+      ]
+    }
+  },
+  "notes": [
+    "Storage: /data/webdata/ (~512KB)",
+    "Richiede WiFi attivo",
+    "Timeout HTTP: 10 secondi",
+    "Supporta HTTPS/SSL",
+    "Formati: JSON, XML, TXT, CSV, HTML"
+  ]
+}

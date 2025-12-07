@@ -72,6 +72,7 @@ void DockView::destroy() {
     }
     visual_bar_ = nullptr;
     launcher_layer_ = nullptr;
+    is_visible_ = false;
 }
 
 void DockView::ensureCreated(lv_obj_t* launcher_layer) {
@@ -600,6 +601,10 @@ void DockController::init() {
 
 void DockController::setLaunchHandler(std::function<void(const char* app_id)> handler) {
     launch_handler_ = std::move(handler);
+}
+
+void DockController::destroy() {
+    view_.destroy();
 }
 
 void DockController::registerLauncherItem(const char* app_id, const char* emoji, const char* name) {

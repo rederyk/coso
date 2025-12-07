@@ -12,15 +12,19 @@ static inline void *lvgl_psram_malloc(size_t size) {
         return NULL;
     }
 
-    return heap_caps_malloc_prefer(size, 2,
-                                   MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT,
-                                   MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    // Force PSRAM allocation only (no DRAM fallback) to save internal RAM
+    void* ptr = heap_caps_malloc(size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!ptr) {
+        // If PSRAM allocation fails, log error but don't fallback to DRAM
+        // This prevents silently consuming precious internal RAM
+        return NULL;
+    }
+    return ptr;
 }
 
 static inline void *lvgl_psram_realloc(void *ptr, size_t size) {
-    return heap_caps_realloc_prefer(ptr, size, 2,
-                                    MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT,
-                                    MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    // Force PSRAM reallocation only (no DRAM fallback)
+    return heap_caps_realloc(ptr, size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
 }
 
 static inline void lvgl_psram_free(void *ptr) {

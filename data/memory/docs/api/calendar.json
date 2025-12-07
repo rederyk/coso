@@ -1,0 +1,269 @@
+{
+  "namespace": "calendar",
+  "description": "Sistema di calendario e scheduler per eventi programmati con esecuzione automatica script Lua",
+  "concepts": {
+    "one_shot": "Evento eseguito una sola volta a data/ora specifica (es: sveglia per domani alle 7)",
+    "recurring": "Evento ripetuto settimanalmente sui giorni specificati (es: allarme Lun-Ven alle 8)",
+    "weekdays_mask": "Bitmask per giorni settimana: 1=Dom, 2=Lun, 4=Mar, 8=Mer, 16=Gio, 32=Ven, 64=Sab",
+    "lua_script": "Script Lua eseguito automaticamente quando scatta l'evento (accesso a tutte le API)",
+    "persistence": "Eventi salvati su filesystem, sopravvivono al reboot",
+    "execution": "Task FreeRTOS controlla ogni 30s e esegue eventi all'orario programmato"
+  },
+  "commands": {
+    "calendar_list": {
+      "signature": "calendar_list()",
+      "description": "Lista tutti gli eventi calendario (one-shot e ricorrenti)",
+      "args": [],
+      "examples": [
+        {
+          "task": "Mostra tutti gli eventi programmati",
+          "command": "calendar_list",
+          "args": []
+        }
+      ],
+      "output": "Lista eventi con ID, nome, tipo, orario, status, prossima esecuzione"
+    },
+    "calendar_create_alarm": {
+      "signature": "calendar_create_alarm(name, date, time, lua_script)",
+      "description": "Crea sveglia/evento one-shot (eseguito una sola volta)",
+      "args": [
+        "name: Nome evento (stringa)",
+        "date: Data formato YYYY-MM-DD (es: 2025-12-05)",
+        "time: Ora formato HH:MM (es: 07:30)",
+        "lua_script: Script Lua da eseguire all'orario specificato"
+      ],
+      "examples": [
+        {
+          "task": "Sveglia semplice per domani alle 7",
+          "command": "calendar_create_alarm",
+          "args": ["Sveglia Mattina", "2025-12-06", "07:00", "println('Buongiorno! Ora di svegliarsi')"]
+        },
+        {
+          "task": "Evento con LED lampeggiante",
+          "command": "calendar_create_alarm",
+          "args": ["Wake Up LED", "2025-12-06", "07:30", "for i=1,5 do gpio.toggle(23);delay(500);end;println('Sveglia!')"]
+        },
+        {
+          "task": "Promemoria riunione specifica",
+          "command": "calendar_create_alarm",
+          "args": ["Riunione Importante", "2025-12-10", "14:00", "println('⏰ Riunione tra 5 minuti!')"]
+        }
+      ],
+      "output": "ID evento creato (formato: evt_xxxxxxxx)"
+    },
+    "calendar_create_recurring": {
+      "signature": "calendar_create_recurring(name, time, weekdays_mask, lua_script)",
+      "description": "Crea evento ricorrente settimanale sui giorni specificati",
+      "args": [
+        "name: Nome evento (stringa)",
+        "time: Ora formato HH:MM (es: 08:00)",
+        "weekdays_mask: Maschera bit giorni (es: 62=Lun-Ven, 127=tutti, 65=weekend)",
+        "lua_script: Script Lua eseguito ogni volta che scatta"
+      ],
+      "weekdays_reference": {
+        "description": "Calcolo weekdays mask: somma valori giorni desiderati",
+        "values": {
+          "Domenica": 1,
+          "Lunedì": 2,
+          "Martedì": 4,
+          "Mercoledì": 8,
+          "Giovedì": 16,
+          "Venerdì": 32,
+          "Sabato": 64
+        },
+        "common_patterns": {
+          "Lun-Ven (giorni lavorativi)": "62 (0b0111110 = 2+4+8+16+32)",
+          "Sab-Dom (weekend)": "65 (0b1000001 = 1+64)",
+          "Tutti i giorni": "127 (0b1111111 = 1+2+4+8+16+32+64)",
+          "Solo Lunedì": "2",
+          "Solo Domenica": "1",
+          "Lun-Mer-Ven": "42 (2+8+32)",
+          "Mar-Gio": "20 (4+16)"
+        }
+      },
+      "examples": [
+        {
+          "task": "Allarme mattutino giorni lavorativi",
+          "command": "calendar_create_recurring",
+          "args": ["Allarme Lavoro", "08:00", "62", "println('⏰ Ora di andare a lavoro!')"]
+        },
+        {
+          "task": "Controllo meteo automatico ogni mattina",
+          "command": "calendar_create_recurring",
+          "args": ["Meteo Mattina", "07:00", "127", "local c=docs.reference.cities();webData.fetch_once('https://api.open-meteo.com/v1/forecast?latitude='..c.Milano.lat..'&longitude='..c.Milano.lon..'&current=temperature_2m','weather.json');println('Meteo aggiornato!')"]
+        },
+        {
+          "task": "Accensione luci serali tutti i giorni",
+          "command": "calendar_create_recurring",
+          "args": ["Luci Serali", "19:00", "127", "gpio.write(23,true);println('💡 Luci accese')"]
+        },
+        {
+          "task": "Promemoria medicina mattina e sera",
+          "command": "calendar_create_recurring",
+          "args": ["Medicina Mattina", "08:00", "127", "println('💊 Ricorda: prendere la medicina!')"]
+        },
+        {
+          "task": "Backup configurazioni ogni notte",
+          "command": "calendar_create_recurring",
+          "args": ["Backup Notturno", "02:00", "127", "local cfg=system.status();memory.write_file('backup_config.json',cfg);println('Backup salvato')"]
+        },
+        {
+          "task": "Sveglia weekend più tardi",
+          "command": "calendar_create_recurring",
+          "args": ["Sveglia Weekend", "09:00", "65", "println('😴 Weekend! Buona giornata!')"]
+        }
+      ],
+      "output": "ID evento creato (formato: evt_xxxxxxxx)"
+    },
+    "calendar_delete": {
+      "signature": "calendar_delete(event_id)",
+      "description": "Elimina evento calendario (richiede ID ottenuto da calendar_list)",
+      "args": [
+        "event_id: ID evento (formato evt_xxxxxxxx)"
+      ],
+      "examples": [
+        {
+          "task": "Elimina evento specifico",
+          "command": "calendar_delete",
+          "args": ["evt_a1b2c3d4"]
+        }
+      ],
+      "output": "Conferma eliminazione o errore se ID non trovato"
+    },
+    "calendar_enable": {
+      "signature": "calendar_enable(event_id, enabled)",
+      "description": "Abilita o disabilita temporaneamente un evento senza eliminarlo",
+      "args": [
+        "event_id: ID evento",
+        "enabled: 'true' per abilitare, 'false' per disabilitare"
+      ],
+      "examples": [
+        {
+          "task": "Disabilita allarme temporaneamente",
+          "command": "calendar_enable",
+          "args": ["evt_a1b2c3d4", "false"]
+        },
+        {
+          "task": "Riabilita evento",
+          "command": "calendar_enable",
+          "args": ["evt_a1b2c3d4", "true"]
+        }
+      ],
+      "output": "Conferma modifica status"
+    },
+    "calendar_run": {
+      "signature": "calendar_run(event_id)",
+      "description": "Esegue immediatamente un evento senza aspettare l'orario programmato",
+      "args": [
+        "event_id: ID evento"
+      ],
+      "examples": [
+        {
+          "task": "Testa l'evento subito",
+          "command": "calendar_run",
+          "args": ["evt_a1b2c3d4"]
+        }
+      ],
+      "output": "Risultato esecuzione script Lua dell'evento"
+    },
+    "calendar_history": {
+      "signature": "calendar_history([event_id])",
+      "description": "Mostra storico ultime 10 esecuzioni (tutte o di evento specifico)",
+      "args": [
+        "event_id: (opzionale) ID evento per filtrare storico"
+      ],
+      "examples": [
+        {
+          "task": "Storico completo",
+          "command": "calendar_history",
+          "args": []
+        },
+        {
+          "task": "Storico evento specifico",
+          "command": "calendar_history",
+          "args": ["evt_a1b2c3d4"]
+        }
+      ],
+      "output": "Lista esecuzioni con timestamp, successo/errore, durata, output script"
+    }
+  },
+  "lua_scripts": {
+    "description": "Script Lua eseguiti automaticamente hanno accesso completo a tutte le API del sistema",
+    "available_apis": [
+      "gpio.write(pin, value) - Controllo GPIO",
+      "gpio.toggle(pin) - Inverti stato pin",
+      "delay(ms) - Attesa millisecondi",
+      "ble.type(text) - Tastiera Bluetooth",
+      "ble.send_key(key) - Tasti speciali BLE",
+      "radio.play(url) - Avvia radio/audio",
+      "radio.stop() - Ferma audio",
+      "webData.fetch_once(url, file) - Scarica dati web",
+      "webData.read_data(file) - Legge dati scaricati",
+      "memory.write_file(path, content) - Salva file",
+      "memory.read_file(path) - Legge file",
+      "println(text) - Output testuale",
+      "system.status() - Stato sistema",
+      "uptime() - Tempo accensione",
+      "heap() - Memoria disponibile",
+      "docs.api.* - Accesso documentazione",
+      "docs.reference.cities() - Città per meteo"
+    ],
+    "advanced_examples": [
+      {
+        "task": "Sequenza LED colorati",
+        "script": "for i=1,5 do gpio.toggle(23);delay(500);end;println('Sequenza completata')"
+      },
+      {
+        "task": "Controllo meteo con notifica",
+        "script": "local c=docs.reference.cities();webData.fetch_once('https://api.open-meteo.com/v1/forecast?latitude='..c.Milano.lat..'&longitude='..c.Milano.lon..'&current=temperature_2m,weather_code','daily_weather.json');local w=webData.read_data('daily_weather.json');println('Meteo aggiornato: '..w)"
+      },
+      {
+        "task": "Backup automatico configurazioni",
+        "script": "local ts=uptime();local cfg=system.status();memory.write_file('backup_'..ts..'.json',cfg);println('Backup salvato!')"
+      },
+      {
+        "task": "Avvia radio mattutina",
+        "script": "radio.play('http://stream.example.com/morning.mp3');delay(3000);radio.set_volume(50);println('Radio avviata')"
+      },
+      {
+        "task": "Notifica BLE su computer",
+        "script": "ble.type('Promemoria: riunione ore 14:00');delay(100);ble.send_key('RETURN');println('Notifica inviata via BLE')"
+      }
+    ]
+  },
+  "workflow": {
+    "description": "Flusso tipico di utilizzo del sistema calendar",
+    "steps": [
+      "1. Utente richiede creazione evento (vocale o testuale)",
+      "2. IA analizza richiesta e determina tipo (one-shot vs recurring)",
+      "3. IA calcola weekdays mask se ricorrente",
+      "4. IA costruisce script Lua appropriato per l'azione richiesta",
+      "5. IA esegue calendar_create_alarm o calendar_create_recurring",
+      "6. Sistema salva evento su filesystem (/calendar_events.json)",
+      "7. Task FreeRTOS controlla ogni 30 secondi",
+      "8. All'orario programmato: esegue script Lua via LuaSandbox",
+      "9. Risultato salvato in storico con successo/errore/durata"
+    ]
+  },
+  "ai_usage_tips": [
+    "Per eventi one-shot: usa sempre formato data YYYY-MM-DD",
+    "Per eventi ricorrenti: calcola weekdays mask sommando valori giorni",
+    "Script Lua deve essere compatto (evita multi-line complessi)",
+    "Usa docs.reference.cities() per ottenere coordinate meteo",
+    "Testa script con calendar_run prima di aspettare orario schedulato",
+    "Eventi disabilitati (calendar_enable false) non vengono eliminati",
+    "Storico mantiene ultime 100 esecuzioni per debugging",
+    "Script può richiamare qualsiasi API Lua disponibile nel sistema",
+    "Usa println() nello script per output visibile nello storico"
+  ],
+  "notes": [
+    "Eventi persistono dopo reboot (salvati su filesystem)",
+    "Esecuzione automatica ogni 30 secondi (precisione ±30s)",
+    "Script Lua eseguiti in sandbox sicura con timeout",
+    "One-shot marcati 'completed' dopo esecuzione",
+    "Recurring rimangono 'pending' e si ripetono ogni settimana",
+    "Weekdays: bit 0=Dom, bit 1=Lun, ..., bit 6=Sab",
+    "Massimo storico: 100 esecuzioni (poi sovrascrittura)",
+    "Script falliti salvano errore in 'last_error' e history"
+  ]
+}

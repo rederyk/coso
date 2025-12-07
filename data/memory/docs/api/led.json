@@ -1,0 +1,18 @@
+{
+  "namespace": "led",
+  "description": "Controllo LED RGB on-board",
+  "functions": {
+    "set_brightness": {
+      "signature": "led.set_brightness(percentage)",
+      "description": "Imposta luminosità LED RGB (0-100%)",
+      "examples": [
+        {"code": "led.set_brightness(50)", "description": "Luminosità 50%"},
+        {"code": "led.set_brightness(0)", "description": "Spegne LED"}
+      ]
+    }
+  },
+  "notes": [
+    "LED RGB: WS2812B integrato",
+    "Range: 0-100%"
+  ]
+}

@@ -1,0 +1,1354 @@
+<!DOCTYPE html>
+<html lang="en" data-page="assistant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ESP32 Voice Assistant</title>
+  <link rel="stylesheet" href="app-nav.css">
+  <style>
+    :root {
+      --bg: #05060d;
+      --panel: rgba(15, 21, 40, 0.92);
+      --panel-glow: rgba(120, 198, 255, 0.18);
+      --primary: #7ee7c0;
+      --primary-deep: #53d9ab;
+      --text: #f7fbff;
+      --muted: #9fb0c6;
+      --danger: #ff7b7b;
+      font-family: "Inter", "Space Grotesk", system-ui, -apple-system, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: radial-gradient(circle at 20% -10%, rgba(126, 231, 192, 0.3), transparent 45%),
+                  radial-gradient(circle at 80% 0%, rgba(83, 217, 171, 0.25), transparent 40%),
+                  linear-gradient(180deg, #05060d, #0a0c17 60%, #05060d);
+      color: var(--text);
+      padding: 24px;
+      display: flex;
+      justify-content: center;
+    }
+    main {
+      max-width: 960px;
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    h1 {
+      margin: 0;
+      font-size: 2rem;
+      letter-spacing: 0.5px;
+    }
+    .eyebrow {
+      margin: 0;
+      text-transform: uppercase;
+      font-size: 12px;
+      letter-spacing: 1.2px;
+      color: var(--muted);
+    }
+    #status {
+      font-size: 14px;
+      color: var(--muted);
+      min-width: 180px;
+      text-align: right;
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+    #status::before {
+      content: '';
+      display: none;
+      width: 14px;
+      height: 14px;
+      border: 2px solid var(--primary);
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    #status.loading::before {
+      display: block;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    .panel {
+      background: var(--panel);
+      border-radius: 18px;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      padding: 20px;
+      box-shadow: 0 20px 45px rgba(0, 0, 0, 0.35);
+      backdrop-filter: blur(20px);
+    }
+    .chat {
+      min-height: 360px;
+      max-height: 60vh;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      padding-right: 4px;
+    }
+    .message {
+      max-width: 85%;
+      padding: 14px 16px;
+      border-radius: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      font-size: 15px;
+    }
+    .message.user {
+      align-self: flex-end;
+      background: linear-gradient(135deg, rgba(126, 231, 192, 0.18), rgba(83, 217, 171, 0.18));
+      border: 1px solid rgba(126, 231, 192, 0.3);
+    }
+    .message.assistant {
+      align-self: flex-start;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+    }
+    .message.error {
+      border-color: var(--danger);
+      color: var(--danger);
+    }
+    .meta {
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .message-output {
+      font-size: 13px;
+      color: var(--primary);
+      white-space: pre-wrap;
+      font-family: "JetBrains Mono", "Space Mono", "Fira Code", monospace;
+      margin-top: 6px;
+    }
+    .controls {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .input-group {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .input-group span {
+      font-size: 12px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+    }
+    input[type="text"] {
+      width: 100%;
+      border-radius: 10px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      padding: 12px 14px;
+      background: rgba(255, 255, 255, 0.03);
+      color: var(--text);
+      font-size: 16px;
+      outline: none;
+      transition: border-color 0.2s ease;
+    }
+    input[type="text"]:focus {
+      border-color: rgba(126, 231, 192, 0.7);
+    }
+    .actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      color: var(--muted);
+      margin-top: 6px;
+    }
+    .toggle-row input {
+      accent-color: var(--primary-deep);
+    }
+    .panel-heading {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 18px;
+    }
+    .settings-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 14px;
+    }
+    .setting-card {
+      background: rgba(255, 255, 255, 0.03);
+      border-radius: 16px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      min-height: 160px;
+    }
+    .card-title {
+      font-size: 12px;
+      letter-spacing: 0.6px;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .setting-card select {
+      width: 100%;
+      border-radius: 10px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      padding: 12px 14px;
+      background: rgba(255, 255, 255, 0.03);
+      color: var(--text);
+      font-size: 16px;
+      outline: none;
+      transition: border-color 0.2s ease;
+      appearance: none;
+    }
+    .setting-card select:focus {
+      border-color: rgba(126, 231, 192, 0.7);
+    }
+    .helper-text {
+      font-size: 12px;
+      color: var(--muted);
+      margin: 0;
+    }
+    .card-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    button.secondary {
+      background: rgba(255, 255, 255, 0.09);
+      color: var(--text);
+      box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    button.secondary:hover {
+      transform: translateY(-1px);
+    }
+    .active-endpoint {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .active-endpoint strong {
+      font-size: 13px;
+      color: var(--text);
+      max-width: 65%;
+      text-align: right;
+      word-break: break-all;
+    }
+    .prompt-card {
+      grid-column: 1 / -1;
+      min-height: auto;
+      margin-top: 18px;
+    }
+    .prompt-card pre {
+      margin: 0;
+      padding: 12px;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      font-size: 13px;
+      line-height: 1.4;
+      max-height: 220px;
+      overflow: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .variables-container {
+      margin-top: 16px;
+      padding: 14px;
+      border-radius: 12px;
+      background: rgba(126, 231, 192, 0.05);
+      border: 1px solid rgba(126, 231, 192, 0.15);
+    }
+    .variables-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--primary);
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .variables-title::before {
+      content: '⚡';
+      font-size: 14px;
+    }
+    .variable-item {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      padding: 10px;
+      margin-bottom: 8px;
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      font-family: "JetBrains Mono", "Space Mono", "Fira Code", monospace;
+      font-size: 12px;
+    }
+    .variable-key {
+      color: var(--primary-deep);
+      font-weight: 600;
+      cursor: pointer;
+      user-select: all;
+    }
+    .variable-key:hover {
+      color: var(--primary);
+      text-decoration: underline;
+    }
+    .variable-value {
+      color: var(--muted);
+      white-space: pre-wrap;
+      word-break: break-word;
+      max-height: 120px;
+      overflow: auto;
+      padding-left: 12px;
+      border-left: 2px solid rgba(126, 231, 192, 0.2);
+    }
+    .variable-empty {
+      font-style: italic;
+      color: rgba(159, 176, 198, 0.5);
+    }
+    .highlight-variable {
+      background: rgba(255, 235, 59, 0.15);
+      color: #ffd54f;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-weight: 600;
+    }
+    button {
+      border: none;
+      border-radius: 12px;
+      padding: 10px 18px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 0.15s ease, box-shadow 0.2s ease;
+      background: linear-gradient(135deg, #62b4ff, #53f3c3);
+      color: #05060d;
+      box-shadow: 0 10px 30px rgba(83, 217, 171, 0.2);
+    }
+    button:hover { transform: translateY(-1px); }
+    button:active { transform: translateY(0); box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2); }
+    button.primary:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+    .microphone {
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--text);
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+    }
+    .microphone.recording {
+      background: #ff6b6b;
+      color: #fff;
+      box-shadow: 0 8px 30px rgba(255, 107, 107, 0.35);
+    }
+    .memory-meta {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 6px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .memory-meta strong {
+      font-size: 16px;
+      color: var(--text);
+    }
+    .memory-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    @media (max-width: 640px) {
+      body {
+        padding: 12px;
+      }
+      .actions {
+        flex-direction: column;
+        align-items: stretch;
+      }
+      button {
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <div data-app-nav></div>
+    <header>
+      <div>
+        <p class="eyebrow">ESP32 Voice Assistant</p>
+        <h1>Chat & Microphone</h1>
+      </div>
+      <div id="status" aria-live="polite">Loading...</div>
+    </header>
+    <section class="panel">
+      <div id="chat" class="chat" role="log" aria-live="polite"></div>
+    </section>
+    <section class="panel memory-panel">
+      <div class="panel-heading">
+        <div>
+          <p class="eyebrow">Memoria conversazioni</p>
+          <h2>Buffer condiviso</h2>
+        </div>
+        <div class="memory-meta">
+          <span>Righe conservate</span>
+          <strong id="memory-usage">0 / 0</strong>
+          <button id="reset-memory" class="secondary">Reset buffer</button>
+        </div>
+      </div>
+      <p class="helper-text">Il buffer JSON condiviso mantiene la cronologia tra vocale e chat. Usa i pulsanti per gestire la memoria.</p>
+      <div class="memory-actions">
+        <button id="shrink-memory" class="secondary">-5 righe</button>
+        <button id="expand-memory" class="secondary">+5 righe</button>
+      </div>
+    </section>
+    <section class="panel controls">
+      <div class="input-group">
+        <span>Conversa con l'assistente</span>
+        <input id="chat-input" type="text" placeholder="Scrivi un comando o una domanda" autocomplete="off">
+      </div>
+      <div class="actions">
+        <button id="send-btn" class="primary">Invia</button>
+        <button id="mic-btn" class="microphone" aria-pressed="false">🎙️ Usa il microfono</button>
+      </div>
+      <div class="toggle-row">
+        <label>
+          <input type="checkbox" id="auto-send" checked>
+          Auto-invia trascrizione
+        </label>
+      </div>
+    </section>
+    <section class="panel voice-settings">
+      <div class="panel-heading">
+        <div>
+          <p class="eyebrow">Voice Assistant</p>
+          <h2>Configurazione push-to-talk</h2>
+        </div>
+        <button id="save-settings" class="primary">Salva impostazioni</button>
+      </div>
+      <div class="settings-grid">
+        <article class="setting-card">
+          <div class="card-title">Stato e modalità</div>
+          <label class="toggle-row">
+            <input type="checkbox" id="voice-enabled">
+            Voice Assistant abilitato
+          </label>
+          <label class="toggle-row">
+            <input type="checkbox" id="local-api-mode">
+            Usa API locali (Docker/Ollama)
+          </label>
+          <p class="helper-text">Switch tra le API cloud OpenAI e i servizi locali Whisper/Ollama.</p>
+        </article>
+        <article class="setting-card">
+          <div class="card-title">Credenziali e host</div>
+          <div class="input-group">
+            <span>OpenAI API Key</span>
+            <input id="openai-key" type="text" placeholder="sk-...">
+          </div>
+          <div class="input-group">
+            <span>OpenAI Endpoint</span>
+            <input id="openai-endpoint" type="text" placeholder="https://api.openai.com/v1">
+          </div>
+          <div class="input-group">
+            <span>Docker host IP</span>
+            <input id="docker-host" type="text" placeholder="192.168.1.51">
+          </div>
+        </article>
+        <article class="setting-card">
+          <div class="card-title">Whisper STT endpoint</div>
+          <div class="input-group">
+            <span>Cloud</span>
+            <input id="whisper-cloud" type="text" placeholder="https://api.openai.com/v1/audio/transcriptions">
+          </div>
+          <div class="input-group">
+            <span>Locale (Docker)</span>
+            <input id="whisper-local" type="text" placeholder="http://192.168.1.51:8002/v1/audio/transcriptions">
+          </div>
+          <div class="active-endpoint">
+            <span>Endpoint attivo</span>
+            <strong id="active-whisper-endpoint">N/D</strong>
+          </div>
+        </article>
+        <article class="setting-card">
+          <div class="card-title">LLM endpoint</div>
+          <div class="input-group">
+            <span>Cloud</span>
+            <input id="llm-cloud" type="text" placeholder="https://api.openai.com/v1/chat/completions">
+          </div>
+          <div class="input-group">
+            <span>Locale (Docker/Ollama)</span>
+            <input id="llm-local" type="text" placeholder="http://192.168.1.51:11434/v1/chat/completions">
+          </div>
+          <div class="active-endpoint">
+            <span>Endpoint attivo</span>
+            <strong id="active-llm-endpoint">N/D</strong>
+          </div>
+        </article>
+        <article class="setting-card">
+          <div class="card-title">Modello LLM</div>
+          <div class="input-group">
+            <span>Seleziona modello</span>
+            <select id="llm-model"></select>
+          </div>
+          <div class="card-actions">
+            <button id="refresh-models" class="secondary">Aggiorna modelli</button>
+          </div>
+          <p class="helper-text">Lista dinamica da Ollama in locale, oppure preset compatibili con OpenAI nel cloud.</p>
+        </article>
+      </div>
+      <article class="setting-card prompt-card">
+        <div class="card-title">Prompt della voce</div>
+        <p class="helper-text">Il prompt system viene ora definito da un JSON completo. Modificalo direttamente e controlla l'anteprima risolta.</p>
+        <div class="card-actions">
+          <button id="reload-prompt-json" class="secondary">Ricarica JSON</button>
+          <button id="resolve-and-save-prompt">Risolvi e Salva</button>
+          <button id="save-prompt-json" class="secondary">Salva Grezzo</button>
+        </div>
+        <textarea id="system-prompt-editor" rows="10" placeholder="Inserisci il JSON del prompt..."></textarea>
+        <div class="helper-text" style="margin-top:0.5rem;">Anteprima risolta:</div>
+        <pre id="system-prompt-preview">Caricamento in corso…</pre>
+        <div id="variables-display" class="variables-container" style="display: none;">
+          <div class="variables-title">Variabili Dinamiche Attive</div>
+          <div id="variables-list"></div>
+        </div>
+      </article>
+    </section>
+  </main>
+  <script src="app-nav.js" defer></script>
+  <script>
+    const statusEl = document.getElementById('status');
+    const chatEl = document.getElementById('chat');
+    const chatInput = document.getElementById('chat-input');
+    const sendBtn = document.getElementById('send-btn');
+    const micBtn = document.getElementById('mic-btn');
+    const autoSendCheckbox = document.getElementById('auto-send');
+    let recording = false;
+    const voiceEnabledToggle = document.getElementById('voice-enabled');
+    const localApiToggle = document.getElementById('local-api-mode');
+    const openAiKeyInput = document.getElementById('openai-key');
+    const openAiEndpointInput = document.getElementById('openai-endpoint');
+    const dockerHostInput = document.getElementById('docker-host');
+    const whisperCloudInput = document.getElementById('whisper-cloud');
+    const whisperLocalInput = document.getElementById('whisper-local');
+    const llmCloudInput = document.getElementById('llm-cloud');
+    const llmLocalInput = document.getElementById('llm-local');
+    const llmModelSelect = document.getElementById('llm-model');
+    const activeWhisperEl = document.getElementById('active-whisper-endpoint');
+    const activeLlmEl = document.getElementById('active-llm-endpoint');
+    const saveSettingsBtn = document.getElementById('save-settings');
+    const refreshModelsBtn = document.getElementById('refresh-models');
+    const systemPromptEditor = document.getElementById('system-prompt-editor');
+    const promptReloadBtn = document.getElementById('reload-prompt-json');
+    const promptSaveBtn = document.getElementById('save-prompt-json');
+    const resolveAndSaveBtn = document.getElementById('resolve-and-save-prompt');
+    const systemPromptPreviewEl = document.getElementById('system-prompt-preview');
+    const variablesDisplayEl = document.getElementById('variables-display');
+    const variablesListEl = document.getElementById('variables-list');
+    const memoryUsageEl = document.getElementById('memory-usage');
+    const resetMemoryBtn = document.getElementById('reset-memory');
+    const shrinkMemoryBtn = document.getElementById('shrink-memory');
+    const expandMemoryBtn = document.getElementById('expand-memory');
+    let pendingModelSelection = '';
+    let conversationLimit = 0;
+    let promptPreviewTimer = null;
+
+    function setStatus(text, state = 'idle') {
+      statusEl.textContent = text;
+      statusEl.style.color = state === 'error' ? 'var(--danger)' : state === 'busy' ? 'var(--primary)' : 'var(--muted)';
+      if (state === 'busy') {
+        statusEl.classList.add('loading');
+      } else {
+        statusEl.classList.remove('loading');
+      }
+    }
+
+    // Animated dots for loading states
+    let statusDotInterval = null;
+    function setStatusAnimated(baseText, state = 'busy') {
+      if (statusDotInterval) {
+        clearInterval(statusDotInterval);
+        statusDotInterval = null;
+      }
+      statusEl.classList.add('loading');
+      let dots = 0;
+      const updateStatus = () => {
+        const dotStr = '.'.repeat((dots % 3) + 1);
+        statusEl.textContent = baseText + dotStr;
+        statusEl.style.color = state === 'error' ? 'var(--danger)' : state === 'busy' ? 'var(--primary)' : 'var(--muted)';
+        dots++;
+      };
+      updateStatus();
+      statusDotInterval = setInterval(updateStatus, 500);
+    }
+
+    function clearStatusAnimation() {
+      if (statusDotInterval) {
+        clearInterval(statusDotInterval);
+        statusDotInterval = null;
+      }
+      statusEl.classList.remove('loading');
+    }
+
+    function appendMessage(role, text, meta = '', output = '') {
+      const bubble = document.createElement('div');
+      bubble.classList.add('message', role);
+      const content = document.createElement('span');
+      content.textContent = text;
+      bubble.appendChild(content);
+      if (output) {
+        const outputEl = document.createElement('span');
+        outputEl.classList.add('message-output');
+        outputEl.textContent = output;
+        bubble.appendChild(outputEl);
+      }
+      if (meta) {
+        const metaEl = document.createElement('span');
+        metaEl.classList.add('meta');
+        metaEl.textContent = meta;
+        bubble.appendChild(metaEl);
+      }
+      chatEl.appendChild(bubble);
+      chatEl.scrollTop = chatEl.scrollHeight;
+    }
+
+    function buildMeta(response) {
+      const parts = [];
+      if (response.command) {
+        parts.push(`Comando: ${response.command}`);
+      }
+      if (Array.isArray(response.args) && response.args.length) {
+        parts.push(`Argomenti: ${response.args.join(', ')}`);
+      }
+      return parts.join(' · ');
+    }
+
+    function buildConversationMeta(entry) {
+      const parts = [];
+      if (entry.command) {
+        parts.push(`Comando: ${entry.command}`);
+      }
+      if (Array.isArray(entry.args) && entry.args.length) {
+        parts.push(`Argomenti: ${entry.args.join(', ')}`);
+      }
+      if (entry.role === 'user' && entry.transcription) {
+        parts.push('Trascrizione vocale');
+      }
+      return parts.join(' · ');
+    }
+
+    function renderConversationHistory(entries = []) {
+      chatEl.innerHTML = '';
+      if (!entries.length) {
+        appendMessage('assistant', 'Ciao! Scrivimi o usa il microfono per dirmi cosa fare.', 'Comando: nessuno');
+        return;
+      }
+      entries.forEach((entry) => {
+        const role = entry.role === 'user' ? 'user' : 'assistant';
+        const text = entry.text || '';
+        const meta = buildConversationMeta(entry);
+        const output = entry.output || '';
+        appendMessage(role, text, meta, output);
+      });
+    }
+
+    async function loadConversationHistory() {
+      try {
+        const response = await fetchWithTimeout('/api/assistant/conversation', {}, 10000);
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.message || 'Impossibile caricare la conversazione');
+        }
+        const messages = Array.isArray(data.messages) ? data.messages : [];
+        conversationLimit = Number(data.limit) || conversationLimit || 30;
+        const size = Number(data.size) || messages.length;
+        memoryUsageEl.textContent = `${size} / ${conversationLimit}`;
+        renderConversationHistory(messages);
+        return true;
+      } catch (err) {
+        console.error('Error loading conversation:', err);
+        // Don't show error in status if this is a background refresh
+        return false;
+      }
+    }
+
+    // Fetch with timeout and better error handling
+    async function fetchWithTimeout(url, options = {}, timeoutMs = 30000) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+      try {
+        const response = await fetch(url, {
+          ...options,
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        return response;
+      } catch (error) {
+        clearTimeout(timeoutId);
+        if (error.name === 'AbortError') {
+          throw new Error('Timeout: l\'API non risponde. Verifica la connessione.');
+        }
+        throw new Error('Errore di rete: impossibile contattare l\'API');
+      }
+    }
+
+    async function postJson(url, payload, timeoutMs = 30000) {
+      const res = await fetchWithTimeout(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      }, timeoutMs);
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.message || 'Errore del server');
+      }
+      return data;
+    }
+
+    function describeAsyncStatus(status, payload = {}) {
+      let normalized = (status || '').toLowerCase();
+      if (normalized === 'accepted') {
+        normalized = 'pending';
+      }
+
+      const parts = [];
+      if (normalized === 'pending') {
+        parts.push('Richiesta in coda');
+      } else if (normalized === 'processing') {
+        parts.push('LLM sta elaborando la risposta');
+      } else {
+        parts.push('Attesa completamento');
+      }
+
+      const pendingCount = Number(payload.pending);
+      if (Number.isFinite(pendingCount)) {
+        parts.push(`In coda: ${pendingCount}`);
+      }
+
+      const processingCount = Number(payload.processing);
+      if (Number.isFinite(processingCount)) {
+        parts.push(`In esecuzione: ${processingCount}`);
+      }
+
+      return parts.join(' · ');
+    }
+
+    async function waitForAssistantResponse(requestInfo, timeoutMs = 180000, pollIntervalMs = 1500) {
+      if (!requestInfo || !requestInfo.request_id) {
+        throw new Error('Risposta non valida dal server (request_id mancante)');
+      }
+
+      const resolvedPollUrl = requestInfo.poll_url || `/api/assistant/chat/${encodeURIComponent(requestInfo.request_id)}`;
+      const start = Date.now();
+
+      while (true) {
+        if ((Date.now() - start) > timeoutMs) {
+          throw new Error('Timeout in attesa della risposta dell\'assistente');
+        }
+
+        const res = await fetchWithTimeout(resolvedPollUrl, {}, 30000);
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.message || data.error || 'Errore durante il polling della risposta');
+        }
+
+        const status = (data.status || '').toLowerCase();
+        if (status === 'completed') {
+          return data;
+        }
+
+        if (status === 'failed' || status === 'timeout') {
+          throw new Error(data.error || `Richiesta ${status}`);
+        }
+
+        const waitMessage = describeAsyncStatus(status, data) || 'Attesa completamento';
+        setStatusAnimated(waitMessage, 'busy');
+        await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
+      }
+    }
+
+    async function resetConversationBuffer() {
+      if (resetMemoryBtn.disabled) {
+        return;
+      }
+      resetMemoryBtn.disabled = true;
+      setStatusAnimated('Reset buffer in corso', 'busy');
+      try {
+        await postJson('/api/assistant/conversation/reset', {}, 10000);
+        clearStatusAnimation();
+        setStatus('✓ Buffer conversazione resettato', 'idle');
+        setTimeout(() => setStatus('Pronto', 'idle'), 3000);
+        await loadConversationHistory();
+      } catch (err) {
+        clearStatusAnimation();
+        setStatus('✗ ' + err.message, 'error');
+        setTimeout(() => setStatus('Pronto', 'idle'), 5000);
+      } finally {
+        resetMemoryBtn.disabled = false;
+      }
+    }
+
+    async function adjustConversationLimit(delta) {
+      const desired = Math.min(100, Math.max(10, (conversationLimit || 30) + delta));
+      if (desired === conversationLimit) {
+        return;
+      }
+      try {
+        const data = await postJson('/api/assistant/conversation/limit', { limit: desired }, 10000);
+        conversationLimit = Number(data.limit) || desired;
+        setStatus('✓ Limite conversazioni aggiornato', 'idle');
+        setTimeout(() => setStatus('Pronto', 'idle'), 2000);
+        await loadConversationHistory();
+      } catch (err) {
+        setStatus('✗ ' + err.message, 'error');
+        setTimeout(() => setStatus('Pronto', 'idle'), 5000);
+      }
+    }
+
+    async function sendChatMessage() {
+      const text = chatInput.value.trim();
+      if (!text || recording) {
+        return;
+      }
+      chatInput.value = '';
+      appendMessage('user', text);
+
+      // Show animated status
+      setStatusAnimated('Invio richiesta...', 'busy');
+      sendBtn.disabled = true;
+
+      try {
+        // Use 60 second timeout for chat (first model load can take 30-45 seconds)
+        const requestInfo = await postJson('/api/assistant/chat', { message: text }, 60000);
+
+        const acceptedMessage = describeAsyncStatus('accepted', requestInfo) || 'Richiesta accettata, attesa disponibilità';
+        setStatusAnimated(acceptedMessage, 'busy');
+
+        const completion = await waitForAssistantResponse(requestInfo);
+
+        clearStatusAnimation();
+
+        const assistantResponse = completion.response || {};
+
+        // Check if a command is being executed
+        if (assistantResponse.command) {
+          setStatusAnimated(`Esecuzione comando: ${assistantResponse.command}`, 'busy');
+          // Give visual feedback that command is running
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+
+        const answer = assistantResponse.text || assistantResponse.message || 'Nessuna risposta';
+        appendMessage('assistant', answer, buildMeta(assistantResponse), assistantResponse.output || '');
+        await loadConversationHistory();
+
+        // Refresh variables after command execution
+        if (assistantResponse.command && assistantResponse.command !== 'none') {
+          await refreshPromptVariables();
+        }
+
+        clearStatusAnimation();
+        setStatus('✓ Risposta ricevuta', 'idle');
+        setTimeout(() => setStatus('Pronto', 'idle'), 3000);
+      } catch (err) {
+        clearStatusAnimation();
+        const errorMessage = err && err.message ? err.message : 'Errore durante la richiesta';
+        appendMessage('assistant', errorMessage, 'error');
+        setStatus('✗ ' + errorMessage, 'error');
+        setTimeout(() => setStatus('Pronto', 'idle'), 5000);
+      } finally {
+        sendBtn.disabled = false;
+      }
+    }
+
+    function handleTranscription(transcription) {
+      if (!transcription) {
+        return false;
+      }
+      if (autoSendCheckbox.checked) {
+        appendMessage('user', transcription);
+      } else {
+        chatInput.value = transcription;
+        setStatus('Trascrizione pronta', 'idle');
+      }
+      return true;
+    }
+
+    function updateActiveEndpoints() {
+      const whisperValue = (localApiToggle.checked ? whisperLocalInput.value : whisperCloudInput.value).trim() || 'N/D';
+      const llmValue = (localApiToggle.checked ? llmLocalInput.value : llmCloudInput.value).trim() || 'N/D';
+      activeWhisperEl.textContent = whisperValue;
+      activeLlmEl.textContent = llmValue;
+    }
+
+    function populateModelSelect(models = [], activeModel = '') {
+      llmModelSelect.innerHTML = '';
+      const normalized = Array.isArray(models) ? models : [];
+      normalized.forEach((model) => {
+        const option = document.createElement('option');
+        option.value = model;
+        option.textContent = model;
+        llmModelSelect.appendChild(option);
+      });
+      const preferred = activeModel || pendingModelSelection;
+      if (preferred && normalized.includes(preferred)) {
+        llmModelSelect.value = preferred;
+      } else if (normalized.length) {
+        llmModelSelect.value = normalized[0];
+      }
+    }
+
+    async function refreshModels(showStatus = true) {
+      if (refreshModelsBtn.disabled) {
+        return;
+      }
+      const originalLabel = refreshModelsBtn.textContent;
+      refreshModelsBtn.disabled = true;
+      refreshModelsBtn.textContent = 'Aggiorna…';
+      try {
+        const response = await fetchWithTimeout('/api/assistant/models', {}, 10000);
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.message || 'Impossibile aggiornare i modelli');
+        }
+        const models = Array.isArray(data.models) ? data.models : [];
+        pendingModelSelection = data.activeModel || pendingModelSelection;
+        populateModelSelect(models, data.activeModel);
+        if (showStatus) {
+          setStatus('✓ Lista modelli aggiornata', 'idle');
+          setTimeout(() => setStatus('Pronto', 'idle'), 3000);
+        }
+      } catch (err) {
+        setStatus('✗ ' + err.message, 'error');
+        setTimeout(() => setStatus('Pronto', 'idle'), 5000);
+      } finally {
+        refreshModelsBtn.disabled = false;
+        refreshModelsBtn.textContent = originalLabel;
+      }
+    }
+
+    async function loadVoiceSettings() {
+      try {
+        const response = await fetchWithTimeout('/api/assistant/settings', {}, 10000);
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.message || 'Impossibile caricare le impostazioni');
+        }
+        voiceEnabledToggle.checked = Boolean(data.voiceAssistantEnabled);
+        localApiToggle.checked = Boolean(data.localApiMode);
+        openAiKeyInput.value = data.openAiApiKey || '';
+        openAiEndpointInput.value = data.openAiEndpoint || '';
+        dockerHostInput.value = data.dockerHostIp || '';
+        whisperCloudInput.value = data.whisperCloudEndpoint || '';
+        whisperLocalInput.value = data.whisperLocalEndpoint || '';
+        llmCloudInput.value = data.llmCloudEndpoint || '';
+        llmLocalInput.value = data.llmLocalEndpoint || '';
+        pendingModelSelection = data.llmModel || '';
+        systemPromptPreviewEl.textContent = data.systemPrompt || 'Caricamento in corso…';
+        updateActiveEndpoints();
+        setStatus('✓ Impostazioni caricate', 'idle');
+        await refreshModels(false);
+        await loadPromptDefinition(false);
+      } catch (err) {
+        setStatus('✗ ' + err.message, 'error');
+        setTimeout(() => setStatus('Pronto', 'idle'), 5000);
+      }
+    }
+
+    async function saveVoiceSettings() {
+      saveSettingsBtn.disabled = true;
+      setStatusAnimated('Salvataggio impostazioni', 'busy');
+      const payload = {
+        voiceAssistantEnabled: voiceEnabledToggle.checked,
+        localApiMode: localApiToggle.checked,
+        openAiApiKey: openAiKeyInput.value.trim(),
+        openAiEndpoint: openAiEndpointInput.value.trim(),
+        dockerHostIp: dockerHostInput.value.trim(),
+        whisperCloudEndpoint: whisperCloudInput.value.trim(),
+        whisperLocalEndpoint: whisperLocalInput.value.trim(),
+        llmCloudEndpoint: llmCloudInput.value.trim(),
+        llmLocalEndpoint: llmLocalInput.value.trim(),
+        llmModel: llmModelSelect.value
+      };
+      try {
+        const response = await fetchWithTimeout('/api/assistant/settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        }, 10000);
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.message || 'Salvataggio non riuscito');
+        }
+        clearStatusAnimation();
+        setStatus('✓ Impostazioni salvate', 'idle');
+        setTimeout(() => setStatus('Pronto', 'idle'), 3000);
+        await loadVoiceSettings();
+      } catch (err) {
+        clearStatusAnimation();
+        setStatus('✗ ' + err.message, 'error');
+        setTimeout(() => setStatus('Pronto', 'idle'), 5000);
+      } finally {
+        saveSettingsBtn.disabled = false;
+      }
+    }
+
+    function highlightVariablesInPrompt(promptText, variables) {
+      if (!variables || Object.keys(variables).length === 0) {
+        return promptText;
+      }
+
+      let highlighted = promptText;
+      for (const key in variables) {
+        const placeholder = `{{${key}}}`;
+        const regex = new RegExp(placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
+        highlighted = highlighted.replace(regex, `<span class="highlight-variable">${placeholder}</span>`);
+      }
+      return highlighted;
+    }
+
+    function displayVariables(variables) {
+      if (!variables || Object.keys(variables).length === 0) {
+        variablesDisplayEl.style.display = 'none';
+        return;
+      }
+
+      variablesDisplayEl.style.display = 'block';
+      variablesListEl.innerHTML = '';
+
+      for (const [key, value] of Object.entries(variables)) {
+        const item = document.createElement('div');
+        item.className = 'variable-item';
+
+        const keyEl = document.createElement('div');
+        keyEl.className = 'variable-key';
+        keyEl.textContent = `{{${key}}}`;
+        keyEl.title = 'Clicca per copiare';
+        keyEl.onclick = () => {
+          navigator.clipboard.writeText(`{{${key}}}`);
+          keyEl.style.color = 'var(--primary)';
+          setTimeout(() => keyEl.style.color = '', 1000);
+        };
+
+        const valueEl = document.createElement('div');
+        valueEl.className = value ? 'variable-value' : 'variable-value variable-empty';
+        valueEl.textContent = value || '(vuota)';
+
+        item.appendChild(keyEl);
+        item.appendChild(valueEl);
+        variablesListEl.appendChild(item);
+      }
+    }
+
+    async function refreshPromptVariables() {
+      try {
+        const response = await fetchWithTimeout('/api/assistant/prompt/variables', {}, 5000);
+        const data = await response.json();
+        if (response.ok && data.variables) {
+          displayVariables(data.variables);
+          // Also update the preview if available
+          const currentPrompt = systemPromptEditor.value;
+          if (currentPrompt && currentPrompt.trim()) {
+            await updatePromptPreview(currentPrompt);
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to refresh variables:', err);
+      }
+    }
+
+    async function updatePromptPreview(payload) {
+      systemPromptPreviewEl.textContent = 'Calcolo anteprima…';
+      if (!payload || !payload.trim()) {
+        systemPromptPreviewEl.textContent = 'Prompt vuoto';
+        variablesDisplayEl.style.display = 'none';
+        return;
+      }
+
+      try {
+        const response = await fetchWithTimeout('/api/assistant/prompt/preview', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: payload
+        }, 10000);
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.message || 'Anteprima non disponibile');
+        }
+
+        const promptText = data.resolvedPrompt || '';
+        const variables = data.variables || {};
+
+        // Highlight variables in prompt preview
+        const highlightedPrompt = highlightVariablesInPrompt(promptText, variables);
+        systemPromptPreviewEl.innerHTML = highlightedPrompt;
+
+        // Display variables section
+        displayVariables(variables);
+      } catch (err) {
+        systemPromptPreviewEl.textContent = 'Errore anteprima: ' + err.message;
+        variablesDisplayEl.style.display = 'none';
+      }
+    }
+
+    async function loadPromptDefinition(showStatus = true) {
+      if (showStatus) {
+        setStatusAnimated('Caricamento prompt', 'busy');
+      }
+      systemPromptPreviewEl.textContent = 'Caricamento in corso…';
+
+      try {
+        const response = await fetchWithTimeout('/api/assistant/prompt', {}, 10000);
+        const raw = await response.text();
+        if (!response.ok) {
+          let message = 'Impossibile caricare il prompt';
+          try {
+            const parsed = JSON.parse(raw);
+            message = parsed.message || message;
+          } catch {
+            message = raw || message;
+          }
+          throw new Error(message);
+        }
+
+        let formatted = raw;
+        try {
+          const parsed = JSON.parse(raw);
+          formatted = JSON.stringify(parsed, null, 2);
+        } catch {
+          // leave raw formatting
+        }
+
+        systemPromptEditor.value = formatted;
+        await updatePromptPreview(raw);
+
+        if (showStatus) {
+          clearStatusAnimation();
+          setStatus('✓ Prompt caricato', 'idle');
+          setTimeout(() => setStatus('Pronto', 'idle'), 3000);
+        }
+      } catch (err) {
+        systemPromptPreviewEl.textContent = 'Errore caricamento: ' + err.message;
+        if (showStatus) {
+          clearStatusAnimation();
+          setStatus('✗ ' + err.message, 'error');
+          setTimeout(() => setStatus('Pronto', 'idle'), 5000);
+        }
+      }
+    }
+
+    async function savePromptDefinition() {
+      promptSaveBtn.disabled = true;
+      setStatusAnimated('Salvataggio prompt', 'busy');
+      try {
+        const response = await fetchWithTimeout('/api/assistant/prompt', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: systemPromptEditor.value
+        }, 10000);
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.message || 'Salvataggio non riuscito');
+        }
+        clearStatusAnimation();
+        setStatus('✓ Prompt salvato', 'idle');
+        await loadPromptDefinition(false);
+      } catch (err) {
+        clearStatusAnimation();
+        setStatus('✗ ' + err.message, 'error');
+        setTimeout(() => setStatus('Pronto', 'idle'), 5000);
+      } finally {
+        promptSaveBtn.disabled = false;
+      }
+    }
+
+    async function resolveAndSavePrompt() {
+      resolveAndSaveBtn.disabled = true;
+      setStatusAnimated('Risoluzione e salvataggio in corso', 'busy');
+
+      try {
+        const response = await fetchWithTimeout('/api/assistant/prompt/resolve-and-save', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: systemPromptEditor.value
+        }, 30000); // 30s timeout per esecuzione comandi
+
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.message || 'Risoluzione fallita');
+        }
+
+        // Aggiorna l'editor con il JSON risolto
+        try {
+          const formatted = JSON.stringify(JSON.parse(data.resolved_json), null, 2);
+          systemPromptEditor.value = formatted;
+        } catch {
+          systemPromptEditor.value = data.resolved_json;
+        }
+
+        clearStatusAnimation();
+        setStatus('✓ Prompt risolto e salvato', 'idle');
+        await loadPromptDefinition(false);
+
+        // Mostra messaggio informativo
+        setTimeout(() => setStatus('Pronto', 'idle'), 3000);
+      } catch (err) {
+        clearStatusAnimation();
+        setStatus('✗ ' + err.message, 'error');
+        setTimeout(() => setStatus('Pronto', 'idle'), 5000);
+      } finally {
+        resolveAndSaveBtn.disabled = false;
+      }
+    }
+
+    async function toggleRecording() {
+      if (!recording) {
+        try {
+          setStatusAnimated('In ascolto', 'busy');
+          micBtn.classList.add('recording');
+          micBtn.textContent = '❚❚ Ferma registrazione';
+          micBtn.setAttribute('aria-pressed', 'true');
+          recording = true;
+          sendBtn.disabled = true;
+
+          const startRes = await fetchWithTimeout('/api/assistant/audio/start', { method: 'POST' }, 5000);
+          const startPayload = await startRes.json();
+          if (!startRes.ok) {
+            throw new Error(startPayload.message || 'Impossibile avviare la registrazione');
+          }
+
+          clearStatusAnimation();
+          setStatus('🎙️ Registrazione in corso - Premi di nuovo per fermare', 'busy');
+        } catch (err) {
+          clearStatusAnimation();
+          setStatus('✗ Impossibile avviare il microfono: ' + err.message, 'error');
+          micBtn.classList.remove('recording');
+          micBtn.textContent = '🎙️ Usa il microfono';
+          micBtn.setAttribute('aria-pressed', 'false');
+          recording = false;
+          sendBtn.disabled = false;
+          setTimeout(() => setStatus('Pronto', 'idle'), 5000);
+        }
+        return;
+      }
+
+      // stop recording and await response
+      setStatusAnimated('Elaborazione audio', 'busy');
+      micBtn.classList.remove('recording');
+      micBtn.textContent = '🎙️ Usa il microfono';
+      micBtn.setAttribute('aria-pressed', 'false');
+      recording = false;
+
+      try {
+        // Transcription + model loading can take time, use 60 second timeout
+        const res = await fetchWithTimeout('/api/assistant/audio/stop', { method: 'POST' }, 60000);
+        const payload = await res.json();
+
+        if (!res.ok) {
+          throw new Error(payload.message || 'Errore durante la trascrizione');
+        }
+
+        clearStatusAnimation();
+        setStatusAnimated('AI sta elaborando la trascrizione', 'busy');
+
+        const transcription = payload.transcription || '';
+        const hasTranscription = handleTranscription(transcription);
+
+        if (payload.command) {
+          clearStatusAnimation();
+          setStatusAnimated(`Esecuzione comando: ${payload.command}`, 'busy');
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+
+        const answer = payload.text || payload.message || 'Nessuna risposta ricevuta';
+        appendMessage('assistant', answer, buildMeta(payload), payload.output || '');
+        await loadConversationHistory();
+
+        // Refresh variables after command execution
+        if (payload.command && payload.command !== 'none') {
+          await refreshPromptVariables();
+        }
+
+        clearStatusAnimation();
+        if (!hasTranscription) {
+          setStatus('✗ Trascrizione non disponibile', 'error');
+          setTimeout(() => setStatus('Pronto', 'idle'), 5000);
+        } else {
+          setStatus(autoSendCheckbox.checked ? '✓ Comando vocale eseguito' : '✓ Trascrizione pronta', 'idle');
+          setTimeout(() => setStatus('Pronto', 'idle'), 3000);
+        }
+      } catch (err) {
+        clearStatusAnimation();
+        appendMessage('assistant', err.message, 'error');
+        setStatus('✗ ' + err.message, 'error');
+        setTimeout(() => setStatus('Pronto', 'idle'), 5000);
+      } finally {
+        sendBtn.disabled = false;
+      }
+    }
+
+    sendBtn.addEventListener('click', sendChatMessage);
+    chatInput.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' && !event.shiftKey) {
+        event.preventDefault();
+        sendChatMessage();
+      }
+    });
+    micBtn.addEventListener('click', toggleRecording);
+    [whisperCloudInput, whisperLocalInput, llmCloudInput, llmLocalInput].forEach((input) => {
+      input.addEventListener('input', updateActiveEndpoints);
+    });
+    localApiToggle.addEventListener('change', () => {
+      updateActiveEndpoints();
+      refreshModels(false);
+    });
+    saveSettingsBtn.addEventListener('click', saveVoiceSettings);
+    refreshModelsBtn.addEventListener('click', () => refreshModels());
+    promptReloadBtn.addEventListener('click', () => loadPromptDefinition());
+    promptSaveBtn.addEventListener('click', savePromptDefinition);
+    resolveAndSaveBtn.addEventListener('click', resolveAndSavePrompt);
+    systemPromptEditor.addEventListener('input', () => {
+      if (promptPreviewTimer) {
+        clearTimeout(promptPreviewTimer);
+      }
+      promptPreviewTimer = setTimeout(() => {
+        updatePromptPreview(systemPromptEditor.value);
+        promptPreviewTimer = null;
+      }, 600);
+    });
+    resetMemoryBtn.addEventListener('click', resetConversationBuffer);
+    shrinkMemoryBtn.addEventListener('click', () => adjustConversationLimit(-5));
+    expandMemoryBtn.addEventListener('click', () => adjustConversationLimit(5));
+
+    setStatus('Pronto');
+    loadConversationHistory();
+    loadVoiceSettings();
+  </script>
+</body>
+</html>
