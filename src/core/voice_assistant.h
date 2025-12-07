@@ -171,6 +171,8 @@ public:
         static int lua_memory_prepend_file(lua_State* L);
         static int lua_memory_grep_files(lua_State* L);
         static int lua_println(lua_State* L);
+        static int lua_cjson_encode(lua_State* L);
+        static int lua_cjson_decode(lua_State* L);
 
         // TTS function
         static int lua_tts_speak(lua_State* L);

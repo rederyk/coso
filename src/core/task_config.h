@@ -21,7 +21,8 @@ constexpr UBaseType_t PRIO_WIFI = 1;
 // HTTP server task
 // Reduced from 24KB to 6KB - DynamicJsonDocument should be allocated on heap, not stack
 // Further reduced to leave room for voice assistant in fragmented DRAM
-constexpr uint32_t STACK_HTTP = 6144;  // 6 KB - JSON docs allocated on heap
+// Bumped back up to 12 KB to avoid stack overflow when serving multiple WebUI reloads
+constexpr uint32_t STACK_HTTP = 12288;  // 12 KB
 constexpr UBaseType_t PRIO_HTTP = 2;
 
 // BLE manager task

@@ -175,6 +175,166 @@ struct CjsonAllocatorInitializer {
 // Ensure cJSON allocations prefer PSRAM before any JSON parsing
 static CjsonAllocatorInitializer g_cjson_allocator_initializer;
 
+bool pushCjsonValueToLua(lua_State* L, const cJSON* item) {
+    if (!item || cJSON_IsNull(item)) {
+        lua_pushnil(L);
+        return true;
+    }
+
+    if (cJSON_IsBool(item)) {
+        lua_pushboolean(L, cJSON_IsTrue(item));
+        return true;
+    }
+
+    if (cJSON_IsNumber(item)) {
+        lua_pushnumber(L, item->valuedouble);
+        return true;
+    }
+
+    if (cJSON_IsString(item) && item->valuestring) {
+        lua_pushstring(L, item->valuestring);
+        return true;
+    }
+
+    if (cJSON_IsArray(item)) {
+        lua_newtable(L);
+        int index = 1;
+        cJSON* child = nullptr;
+        cJSON_ArrayForEach(child, item) {
+            if (!pushCjsonValueToLua(L, child)) {
+                lua_pop(L, 1);  // pop partially built table
+                return false;
+            }
+            lua_rawseti(L, -2, index++);
+        }
+        return true;
+    }
+
+    if (cJSON_IsObject(item)) {
+        lua_newtable(L);
+        cJSON* child = nullptr;
+        cJSON_ArrayForEach(child, item) {
+            if (!child->string) {
+                continue;
+            }
+            if (!pushCjsonValueToLua(L, child)) {
+                lua_pop(L, 1);  // pop partially built table
+                return false;
+            }
+            lua_setfield(L, -2, child->string);
+        }
+        return true;
+    }
+
+    return false;
+}
+
+bool isLuaArrayTable(lua_State* L, int index, size_t& max_index) {
+    bool is_array = true;
+    size_t count = 0;
+    max_index = 0;
+
+    lua_pushnil(L);
+    while (lua_next(L, index) != 0) {
+        ++count;
+        if (lua_type(L, -2) != LUA_TNUMBER) {
+            is_array = false;
+        } else {
+            lua_Number n = lua_tonumber(L, -2);
+            lua_Integer k = lua_tointeger(L, -2);
+            if (n != static_cast<lua_Number>(k) || k <= 0) {
+                is_array = false;
+            } else if (static_cast<size_t>(k) > max_index) {
+                max_index = static_cast<size_t>(k);
+            }
+        }
+        lua_pop(L, 1);  // pop value
+    }
+
+    if (is_array && max_index != count) {
+        is_array = false;  // gaps in array
+    }
+    return is_array;
+}
+
+cJSON* luaValueToCjson(lua_State* L, int index, bool& ok);
+
+cJSON* luaTableToCjson(lua_State* L, int index, bool& ok) {
+    size_t max_index = 0;
+    const bool is_array = isLuaArrayTable(L, index, max_index);
+
+    if (is_array) {
+        cJSON* array = cJSON_CreateArray();
+        if (!array) {
+            ok = false;
+            return nullptr;
+        }
+        for (size_t i = 1; i <= max_index; ++i) {
+            lua_rawgeti(L, index, static_cast<lua_Integer>(i));
+            cJSON* child = luaValueToCjson(L, -1, ok);
+            lua_pop(L, 1);
+            if (!ok || !child) {
+                cJSON_Delete(array);
+                return nullptr;
+            }
+            cJSON_AddItemToArray(array, child);
+        }
+        return array;
+    }
+
+    cJSON* object = cJSON_CreateObject();
+    if (!object) {
+        ok = false;
+        return nullptr;
+    }
+
+    lua_pushnil(L);
+    while (lua_next(L, index) != 0) {
+        if (lua_type(L, -2) != LUA_TSTRING) {
+            ok = false;
+            lua_pop(L, 1);  // pop value
+            break;
+        }
+
+        const char* key = lua_tostring(L, -2);
+        cJSON* child = luaValueToCjson(L, -1, ok);
+        lua_pop(L, 1);  // pop value
+        if (!ok || !child) {
+            cJSON_Delete(object);
+            return nullptr;
+        }
+        cJSON_AddItemToObject(object, key, child);
+    }
+
+    if (!ok) {
+        cJSON_Delete(object);
+        return nullptr;
+    }
+
+    return object;
+}
+
+cJSON* luaValueToCjson(lua_State* L, int index, bool& ok) {
+    const int type = lua_type(L, index);
+    switch (type) {
+        case LUA_TNIL:
+            return cJSON_CreateNull();
+        case LUA_TBOOLEAN:
+            return cJSON_CreateBool(lua_toboolean(L, index));
+        case LUA_TNUMBER:
+            return cJSON_CreateNumber(lua_tonumber(L, index));
+        case LUA_TSTRING:
+            return cJSON_CreateString(lua_tostring(L, index));
+        case LUA_TTABLE: {
+            const int abs_index = lua_absindex(L, index);
+            return luaTableToCjson(L, abs_index, ok);
+        }
+        default:
+            ok = false;
+            return nullptr;
+    }
+}
+
 std::string readFileToString(const char* path) {
     File file = LittleFS.open(path, FILE_READ);
     if (!file) {
@@ -2582,6 +2742,21 @@ void VoiceAssistant::LuaSandbox::setupSandbox() {
             end
         }
 
+        -- JSON API (lightweight cjson shim)
+        local _cjson = {
+            encode = function(value)
+                return esp32_cjson_encode(value)
+            end,
+            decode = function(text)
+                return esp32_cjson_decode(text)
+            end
+        }
+        cjson = _cjson
+        package.preload = package.preload or {}
+        package.preload["cjson"] = function()
+            return _cjson
+        end
+
         -- TTS API
         tts = {
             speak = function(text)
@@ -2662,6 +2837,10 @@ void VoiceAssistant::LuaSandbox::setupSandbox() {
     lua_register(L, "esp32_memory_append_file", lua_memory_append_file);
     lua_register(L, "esp32_memory_prepend_file", lua_memory_prepend_file);
     lua_register(L, "esp32_memory_grep_files", lua_memory_grep_files);
+
+    // JSON helpers
+    lua_register(L, "esp32_cjson_encode", lua_cjson_encode);
+    lua_register(L, "esp32_cjson_decode", lua_cjson_decode);
 
     // TTS function
     lua_register(L, "esp32_tts_speak", lua_tts_speak);
@@ -2955,6 +3134,50 @@ int VoiceAssistant::LuaSandbox::lua_memory_grep_files(lua_State* L) {
         lua_pushinteger(L, i + 1);  // Lua arrays are 1-indexed
         lua_pushstring(L, results[i].c_str());
         lua_settable(L, -3);
+    }
+
+    return 1;
+}
+
+int VoiceAssistant::LuaSandbox::lua_cjson_encode(lua_State* L) {
+    bool ok = true;
+    cJSON* root = luaValueToCjson(L, 1, ok);
+    if (!ok || !root) {
+        lua_pushnil(L);
+        lua_pushstring(L, "Unsupported value for JSON encoding");
+        return 2;
+    }
+
+    char* json_str = cJSON_PrintUnformatted(root);
+    cJSON_Delete(root);
+
+    if (!json_str) {
+        lua_pushnil(L);
+        lua_pushstring(L, "Failed to encode JSON");
+        return 2;
+    }
+
+    lua_pushstring(L, json_str);
+    cJSON_free(json_str);
+    return 1;
+}
+
+int VoiceAssistant::LuaSandbox::lua_cjson_decode(lua_State* L) {
+    const char* json_text = luaL_checkstring(L, 1);
+    cJSON* root = cJSON_Parse(json_text);
+    if (!root) {
+        lua_pushnil(L);
+        lua_pushstring(L, "Invalid JSON");
+        return 2;
+    }
+
+    const bool pushed = pushCjsonValueToLua(L, root);
+    cJSON_Delete(root);
+
+    if (!pushed) {
+        lua_pushnil(L);
+        lua_pushstring(L, "Unsupported JSON content");
+        return 2;
     }
 
     return 1;
