@@ -3018,10 +3018,66 @@ CommandResult VoiceAssistant::LuaSandbox::execute(const std::string& script) {
         return {false, error_msg};
     }
 
+    // Capture return value if present on stack
+    if (lua_gettop(L) > 0) {
+        int type = lua_type(L, -1);
+        if (type == LUA_TSTRING) {
+            const char* ret_str = lua_tostring(L, -1);
+            if (ret_str && strlen(ret_str) > 0) {
+                if (!output_buffer_.empty()) {
+                    output_buffer_ += "\n";
+                }
+                output_buffer_ += "Return value:\n";
+                output_buffer_ += ret_str;
+                Serial.printf("[LUA] Captured return string: %s\n", ret_str);
+            }
+        } else if (type == LUA_TNUMBER) {
+            lua_Number num = lua_tonumber(L, -1);
+            if (!output_buffer_.empty()) {
+                output_buffer_ += "\n";
+            }
+            output_buffer_ += "Return value: ";
+            output_buffer_ += std::to_string(static_cast<double>(num));
+            Serial.printf("[LUA] Captured return number: %.2f\n", static_cast<double>(num));
+        } else if (type == LUA_TBOOLEAN) {
+            bool bool_val = lua_toboolean(L, -1);
+            if (!output_buffer_.empty()) {
+                output_buffer_ += "\n";
+            }
+            output_buffer_ += "Return value: ";
+            output_buffer_ += bool_val ? "true" : "false";
+            Serial.printf("[LUA] Captured return boolean: %s\n", bool_val ? "true" : "false");
+        } else if (type == LUA_TTABLE) {
+            // Simple table to string (basic implementation)
+            std::string table_str = "{ ";
+            lua_pushnil(L);  // first key
+            while (lua_next(L, -2) != 0) {
+                // key + value
+                if (lua_type(L, -2) == LUA_TSTRING) {
+                    const char* key = lua_tostring(L, -2);
+                    if (lua_type(L, -1) == LUA_TSTRING) {
+                        const char* val = lua_tostring(L, -1);
+                        table_str += std::string(key) + "=" + std::string(val) + " ";
+                    }
+                }
+                lua_pop(L, 1);  // remove value, keep key for next iteration
+            }
+            table_str += "}";
+            if (!output_buffer_.empty()) {
+                output_buffer_ += "\n";
+            }
+            output_buffer_ += "Return value:\n";
+            output_buffer_ += table_str;
+            Serial.printf("[LUA] Captured return table: %s\n", table_str.c_str());
+        }
+        lua_pop(L, 1);  // Remove return value from stack
+    }
+
     Serial.println("[LUA] Script executed successfully");
     const std::string message = output_buffer_.empty() ? "Lua script executed" : output_buffer_;
     return {true, message};
 }
+
 
 int VoiceAssistant::LuaSandbox::lua_gpio_write(lua_State* L) {
     int pin = luaL_checkinteger(L, 1);
