@@ -249,6 +249,10 @@ void WebDataManager::removeAllowedDomain(const std::string& domain) {
 }
 
 bool WebDataManager::isDomainAllowed(const std::string& url) const {
+    if (allow_all_domains_) {
+        return true;
+    }
+
     std::string domain = extractDomain(url);
 
     xSemaphoreTake(domains_mutex_, portMAX_DELAY);
@@ -327,16 +331,58 @@ WebDataManager::RequestResult WebDataManager::makeHttpRequest(const std::string&
     RequestResult result = {false, 0, "", 0};
     response_data.clear();
 
-    // Create WiFiClientSecure on-demand using heap allocation (not stack!)
-    // WiFiClientSecure is too large (~16-32KB) for task stack, must use heap
-    // Using unique_ptr ensures automatic cleanup when function returns
-    std::unique_ptr<WiFiClientSecure> wifi_client(new WiFiClientSecure());
-    if (!wifi_client) {
-        result.error_message = "Failed to allocate WiFiClientSecure";
-        ESP_LOGE(LOG_TAG, "Out of memory: cannot allocate WiFiClientSecure");
+    // Verify WiFi is connected before attempting request
+    if (!WiFi.isConnected()) {
+        result.error_message = "WiFi not connected";
+        ESP_LOGE(LOG_TAG, "Cannot make HTTP request: WiFi not connected");
         return result;
     }
-    wifi_client->setInsecure(); // For development - in production use proper certificates
+
+    // Create WiFiClientSecure on-demand using PSRAM allocation
+    // WiFiClientSecure is large (~16-32KB), must use PSRAM to avoid DRAM exhaustion
+    // Custom deleter for placement new cleanup
+    
+    struct WiFiClientSecureDeleter {
+        void operator()(WiFiClientSecure* ptr) {
+            if (ptr) {
+                ptr->~WiFiClientSecure();
+                heap_caps_free(const_cast<void*>(static_cast<const void*>(ptr)));
+            }
+        }
+    };
+    
+    std::unique_ptr<WiFiClientSecure, WiFiClientSecureDeleter> wifi_client(nullptr);
+    
+    const size_t wifi_size = sizeof(WiFiClientSecure);
+    void* mem = heap_caps_malloc(wifi_size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!mem) {
+        // Fallback to internal heap if PSRAM fails (though unlikely)
+        mem = heap_caps_malloc(wifi_size, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+        if (!mem) {
+            result.error_message = "Failed to allocate WiFiClientSecure (DRAM/PSRAM)";
+            ESP_LOGE(LOG_TAG, "Out of memory: cannot allocate %zu bytes for WiFiClientSecure", wifi_size);
+            return result;
+        }
+    }
+    
+    WiFiClientSecure* raw_client = new (mem) WiFiClientSecure();
+    wifi_client.reset(raw_client);
+    
+    if (!wifi_client) {
+        heap_caps_free(mem);
+        result.error_message = "Failed to construct WiFiClientSecure";
+        ESP_LOGE(LOG_TAG, "Failed to construct WiFiClientSecure");
+        return result;
+    }
+    
+    ESP_LOGI(LOG_TAG, "WiFiClientSecure allocated from %s (%zu bytes)", 
+             (heap_caps_get_free_size(MALLOC_CAP_SPIRAM) > 0 ? "PSRAM" : "DRAM"), wifi_size);
+
+    // IMPORTANT: For HTTPS to work properly:
+    // 1. Use setInsecure() for development/testing (skips certificate validation)
+    // 2. OR use setCACert() with proper root CA certificate for production
+    // Note: RTC time must be set (via NTP) for certificate validation to work
+    wifi_client->setInsecure(); // Skip certificate validation - consider using setCACert() for production
 
     HTTPClient http;
     http.setTimeout(request_timeout_ms_);

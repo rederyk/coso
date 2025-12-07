@@ -32,6 +32,7 @@ private:
     bool readFromSd(const std::string& path, std::string& out) const;
     bool readFromLittleFs(const std::string& path, std::string& out) const;
     bool writeToLittleFs(const std::string& path, const uint8_t* data, size_t size) const;
+    bool writeToSd(const std::string& path, const uint8_t* data, size_t size) const;
     std::vector<std::string> listSdDirectory(const std::string& path) const;
     std::vector<std::string> listLittleFsDirectory(const std::string& path) const;
 

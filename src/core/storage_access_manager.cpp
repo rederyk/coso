@@ -5,6 +5,7 @@
 #include "utils/logger.h"
 
 #include <FS.h>
+#include <initializer_list>
 #include <LittleFS.h>
 #include <SD_MMC.h>
 #include <freertos/FreeRTOS.h>
@@ -75,14 +76,21 @@ bool StorageAccessManager::readWebData(const std::string& filename, std::string&
         return false;
     }
 
+    // Prioritize SD for read
+    if (isAllowedSdPath(path) && readFromSd(path, out)) {
+        Logger::getInstance().infof("[StorageAccess] readWebData: Successfully read from SD: %s", path.c_str());
+        return true;
+    } else if (isAllowedSdPath(path)) {
+        Logger::getInstance().warnf("[StorageAccess] readWebData: Failed to read from SD: %s", path.c_str());
+    }
+
+    // Fallback to LittleFS
     if (isAllowedLittleFsPath(path) && readFromLittleFs(path, out)) {
+        Logger::getInstance().infof("[StorageAccess] readWebData: Successfully read from LittleFS (fallback): %s", path.c_str());
         return true;
     }
 
-    if (isAllowedSdPath(path)) {
-        return readFromSd(path, out);
-    }
-
+    Logger::getInstance().warnf("[StorageAccess] readWebData: Unable to read %s from SD or LittleFS", path.c_str());
     return false;
 }
 
@@ -101,29 +109,51 @@ bool StorageAccessManager::writeWebData(const std::string& filename, const uint8
         return false;
     }
 
-    if (!isAllowedLittleFsPath(path)) {
-        Logger::getInstance().warnf("[StorageAccess] writeWebData: path '%s' is not allowed!", path.c_str());
-        Logger::getInstance().infof("[StorageAccess] Allowed prefixes count: %d", littlefs_allowed_prefixes_.size());
+    // Prioritize SD for write
+    if (isAllowedSdPath(path)) {
+        if (writeToSd(path, data, size)) {
+            Logger::getInstance().infof("[StorageAccess] writeWebData: Successfully written to SD: %s", path.c_str());
+            return true;
+        } else {
+            Logger::getInstance().warnf("[StorageAccess] writeWebData: Failed to write to SD: %s", path.c_str());
+        }
+    } else {
+        Logger::getInstance().warnf("[StorageAccess] writeWebData: SD path '%s' not allowed!", path.c_str());
+    }
+
+    // Fallback to LittleFS
+    if (isAllowedLittleFsPath(path)) {
+        return writeToLittleFs(path, data, size);
+    } else {
+        Logger::getInstance().warnf("[StorageAccess] writeWebData: LittleFS path '%s' not allowed!", path.c_str());
+        Logger::getInstance().infof("[StorageAccess] Allowed prefixes count: %d (SD), %d (LittleFS)", sd_allowed_prefixes_.size(), littlefs_allowed_prefixes_.size());
+        for (const auto& prefix : sd_allowed_prefixes_) {
+            Logger::getInstance().infof("[StorageAccess] SD prefix: '%s'", prefix.c_str());
+        }
         for (const auto& prefix : littlefs_allowed_prefixes_) {
-            Logger::getInstance().infof("[StorageAccess]   - prefix: '%s'", prefix.c_str());
+            Logger::getInstance().infof("[StorageAccess] LittleFS prefix: '%s'", prefix.c_str());
         }
         return false;
     }
-
-    return writeToLittleFs(path, data, size);
 }
 
 std::vector<std::string> StorageAccessManager::listWebDataFiles() const {
     std::set<std::string> names;
+    // Prioritize SD for listing
     if (isAllowedSdPath(kWebDataDir)) {
         for (const auto& entry : listSdDirectory(kWebDataDir)) {
             names.insert(entry);
         }
+        Logger::getInstance().infof("[StorageAccess] listWebDataFiles: Listed %zu files from SD: %s", listSdDirectory(kWebDataDir).size(), kWebDataDir);
     }
+    // Merge with LittleFS as fallback only if not already present (avoid duplicates)
     if (isAllowedLittleFsPath(kWebDataDir)) {
         for (const auto& entry : listLittleFsDirectory(kWebDataDir)) {
-            names.insert(entry);
+            if (names.find(entry) == names.end()) {
+                names.insert(entry);
+            }
         }
+        Logger::getInstance().infof("[StorageAccess] listWebDataFiles: Merged %zu additional files from LittleFS fallback: %s", listLittleFsDirectory(kWebDataDir).size(), kWebDataDir);
     }
     return {names.begin(), names.end()};
 }
@@ -133,13 +163,38 @@ bool StorageAccessManager::deleteWebData(const std::string& filename_or_path) co
     if (path.empty()) {
         return false;
     }
-    if (!isAllowedLittleFsPath(path)) {
-        return false;
+
+    // Prioritize SD for delete
+    if (isAllowedSdPath(path)) {
+        SdCardDriver& driver = SdCardDriver::getInstance();
+        if (driver.begin()) {
+            SdMutexGuard guard(driver);
+            if (guard.locked()) {
+                if (SD_MMC.exists(path.c_str())) {
+                    if (SD_MMC.remove(path.c_str())) {
+                        Logger::getInstance().infof("[StorageAccess] deleteWebData: Successfully deleted from SD: %s", path.c_str());
+                        return true;
+                    } else {
+                        Logger::getInstance().warnf("[StorageAccess] deleteWebData: Failed to delete from SD: %s", path.c_str());
+                    }
+                }
+            }
+        }
     }
-    if (!LittleFS.exists(path.c_str())) {
-        return false;
+
+    // Fallback to LittleFS
+    if (isAllowedLittleFsPath(path)) {
+        if (LittleFS.exists(path.c_str())) {
+            if (LittleFS.remove(path.c_str())) {
+                Logger::getInstance().infof("[StorageAccess] deleteWebData: Successfully deleted from LittleFS (fallback): %s", path.c_str());
+                return true;
+            } else {
+                Logger::getInstance().warnf("[StorageAccess] deleteWebData: Failed to delete from LittleFS: %s", path.c_str());
+            }
+        }
     }
-    return LittleFS.remove(path.c_str());
+
+    return false;
 }
 
 std::string StorageAccessManager::getWebDataPath(const std::string& filename) const {
@@ -209,8 +264,28 @@ void StorageAccessManager::reloadPolicy() {
         }
     };
 
+    auto ensure_defaults = [this](std::vector<std::string>& target,
+                                  std::initializer_list<const char*> defaults,
+                                  const char* label) {
+        if (!target.empty()) {
+            return;
+        }
+
+        Logger::getInstance().warnf("[StorageAccess] %s whitelist empty, applying defaults", label);
+        for (const char* entry : defaults) {
+            const std::string normalized = normalizePath(entry);
+            if (!normalized.empty()) {
+                target.push_back(normalized);
+            }
+        }
+    };
+
     normalize_list(snapshot.storageAllowedSdPaths, sd_allowed_prefixes_);
     normalize_list(snapshot.storageAllowedLittleFsPaths, littlefs_allowed_prefixes_);
+
+    // If settings.json is missing or corrupt we still want /webdata to stay writable.
+    ensure_defaults(sd_allowed_prefixes_, {kWebDataDir, kMemoryDir, "/userDir"}, "SD");
+    ensure_defaults(littlefs_allowed_prefixes_, {kWebDataDir, kMemoryDir}, "LittleFS");
 }
 
 std::string StorageAccessManager::normalizePath(std::string path) const {
@@ -412,6 +487,46 @@ bool StorageAccessManager::writeToLittleFs(const std::string& path, const uint8_
         Logger::getInstance().warnf("[StorageAccess] Incomplete write to %s", path.c_str());
         return false;
     }
+    Logger::getInstance().infof("[StorageAccess] Successfully written to LittleFS: %s (%zu bytes)", path.c_str(), size);
+    return true;
+}
+
+bool StorageAccessManager::writeToSd(const std::string& path, const uint8_t* data, size_t size) const {
+    SdCardDriver& driver = SdCardDriver::getInstance();
+    if (!driver.begin()) {
+        Logger::getInstance().warn("[StorageAccess] Failed to mount SD for write");
+        return false;
+    }
+
+    SdMutexGuard guard(driver);
+    if (!guard.locked()) {
+        Logger::getInstance().warn("[StorageAccess] SD mutex locked during write");
+        return false;
+    }
+
+    // Ensure directory exists on SD
+    size_t slash_pos = path.find_last_of('/');
+    if (slash_pos != std::string::npos && slash_pos > 0) {
+        std::string parent = path.substr(0, slash_pos);
+        if (!SD_MMC.exists(parent.c_str())) {
+            SD_MMC.mkdir(parent.c_str());
+        }
+    }
+
+    File file = SD_MMC.open(path.c_str(), FILE_WRITE);
+    if (!file) {
+        Logger::getInstance().warnf("[StorageAccess] Failed to open %s for SD write", path.c_str());
+        return false;
+    }
+
+    size_t written = file.write(data, size);
+    file.close();
+
+    if (written != size) {
+        Logger::getInstance().warnf("[StorageAccess] Incomplete SD write to %s (%zu/%zu bytes)", path.c_str(), written, size);
+        return false;
+    }
+    Logger::getInstance().infof("[StorageAccess] Successfully written to SD: %s (%zu bytes)", path.c_str(), size);
     return true;
 }
 

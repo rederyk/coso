@@ -1009,6 +1009,13 @@ bool VoiceAssistant::makeWhisperRequest(const std::string& file_path, std::strin
 
     size_t total_length = header_part.length() + file_size + model_part.length() + footer_part.length();
 
+    // Verify WiFi connectivity before HTTPS request
+    if (!WiFi.isConnected()) {
+        LOG_E("WiFi not connected, cannot send Whisper request");
+        heap_caps_free(file_data);
+        return false;
+    }
+
     // Configure HTTP client
     LOG_I("Configuring HTTP client for URL: %s", whisper_url.c_str());
     LOG_I("Total content length: %u bytes", total_length);
@@ -1019,6 +1026,11 @@ bool VoiceAssistant::makeWhisperRequest(const std::string& file_path, std::strin
     config.timeout_ms = 30000;  // 30 second timeout
     config.buffer_size = 4096;
     config.buffer_size_tx = 4096;
+    // For HTTPS: skip certificate validation (development mode)
+    // For production, set config.cert_pem to a valid root CA certificate
+    // Note: Ensure RTC time is synchronized via NTP for certificate validation
+    config.skip_cert_common_name_check = true;
+    config.use_global_ca_store = false;
 
     LOG_I("Initializing HTTP client...");
     esp_http_client_handle_t client = esp_http_client_init(&config);
@@ -1225,6 +1237,12 @@ bool VoiceAssistant::makeTTSRequest(const std::string& text, std::string& output
         return ESP_OK;
     };
 
+    // Verify WiFi connectivity before HTTPS request
+    if (!WiFi.isConnected()) {
+        LOG_E("WiFi not connected, cannot send TTS request");
+        return false;
+    }
+
     // Configure HTTP client
     esp_http_client_config_t config = {};
     config.url = tts_url.c_str();
@@ -1234,6 +1252,9 @@ bool VoiceAssistant::makeTTSRequest(const std::string& text, std::string& output
     config.timeout_ms = 30000;  // 30 second timeout
     config.buffer_size = 4096;
     config.buffer_size_tx = 4096;
+    // For HTTPS: skip certificate validation (development mode)
+    config.skip_cert_common_name_check = true;
+    config.use_global_ca_store = false;
 
     esp_http_client_handle_t client = esp_http_client_init(&config);
     if (!client) {
@@ -1559,6 +1580,12 @@ bool VoiceAssistant::makeGPTRequest(const std::string& prompt, std::string& resp
         return ESP_OK;
     };
 
+    // Verify WiFi connectivity before HTTPS request
+    if (!WiFi.isConnected()) {
+        LOG_E("WiFi not connected, cannot send GPT request");
+        return false;
+    }
+
     bool fallback_attempted = false;
     PsramString request_body;
 
@@ -1580,6 +1607,9 @@ bool VoiceAssistant::makeGPTRequest(const std::string& prompt, std::string& resp
         config.buffer_size = 16384;  // Large buffer for responses
         config.buffer_size_tx = 8192;
         config.is_async = false;  // Synchronous mode for better stability
+        // For HTTPS: skip certificate validation (development mode)
+        config.skip_cert_common_name_check = true;
+        config.use_global_ca_store = false;
 
         esp_http_client_handle_t client = esp_http_client_init(&config);
         if (!client) {
@@ -1833,6 +1863,12 @@ bool VoiceAssistant::fetchOllamaModels(const std::string& base_url, std::vector<
         return ESP_OK;
     };
 
+    // Verify WiFi connectivity before HTTP/HTTPS request
+    if (!WiFi.isConnected()) {
+        LOG_E("WiFi not connected, cannot fetch Ollama models");
+        return false;
+    }
+
     // Configure HTTP client
     esp_http_client_config_t config = {};
     config.url = ollama_tags_url.c_str();
@@ -1841,6 +1877,9 @@ bool VoiceAssistant::fetchOllamaModels(const std::string& base_url, std::vector<
     config.user_data = &response_buffer;
     config.timeout_ms = 10000;  // 10 second timeout
     config.buffer_size = 4096;
+    // For HTTPS: skip certificate validation (development mode)
+    config.skip_cert_common_name_check = true;
+    config.use_global_ca_store = false;
 
     esp_http_client_handle_t client = esp_http_client_init(&config);
     if (!client) {

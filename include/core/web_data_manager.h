@@ -106,6 +106,7 @@ private:
     /** Security */
     std::set<std::string> allowed_domains_;
     mutable SemaphoreHandle_t domains_mutex_;
+    bool allow_all_domains_ = true;
 
     /** Scheduling */
     std::map<std::string, ScheduledTask> scheduled_tasks_;
