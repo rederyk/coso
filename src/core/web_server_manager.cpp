@@ -13,6 +13,7 @@
 #include <cctype>
 #include <cstdlib>
 #include <cstring>
+#include <memory>
 #include <vector>
 
 #include "core/async_request_manager.h"
@@ -24,6 +25,7 @@
 #include "core/time_scheduler.h"
 #include "core/voice_assistant.h"
 #include "drivers/sd_card_driver.h"
+#include "psram_helpers.h"
 #include "utils/logger.h"
 
 namespace {
@@ -35,6 +37,37 @@ constexpr size_t MAX_FS_LIST_ENTRIES = 128;
 constexpr uint32_t TTS_OPTIONS_HTTP_TIMEOUT_MS = 10000;
 constexpr const char* TTS_RESPONSE_FORMATS[] = {"mp3", "opus", "aac", "flac", "wav", "pcm"};
 constexpr uint64_t TTS_OPTIONS_CACHE_TTL_MS = 60000;  // 60 seconds
+
+struct JsonDocDeleter {
+    void operator()(DynamicJsonDocument* doc) const {
+        if (doc) {
+            doc->~DynamicJsonDocument();
+            heap_caps_free(doc);
+        }
+    }
+};
+
+using PsramJsonDoc = std::unique_ptr<DynamicJsonDocument, JsonDocDeleter>;
+
+PsramJsonDoc makePsramJsonDoc(size_t capacity) {
+    void* buffer = heap_caps_malloc(capacity, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!buffer) {
+        return {};
+    }
+
+    return PsramJsonDoc(new (buffer) DynamicJsonDocument(capacity));
+}
+
+DynamicJsonDocument* allocJsonDoc(size_t capacity,
+                                  PsramJsonDoc& psram_doc,
+                                  std::unique_ptr<DynamicJsonDocument>& dram_doc) {
+    psram_doc = makePsramJsonDoc(capacity);
+    if (psram_doc) {
+        return psram_doc.get();
+    }
+    dram_doc.reset(new DynamicJsonDocument(capacity));
+    return dram_doc.get();
+}
 
 std::string trimString(std::string value) {
     const auto first = value.find_first_not_of(" \t\r\n");
@@ -536,14 +569,21 @@ void WebServerManager::handleApiLuaExecute() {
         return;
     }
 
-    DynamicJsonDocument doc(8192);
-    auto err = deserializeJson(doc, body);
+    PsramJsonDoc doc_psram;
+    std::unique_ptr<DynamicJsonDocument> doc_dram;
+    DynamicJsonDocument* doc = allocJsonDoc(8192, doc_psram, doc_dram);
+    if (!doc) {
+        sendJson(500, "{\"status\":\"error\",\"message\":\"No memory for JSON\"}");
+        return;
+    }
+
+    auto err = deserializeJson(*doc, body);
     if (err) {
         sendJson(400, "{\"status\":\"error\",\"message\":\"Invalid JSON\"}");
         return;
     }
 
-    const char* script = doc["script"] | "";
+    const char* script = (*doc)["script"] | "";
     if (!script || strlen(script) == 0) {
         sendJson(400, "{\"status\":\"error\",\"message\":\"Missing script\"}");
         return;
@@ -1007,12 +1047,19 @@ void WebServerManager::handleAssistantPromptPreview() {
     // Get active variables to show in preview
     auto variables = assistant.getSystemPromptVariables();
 
-    DynamicJsonDocument response(4096);
-    response["status"] = "success";
-    response["resolvedPrompt"] = rendered.c_str();
+    PsramJsonDoc response_psram;
+    std::unique_ptr<DynamicJsonDocument> response_dram;
+    DynamicJsonDocument* response = allocJsonDoc(4096, response_psram, response_dram);
+    if (!response) {
+        sendJson(500, "{\"status\":\"error\",\"message\":\"No memory for JSON\"}");
+        return;
+    }
+
+    (*response)["status"] = "success";
+    (*response)["resolvedPrompt"] = rendered.c_str();
 
     // Add variables info
-    JsonObject vars = response.createNestedObject("variables");
+    JsonObject vars = response->createNestedObject("variables");
     for (const auto& pair : variables) {
         std::string value = pair.second;
         if (value.length() > 500) {
@@ -1022,7 +1069,7 @@ void WebServerManager::handleAssistantPromptPreview() {
     }
 
     String payload;
-    serializeJson(response, payload);
+    serializeJson(*response, payload);
     sendJson(200, payload);
 }
 
@@ -1030,9 +1077,16 @@ void WebServerManager::handleAssistantPromptVariables() {
     VoiceAssistant& assistant = VoiceAssistant::getInstance();
     auto variables = assistant.getSystemPromptVariables();
 
-    DynamicJsonDocument doc(4096);
-    doc["status"] = "success";
-    JsonObject vars = doc.createNestedObject("variables");
+    PsramJsonDoc doc_psram;
+    std::unique_ptr<DynamicJsonDocument> doc_dram;
+    DynamicJsonDocument* doc = allocJsonDoc(4096, doc_psram, doc_dram);
+    if (!doc) {
+        sendJson(500, "{\"status\":\"error\",\"message\":\"No memory for JSON\"}");
+        return;
+    }
+
+    (*doc)["status"] = "success";
+    JsonObject vars = doc->createNestedObject("variables");
 
     for (const auto& pair : variables) {
         // Truncate very long values for display
@@ -1044,7 +1098,7 @@ void WebServerManager::handleAssistantPromptVariables() {
     }
 
     String payload;
-    serializeJson(doc, payload);
+    serializeJson(*doc, payload);
     sendJson(200, payload);
 }
 
@@ -1076,18 +1130,25 @@ void WebServerManager::handleAssistantPromptResolveAndSave() {
     // Ritorna il nuovo JSON risolto
     // Limit size to prevent heap exhaustion
     size_t response_size = std::min(resolved_json.length() + 512, static_cast<size_t>(65536));
-    DynamicJsonDocument response(response_size);
-    response["status"] = "success";
-    response["message"] = "Prompt risolto e salvato";
+    PsramJsonDoc response_psram;
+    std::unique_ptr<DynamicJsonDocument> response_dram;
+    DynamicJsonDocument* response = allocJsonDoc(response_size, response_psram, response_dram);
+    if (!response) {
+        sendJson(500, "{\"status\":\"error\",\"message\":\"No memory for JSON\"}");
+        return;
+    }
+
+    (*response)["status"] = "success";
+    (*response)["message"] = "Prompt risolto e salvato";
     if (resolved_json.length() > 65000) {
-        response["resolved_json"] = "Response too large, truncated";
+        (*response)["resolved_json"] = "Response too large, truncated";
         Logger::getInstance().warn("[WebServer] Resolved JSON too large, truncating");
     } else {
-        response["resolved_json"] = resolved_json.c_str();
+        (*response)["resolved_json"] = resolved_json.c_str();
     }
 
     String payload;
-    serializeJson(response, payload);
+    serializeJson(*response, payload);
     sendJson(200, payload);
 
     Logger::getInstance().infof("[WebServer] Prompt resolved and saved successfully");
@@ -2058,25 +2119,32 @@ void WebServerManager::handleTtsSettingsGet() {
     SettingsManager& settings = SettingsManager::getInstance();
     const SettingsSnapshot& snapshot = settings.getSnapshot();
 
-    DynamicJsonDocument doc(2048);
-    doc["success"] = true;
+    PsramJsonDoc doc_psram;
+    std::unique_ptr<DynamicJsonDocument> doc_dram;
+    DynamicJsonDocument* doc = allocJsonDoc(2048, doc_psram, doc_dram);
+    if (!doc) {
+        sendJson(500, "{\"success\":false,\"message\":\"No memory for JSON\"}");
+        return;
+    }
+
+    (*doc)["success"] = true;
 
     // TTS settings
-    doc["ttsEnabled"] = snapshot.ttsEnabled;
-    doc["ttsCloudEndpoint"] = snapshot.ttsCloudEndpoint;
-    doc["ttsLocalEndpoint"] = snapshot.ttsLocalEndpoint;
-    doc["ttsVoice"] = snapshot.ttsVoice;
-    doc["ttsModel"] = snapshot.ttsModel;
-    doc["ttsSpeed"] = snapshot.ttsSpeed;
-    doc["ttsOutputFormat"] = snapshot.ttsOutputFormat;
-    doc["ttsOutputPath"] = snapshot.ttsOutputPath;
+    (*doc)["ttsEnabled"] = snapshot.ttsEnabled;
+    (*doc)["ttsCloudEndpoint"] = snapshot.ttsCloudEndpoint;
+    (*doc)["ttsLocalEndpoint"] = snapshot.ttsLocalEndpoint;
+    (*doc)["ttsVoice"] = snapshot.ttsVoice;
+    (*doc)["ttsModel"] = snapshot.ttsModel;
+    (*doc)["ttsSpeed"] = snapshot.ttsSpeed;
+    (*doc)["ttsOutputFormat"] = snapshot.ttsOutputFormat;
+    (*doc)["ttsOutputPath"] = snapshot.ttsOutputPath;
 
     // Include mode info
-    doc["localApiMode"] = snapshot.localApiMode;
-    doc["activeTtsEndpoint"] = snapshot.localApiMode ? snapshot.ttsLocalEndpoint : snapshot.ttsCloudEndpoint;
+    (*doc)["localApiMode"] = snapshot.localApiMode;
+    (*doc)["activeTtsEndpoint"] = snapshot.localApiMode ? snapshot.ttsLocalEndpoint : snapshot.ttsCloudEndpoint;
 
     String response;
-    serializeJson(doc, response);
+    serializeJson(*doc, response);
     sendJson(200, response);
 }
 
@@ -2087,8 +2155,15 @@ void WebServerManager::handleTtsSettingsPost() {
         return;
     }
 
-    DynamicJsonDocument doc(2048);
-    auto err = deserializeJson(doc, body);
+    PsramJsonDoc doc_psram;
+    std::unique_ptr<DynamicJsonDocument> doc_dram;
+    DynamicJsonDocument* doc = allocJsonDoc(2048, doc_psram, doc_dram);
+    if (!doc) {
+        sendJson(500, "{\"success\":false,\"message\":\"No memory for JSON\"}");
+        return;
+    }
+
+    auto err = deserializeJson(*doc, body);
     if (err) {
         sendJson(400, "{\"success\":false,\"message\":\"Invalid JSON\"}");
         return;
@@ -2097,44 +2172,44 @@ void WebServerManager::handleTtsSettingsPost() {
     SettingsManager& settings = SettingsManager::getInstance();
 
     // Update TTS settings
-    if (doc.containsKey("ttsEnabled")) {
-        settings.setTtsEnabled(doc["ttsEnabled"] | false);
+    if (doc->containsKey("ttsEnabled")) {
+        settings.setTtsEnabled((*doc)["ttsEnabled"] | false);
     }
-    if (doc.containsKey("ttsCloudEndpoint")) {
-        JsonVariant val = doc["ttsCloudEndpoint"];
+    if (doc->containsKey("ttsCloudEndpoint")) {
+        JsonVariant val = (*doc)["ttsCloudEndpoint"];
         if (!val.isNull()) {
             settings.setTtsCloudEndpoint(val.as<const char*>());
         }
     }
-    if (doc.containsKey("ttsLocalEndpoint")) {
-        JsonVariant val = doc["ttsLocalEndpoint"];
+    if (doc->containsKey("ttsLocalEndpoint")) {
+        JsonVariant val = (*doc)["ttsLocalEndpoint"];
         if (!val.isNull()) {
             settings.setTtsLocalEndpoint(val.as<const char*>());
         }
     }
-    if (doc.containsKey("ttsVoice")) {
-        JsonVariant val = doc["ttsVoice"];
+    if (doc->containsKey("ttsVoice")) {
+        JsonVariant val = (*doc)["ttsVoice"];
         if (!val.isNull()) {
             settings.setTtsVoice(val.as<const char*>());
         }
     }
-    if (doc.containsKey("ttsModel")) {
-        JsonVariant val = doc["ttsModel"];
+    if (doc->containsKey("ttsModel")) {
+        JsonVariant val = (*doc)["ttsModel"];
         if (!val.isNull()) {
             settings.setTtsModel(val.as<const char*>());
         }
     }
-    if (doc.containsKey("ttsSpeed")) {
-        settings.setTtsSpeed(doc["ttsSpeed"] | 1.0f);
+    if (doc->containsKey("ttsSpeed")) {
+        settings.setTtsSpeed((*doc)["ttsSpeed"] | 1.0f);
     }
-    if (doc.containsKey("ttsOutputFormat")) {
-        JsonVariant val = doc["ttsOutputFormat"];
+    if (doc->containsKey("ttsOutputFormat")) {
+        JsonVariant val = (*doc)["ttsOutputFormat"];
         if (!val.isNull()) {
             settings.setTtsOutputFormat(val.as<const char*>());
         }
     }
-    if (doc.containsKey("ttsOutputPath")) {
-        JsonVariant val = doc["ttsOutputPath"];
+    if (doc->containsKey("ttsOutputPath")) {
+        JsonVariant val = (*doc)["ttsOutputPath"];
         if (!val.isNull()) {
             settings.setTtsOutputPath(val.as<const char*>());
         }
@@ -2147,18 +2222,25 @@ void WebServerManager::handleTtsSettingsExport() {
     SettingsManager& settings = SettingsManager::getInstance();
     const SettingsSnapshot& snapshot = settings.getSnapshot();
 
-    DynamicJsonDocument doc(2048);
-    doc["ttsEnabled"] = snapshot.ttsEnabled;
-    doc["ttsCloudEndpoint"] = snapshot.ttsCloudEndpoint;
-    doc["ttsLocalEndpoint"] = snapshot.ttsLocalEndpoint;
-    doc["ttsVoice"] = snapshot.ttsVoice;
-    doc["ttsModel"] = snapshot.ttsModel;
-    doc["ttsSpeed"] = snapshot.ttsSpeed;
-    doc["ttsOutputFormat"] = snapshot.ttsOutputFormat;
-    doc["ttsOutputPath"] = snapshot.ttsOutputPath;
+    PsramJsonDoc doc_psram;
+    std::unique_ptr<DynamicJsonDocument> doc_dram;
+    DynamicJsonDocument* doc = allocJsonDoc(2048, doc_psram, doc_dram);
+    if (!doc) {
+        sendJson(500, "{\"success\":false,\"message\":\"No memory for JSON\"}");
+        return;
+    }
+
+    (*doc)["ttsEnabled"] = snapshot.ttsEnabled;
+    (*doc)["ttsCloudEndpoint"] = snapshot.ttsCloudEndpoint;
+    (*doc)["ttsLocalEndpoint"] = snapshot.ttsLocalEndpoint;
+    (*doc)["ttsVoice"] = snapshot.ttsVoice;
+    (*doc)["ttsModel"] = snapshot.ttsModel;
+    (*doc)["ttsSpeed"] = snapshot.ttsSpeed;
+    (*doc)["ttsOutputFormat"] = snapshot.ttsOutputFormat;
+    (*doc)["ttsOutputPath"] = snapshot.ttsOutputPath;
 
     String response;
-    serializeJson(doc, response);
+    serializeJson(*doc, response);
 
     server_->sendHeader("Content-Disposition", "attachment; filename=\"tts-settings.json\"");
     server_->sendHeader("Cache-Control", "no-store");
@@ -2172,8 +2254,15 @@ void WebServerManager::handleTtsSettingsImport() {
         return;
     }
 
-    DynamicJsonDocument doc(2048);
-    auto err = deserializeJson(doc, body);
+    PsramJsonDoc doc_psram;
+    std::unique_ptr<DynamicJsonDocument> doc_dram;
+    DynamicJsonDocument* doc = allocJsonDoc(2048, doc_psram, doc_dram);
+    if (!doc) {
+        sendJson(500, "{\"success\":false,\"message\":\"No memory for JSON\"}");
+        return;
+    }
+
+    auto err = deserializeJson(*doc, body);
     if (err) {
         sendJson(400, "{\"success\":false,\"message\":\"Invalid JSON format\"}");
         return;
@@ -2182,44 +2271,44 @@ void WebServerManager::handleTtsSettingsImport() {
     SettingsManager& settings = SettingsManager::getInstance();
 
     // Import all TTS settings from JSON
-    if (doc.containsKey("ttsEnabled")) {
-        settings.setTtsEnabled(doc["ttsEnabled"] | false);
+    if (doc->containsKey("ttsEnabled")) {
+        settings.setTtsEnabled((*doc)["ttsEnabled"] | false);
     }
-    if (doc.containsKey("ttsCloudEndpoint")) {
-        JsonVariant val = doc["ttsCloudEndpoint"];
+    if (doc->containsKey("ttsCloudEndpoint")) {
+        JsonVariant val = (*doc)["ttsCloudEndpoint"];
         if (!val.isNull()) {
             settings.setTtsCloudEndpoint(val.as<const char*>());
         }
     }
-    if (doc.containsKey("ttsLocalEndpoint")) {
-        JsonVariant val = doc["ttsLocalEndpoint"];
+    if (doc->containsKey("ttsLocalEndpoint")) {
+        JsonVariant val = (*doc)["ttsLocalEndpoint"];
         if (!val.isNull()) {
             settings.setTtsLocalEndpoint(val.as<const char*>());
         }
     }
-    if (doc.containsKey("ttsVoice")) {
-        JsonVariant val = doc["ttsVoice"];
+    if (doc->containsKey("ttsVoice")) {
+        JsonVariant val = (*doc)["ttsVoice"];
         if (!val.isNull()) {
             settings.setTtsVoice(val.as<const char*>());
         }
     }
-    if (doc.containsKey("ttsModel")) {
-        JsonVariant val = doc["ttsModel"];
+    if (doc->containsKey("ttsModel")) {
+        JsonVariant val = (*doc)["ttsModel"];
         if (!val.isNull()) {
             settings.setTtsModel(val.as<const char*>());
         }
     }
-    if (doc.containsKey("ttsSpeed")) {
-        settings.setTtsSpeed(doc["ttsSpeed"] | 1.0f);
+    if (doc->containsKey("ttsSpeed")) {
+        settings.setTtsSpeed((*doc)["ttsSpeed"] | 1.0f);
     }
-    if (doc.containsKey("ttsOutputFormat")) {
-        JsonVariant val = doc["ttsOutputFormat"];
+    if (doc->containsKey("ttsOutputFormat")) {
+        JsonVariant val = (*doc)["ttsOutputFormat"];
         if (!val.isNull()) {
             settings.setTtsOutputFormat(val.as<const char*>());
         }
     }
-    if (doc.containsKey("ttsOutputPath")) {
-        JsonVariant val = doc["ttsOutputPath"];
+    if (doc->containsKey("ttsOutputPath")) {
+        JsonVariant val = (*doc)["ttsOutputPath"];
         if (!val.isNull()) {
             settings.setTtsOutputPath(val.as<const char*>());
         }
@@ -2232,12 +2321,19 @@ void WebServerManager::handleTtsOptions() {
     SettingsManager& settings = SettingsManager::getInstance();
     const SettingsSnapshot& snapshot = settings.getSnapshot();
 
-    DynamicJsonDocument doc(4096);
-    doc["success"] = false;
-    doc["localApiMode"] = snapshot.localApiMode;
-    doc["configuredLocalEndpoint"] = snapshot.ttsLocalEndpoint.c_str();
+    PsramJsonDoc doc_psram;
+    std::unique_ptr<DynamicJsonDocument> doc_dram;
+    DynamicJsonDocument* doc = allocJsonDoc(4096, doc_psram, doc_dram);
+    if (!doc) {
+        sendJson(500, "{\"success\":false,\"message\":\"No memory for JSON\"}");
+        return;
+    }
 
-    JsonArray formats_arr = doc.createNestedArray("formats");
+    (*doc)["success"] = false;
+    (*doc)["localApiMode"] = snapshot.localApiMode;
+    (*doc)["configuredLocalEndpoint"] = snapshot.ttsLocalEndpoint.c_str();
+
+    JsonArray formats_arr = doc->createNestedArray("formats");
     for (const char* fmt : TTS_RESPONSE_FORMATS) {
         formats_arr.add(fmt);
     }
@@ -2247,7 +2343,7 @@ void WebServerManager::handleTtsOptions() {
     const bool refresh_requested =
         server_ && server_->hasArg("refresh") &&
         (server_->arg("refresh").equalsIgnoreCase("1") || server_->arg("refresh").equalsIgnoreCase("true"));
-    doc["refreshRequested"] = refresh_requested;
+    (*doc)["refreshRequested"] = refresh_requested;
 
     const uint64_t now = currentTimeMs();
     const bool cache_valid =
@@ -2255,67 +2351,69 @@ void WebServerManager::handleTtsOptions() {
 
     if (!refresh_requested) {
         if (cache_valid) {
-            fillDocWithCachedOptions(g_tts_options_cache, doc);
-            doc["message"] = "Opzioni TTS da cache recente";
+            fillDocWithCachedOptions(g_tts_options_cache, *doc);
+            (*doc)["message"] = "Opzioni TTS da cache recente";
         } else {
-            doc["success"] = true;
-            doc["partial"] = true;
-            doc["needsRefresh"] = true;
-            doc["message"] = "Premi \"Aggiorna elenco\" per interrogare l'API locale.";
-            doc["endpointUsed"] = snapshot.ttsLocalEndpoint.c_str();
+            (*doc)["success"] = true;
+            (*doc)["partial"] = true;
+            (*doc)["needsRefresh"] = true;
+            (*doc)["message"] = "Premi \"Aggiorna elenco\" per interrogare l'API locale.";
+            (*doc)["endpointUsed"] = snapshot.ttsLocalEndpoint.c_str();
         }
 
         String response;
-        serializeJson(doc, response);
+        serializeJson(*doc, response);
         sendJson(200, response);
         return;
     }
 
     if (WiFi.status() != WL_CONNECTED) {
-        doc["message"] = "WiFi non connesso";
-        doc["needsRefresh"] = true;
+        (*doc)["message"] = "WiFi non connesso";
+        (*doc)["needsRefresh"] = true;
         String response;
-        serializeJson(doc, response);
+        serializeJson(*doc, response);
         sendJson(503, response);
         return;
     }
 
     if (snapshot.ttsLocalEndpoint.empty()) {
-        doc["message"] = "Endpoint TTS locale non configurato";
-        doc["needsRefresh"] = true;
+        (*doc)["message"] = "Endpoint TTS locale non configurato";
+        (*doc)["needsRefresh"] = true;
         String response;
-        serializeJson(doc, response);
+        serializeJson(*doc, response);
         sendJson(400, response);
         return;
     }
 
     const std::string api_base = deriveTtsApiBase(snapshot.ttsLocalEndpoint);
     if (api_base.empty()) {
-        doc["message"] = "Impossibile derivare il percorso API dall'endpoint configurato";
-        doc["needsRefresh"] = true;
+        (*doc)["message"] = "Impossibile derivare il percorso API dall'endpoint configurato";
+        (*doc)["needsRefresh"] = true;
         String response;
-        serializeJson(doc, response);
+        serializeJson(*doc, response);
         sendJson(400, response);
         return;
     }
 
-    doc["apiBase"] = api_base.c_str();
-    doc["endpointUsed"] = snapshot.ttsLocalEndpoint.c_str();
+    (*doc)["apiBase"] = api_base.c_str();
+    (*doc)["endpointUsed"] = snapshot.ttsLocalEndpoint.c_str();
 
     bool models_ok = false;
     bool voices_ok = false;
 
-    models_arr = doc.createNestedArray("models");
-    voices_arr = doc.createNestedArray("voices");
+    models_arr = doc->createNestedArray("models");
+    voices_arr = doc->createNestedArray("voices");
 
     {
         std::string models_body;
         const std::string models_url = api_base + "/models";
         if (httpGetToString(models_url, models_body)) {
-            DynamicJsonDocument models_doc(4096);
-            auto err = deserializeJson(models_doc, models_body);
+            PsramJsonDoc models_doc_psram;
+            std::unique_ptr<DynamicJsonDocument> models_doc_dram;
+            DynamicJsonDocument* models_doc = allocJsonDoc(4096, models_doc_psram, models_doc_dram);
+            auto err = models_doc ? deserializeJson(*models_doc, models_body) : DeserializationError::NoMemory;
             if (!err) {
-                JsonArrayConst src = models_doc["models"].as<JsonArrayConst>();
+                JsonArrayConst src = (*models_doc)["models"].as<JsonArrayConst>();
                 if (!src.isNull()) {
                     for (JsonVariantConst item : src) {
                         const char* id = nullptr;
@@ -2340,10 +2438,10 @@ void WebServerManager::handleTtsOptions() {
                 models_ok = true;
             } else {
                 Logger::getInstance().warnf("[WebServer][TTS] Invalid JSON from %s: %s", models_url.c_str(), err.c_str());
-                doc["modelsError"] = "JSON /models non valido";
+                (*doc)["modelsError"] = "JSON /models non valido";
             }
         } else {
-            doc["modelsError"] = "Richiesta /models fallita";
+            (*doc)["modelsError"] = "Richiesta /models fallita";
         }
     }
 
@@ -2354,12 +2452,14 @@ void WebServerManager::handleTtsOptions() {
             // Check size before allocating large JSON document to prevent stack overflow
             if (voices_body.length() > 15000) {
                 Logger::getInstance().warnf("[WebServer][TTS] Voices response too large (%zu bytes), truncating", voices_body.length());
-                doc["voicesError"] = "Response too large";
+                (*doc)["voicesError"] = "Response too large";
             } else {
-                DynamicJsonDocument voices_doc(16384);
-                auto err = deserializeJson(voices_doc, voices_body);
-            if (!err) {
-                JsonArrayConst src = voices_doc["voices"].as<JsonArrayConst>();
+                PsramJsonDoc voices_doc_psram;
+                std::unique_ptr<DynamicJsonDocument> voices_doc_dram;
+                DynamicJsonDocument* voices_doc = allocJsonDoc(16384, voices_doc_psram, voices_doc_dram);
+                auto err = voices_doc ? deserializeJson(*voices_doc, voices_body) : DeserializationError::NoMemory;
+                if (!err) {
+                    JsonArrayConst src = (*voices_doc)["voices"].as<JsonArrayConst>();
                 if (!src.isNull()) {
                     for (JsonVariantConst item : src) {
                         if (!item.is<JsonObjectConst>()) {
@@ -2377,37 +2477,37 @@ void WebServerManager::handleTtsOptions() {
                 voices_ok = true;
             } else {
                 Logger::getInstance().warnf("[WebServer][TTS] Invalid JSON from %s: %s", voices_url.c_str(), err.c_str());
-                doc["voicesError"] = "JSON /voices non valido";
+                (*doc)["voicesError"] = "JSON /voices non valido";
             }
             }  // Close else block for size check
         } else {
-            doc["voicesError"] = "Richiesta /voices fallita";
+            (*doc)["voicesError"] = "Richiesta /voices fallita";
         }
     }
 
     if (!models_ok && !voices_ok) {
-        if (!doc.containsKey("message")) {
-            doc["message"] = "Impossibile recuperare modelli e voci dal server TTS locale";
+        if (!doc->containsKey("message")) {
+            (*doc)["message"] = "Impossibile recuperare modelli e voci dal server TTS locale";
         }
-        doc["needsRefresh"] = true;
+        (*doc)["needsRefresh"] = true;
         String response;
-        serializeJson(doc, response);
+        serializeJson(*doc, response);
         sendJson(502, response);
         return;
     }
 
-    doc["success"] = true;
-    doc["needsRefresh"] = false;
-    doc["partial"] = !(models_ok && voices_ok);
-    if (doc["partial"]) {
-        doc["message"] = "Alcuni dati TTS non sono disponibili (controlla models/voices)";
+    (*doc)["success"] = true;
+    (*doc)["needsRefresh"] = false;
+    (*doc)["partial"] = !(models_ok && voices_ok);
+    if ((*doc)["partial"]) {
+        (*doc)["message"] = "Alcuni dati TTS non sono disponibili (controlla models/voices)";
     } else {
-        doc["message"] = "Opzioni TTS locali aggiornate";
+        (*doc)["message"] = "Opzioni TTS locali aggiornate";
     }
 
-    updateTtsOptionsCache(doc);
+    updateTtsOptionsCache(*doc);
 
     String response;
-    serializeJson(doc, response);
+    serializeJson(*doc, response);
     sendJson(200, response);
 }
