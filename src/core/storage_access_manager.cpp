@@ -37,6 +37,34 @@ std::string stripLeadingSlashes(std::string path) {
     }
     return path;
 }
+
+// Convert a normalized path ("/webdata/foo") to the path expected by SD_MMC
+// (relative to the mount point). It also strips an eventual "/sd" prefix that
+// we might receive from logging or user input.
+std::string toSdFsPath(const std::string& normalized_path) {
+    if (normalized_path.empty()) {
+        return "/";
+    }
+    if (normalized_path == "/sd") {
+        return "/";
+    }
+    if (normalized_path.rfind("/sd/", 0) == 0) {
+        std::string without_mount = normalized_path.substr(3);
+        return without_mount.empty() ? "/" : without_mount;
+    }
+    return normalized_path;
+}
+
+// Build a display-friendly SD path (always with "/sd" prefix) for logging.
+std::string toSdLogPath(const std::string& normalized_path) {
+    if (normalized_path.rfind("/sd", 0) == 0) {
+        return normalized_path;
+    }
+    if (normalized_path == "/") {
+        return "/sd";
+    }
+    return "/sd" + normalized_path;
+}
 }  // namespace
 
 StorageAccessManager& StorageAccessManager::getInstance() {
@@ -65,14 +93,28 @@ bool StorageAccessManager::begin() {
     // Ensure webdata directory exists on SD if mounted
     SdCardDriver& driver = SdCardDriver::getInstance();
     if (driver.begin()) {
-        std::string webdata_sd = "/sd/webdata";
-        if (!SD_MMC.exists(webdata_sd.c_str())) {
-            if (SD_MMC.mkdir(webdata_sd.c_str())) {
-                Logger::getInstance().infof("[StorageAccess] Created SD webdata directory: %s", webdata_sd.c_str());
-            } else {
-                Logger::getInstance().warnf("[StorageAccess] Failed to create SD webdata directory: %s", webdata_sd.c_str());
+        auto ensureSdDirectory = [&](const char* dir) {
+            const std::string normalized = normalizePath(dir);
+            const std::string sd_path = toSdFsPath(normalized);
+            const std::string log_path = toSdLogPath(normalized);
+
+            SdMutexGuard guard(driver, pdMS_TO_TICKS(500));
+            if (!guard.locked()) {
+                Logger::getInstance().warnf("[StorageAccess] SD mutex locked, skipped directory check for %s", log_path.c_str());
+                return;
             }
-        }
+
+            if (!SD_MMC.exists(sd_path.c_str())) {
+                if (SD_MMC.mkdir(sd_path.c_str())) {
+                    Logger::getInstance().infof("[StorageAccess] Created SD directory: %s", log_path.c_str());
+                } else {
+                    Logger::getInstance().warnf("[StorageAccess] Failed to create SD directory: %s", log_path.c_str());
+                }
+            }
+        };
+
+        ensureSdDirectory(kWebDataDir);
+        ensureSdDirectory(kMemoryDir);
     }
 
     reloadPolicy();
@@ -191,16 +233,14 @@ bool StorageAccessManager::deleteWebData(const std::string& filename_or_path) co
             SdMutexGuard guard(driver);
 
             if (guard.locked()) {
-                std::string sd_full_path = path;
-                if (sd_full_path.rfind("/sd", 0) != 0) {
-                    sd_full_path = "/sd" + path;
-                }
-                if (SD_MMC.exists(sd_full_path.c_str())) {
-                    if (SD_MMC.remove(sd_full_path.c_str())) {
-                        Logger::getInstance().infof("[StorageAccess] deleteWebData: Successfully deleted from SD: %s", sd_full_path.c_str());
+                const std::string sd_path = toSdFsPath(path);
+                const std::string log_path = toSdLogPath(path);
+                if (SD_MMC.exists(sd_path.c_str())) {
+                    if (SD_MMC.remove(sd_path.c_str())) {
+                        Logger::getInstance().infof("[StorageAccess] deleteWebData: Successfully deleted from SD: %s", log_path.c_str());
                         return true;
                     } else {
-                        Logger::getInstance().warnf("[StorageAccess] deleteWebData: Failed to delete from SD: %s", sd_full_path.c_str());
+                        Logger::getInstance().warnf("[StorageAccess] deleteWebData: Failed to delete from SD: %s", log_path.c_str());
                     }
                 }
             }
@@ -440,10 +480,9 @@ bool StorageAccessManager::readFromSd(const std::string& path, std::string& out)
         return false;
     }
 
-    std::string sd_path = path;
-    if (sd_path.rfind("/sd", 0) != 0) {
-        sd_path = "/sd" + path;
-    }
+    const std::string sd_path = toSdFsPath(path);
+    const std::string sd_log_path = toSdLogPath(path);
+
     File file = SD_MMC.open(sd_path.c_str(), FILE_READ);
     if (!file) {
         return false;
@@ -459,7 +498,7 @@ bool StorageAccessManager::readFromSd(const std::string& path, std::string& out)
     size_t read = file.read(reinterpret_cast<uint8_t*>(const_cast<char*>(out.data())), size);
     file.close();
     if (read != size) {
-        Logger::getInstance().warnf("[StorageAccess] Partial SD read for %s", path.c_str());
+        Logger::getInstance().warnf("[StorageAccess] Partial SD read for %s", sd_log_path.c_str());
         return false;
     }
     return true;
@@ -561,20 +600,18 @@ bool StorageAccessManager::writeToSd(const std::string& path, const uint8_t* dat
         return false;
     }
 
-    std::string sd_path = path;
-    if (sd_path.rfind("/sd", 0) != 0) {
-        sd_path = "/sd" + path;
-    }
+    std::string sd_path = toSdFsPath(path);
+    const std::string sd_log_path = toSdLogPath(path);
 
     // Recursive directory creation lambda
     auto ensureSdDirectoryRecursive = [&]() -> bool {
         if (sd_path.empty()) return true;
         size_t last_slash = sd_path.find_last_of('/');
-        if (last_slash == std::string::npos || last_slash <= 3) return true; // /sd is root
+        if (last_slash == std::string::npos || last_slash == 0) return true; // root
         std::string dir_path = sd_path.substr(0, last_slash);
 
-        std::string current = "/sd";
-        size_t idx = 3; // after "/sd"
+        std::string current = "/";
+        size_t idx = 1; // after root slash
         while (idx < dir_path.length()) {
             size_t next_slash = dir_path.find('/', idx);
             if (next_slash == std::string::npos) next_slash = dir_path.length();
@@ -598,7 +635,7 @@ bool StorageAccessManager::writeToSd(const std::string& path, const uint8_t* dat
 
     File file = SD_MMC.open(sd_path.c_str(), FILE_WRITE);
     if (!file) {
-        Logger::getInstance().warnf("[StorageAccess] Failed to open %s for SD write", sd_path.c_str());
+        Logger::getInstance().warnf("[StorageAccess] Failed to open %s for SD write", sd_log_path.c_str());
         return false;
     }
 
@@ -606,10 +643,10 @@ bool StorageAccessManager::writeToSd(const std::string& path, const uint8_t* dat
     file.close();
 
     if (written != size) {
-        Logger::getInstance().warnf("[StorageAccess] Incomplete SD write to %s (%zu/%zu bytes)", sd_path.c_str(), written, size);
+        Logger::getInstance().warnf("[StorageAccess] Incomplete SD write to %s (%zu/%zu bytes)", sd_log_path.c_str(), written, size);
         return false;
     }
-    Logger::getInstance().infof("[StorageAccess] Successfully written to SD: %s (%zu bytes)", sd_path.c_str(), size);
+    Logger::getInstance().infof("[StorageAccess] Successfully written to SD: %s (%zu bytes)", sd_log_path.c_str(), size);
     return true;
 }
 
@@ -628,10 +665,7 @@ std::vector<std::string> StorageAccessManager::listSdDirectory(const std::string
         return entries;
     }
 
-    std::string sd_path = path;
-    if (sd_path.rfind("/sd", 0) != 0) {
-        sd_path = "/sd" + path;
-    }
+    std::string sd_path = toSdFsPath(path);
     File dir = SD_MMC.open(sd_path.c_str());
     if (!dir || !dir.isDirectory()) {
         return entries;
@@ -643,8 +677,17 @@ std::vector<std::string> StorageAccessManager::listSdDirectory(const std::string
             break;
         }
         if (!entry.isDirectory()) {
-            std::string full_name = entry.name();
-            std::string name = full_name.substr(sd_path.length() + 1); // Extract relative name
+            std::string full_name = toSdFsPath(entry.name());
+            std::string name = full_name;
+            if (sd_path == "/") {
+                if (!name.empty() && name.front() == '/') {
+                    name.erase(name.begin());
+                }
+            } else if (name.rfind(sd_path + "/", 0) == 0 && name.size() > sd_path.size() + 1) {
+                name = name.substr(sd_path.size() + 1); // Extract relative name
+            } else if (name == sd_path) {
+                name.clear();
+            }
             if (name.empty()) {
                 entry.close();
                 continue;
