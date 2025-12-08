@@ -224,6 +224,7 @@ public:
         ~LuaSandbox();
 
         CommandResult execute(const std::string& script);
+        CommandResult executeFile(const std::string& path);
 
         // Lua C API bindings
         static int lua_gpio_write(lua_State* L);

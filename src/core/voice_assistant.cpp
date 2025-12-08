@@ -3328,6 +3328,57 @@ CommandResult VoiceAssistant::LuaSandbox::execute(const std::string& script) {
     return {true, message};
 }
 
+CommandResult VoiceAssistant::LuaSandbox::executeFile(const std::string& path) {
+    if (!L) {
+        return {false, "Lua state not initialized"};
+    }
+
+    std::string effective_path = path;
+    if (path.rfind("/memory/", 0) == 0) {
+        effective_path = path.substr(8);
+    }
+
+    auto& memory = MemoryManager::getInstance();
+    std::string script_content = memory.readData(effective_path.c_str());
+
+    if (script_content.empty()) {
+        // Let's try with the original path too, just in case
+        script_content = memory.readData(path.c_str());
+        if(script_content.empty()){
+            return {false, "File not found or empty: " + path};
+        }
+    }
+
+    output_buffer_.clear();
+    struct SandboxActivation {
+        LuaSandbox* previous;
+        SandboxActivation(LuaSandbox* current) : previous(s_active_lua_sandbox) {
+            s_active_lua_sandbox = current;
+        }
+        ~SandboxActivation() {
+            s_active_lua_sandbox = previous;
+        }
+    } activation(this);
+
+    int result = luaL_dostring(L, script_content.c_str());
+
+    if (result != LUA_OK) {
+        const char* error = lua_tostring(L, -1);
+        std::string error_msg = "Lua error: ";
+        error_msg += error ? error : "unknown";
+        lua_pop(L, 1); // Remove error message from stack
+
+        if (!output_buffer_.empty()) {
+            error_msg += "\nOutput:\n";
+            error_msg += output_buffer_;
+        }
+        return {false, error_msg};
+    }
+    
+    const std::string message = output_buffer_.empty() ? "Lua script file executed" : output_buffer_;
+    return {true, message};
+}
+
 
 int VoiceAssistant::LuaSandbox::lua_gpio_write(lua_State* L) {
     int pin = luaL_checkinteger(L, 1);

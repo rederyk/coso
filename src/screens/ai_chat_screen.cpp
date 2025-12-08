@@ -88,7 +88,7 @@ void AiChatScreen::build(lv_obj_t* parent) {
     const SettingsSnapshot& snapshot = settings.getSnapshot();
 
     // Load Lua script for TTS
-    lua_sandbox_.execute("dofile('/memory/scripts/lvgl_tts_chat.lua')");
+    lua_sandbox_.executeFile("/memory/scripts/lvgl_tts_chat.lua");
 
     // Set initial auto_tts_enabled from settings
     auto_tts_enabled = settings.getTtsEnabled();
