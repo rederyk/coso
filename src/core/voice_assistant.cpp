@@ -718,20 +718,18 @@ void VoiceAssistant::speechToTextTask(void* param) {
         std::string transcription;
         bool success = va->makeWhisperRequest(queued_file, transcription);
 
-        if (success && !transcription.empty()) {
-            LOG_I("STT successful: %s", transcription.c_str());
+    if (success && !transcription.empty()) {
+        LOG_I("STT successful: %s", transcription.c_str());
 
-            ConversationBuffer::getInstance().addUserMessage(transcription, transcription);
-
-            // Send transcription to AI processing task
-            std::string* text_copy = new std::string(transcription);
-            if (xQueueSend(va->transcriptionQueue_, &text_copy, pdMS_TO_TICKS(1000)) != pdPASS) {
-                LOG_W("Transcription queue full, discarding text");
-                delete text_copy;
-            }
-        } else {
-            LOG_E("STT failed or empty transcription");
+        // Send transcription to AI processing task
+        std::string* text_copy = new std::string(transcription);
+        if (xQueueSend(va->transcriptionQueue_, &text_copy, pdMS_TO_TICKS(1000)) != pdPASS) {
+            LOG_W("Transcription queue full, discarding text");
+            delete text_copy;
         }
+    } else {
+        LOG_E("STT failed or empty transcription");
+    }
     }
 
     LOG_I("Speech-to-text task ended");
@@ -744,14 +742,16 @@ void VoiceAssistant::aiProcessingTask(void* param) {
 
     while (va->initialized_) {
         // Wait for transcribed text from STT task
-        std::string* transcription = nullptr;
-        if (xQueueReceive(va->transcriptionQueue_, &transcription, pdMS_TO_TICKS(1000)) == pdPASS) {
-            if (transcription && !transcription->empty()) {
-                LOG_I("Processing transcription with LLM: %s", transcription->c_str());
+                std::string* transcription = nullptr;
+                if (xQueueReceive(va->transcriptionQueue_, &transcription, pdMS_TO_TICKS(1000)) == pdPASS) {
+                    if (transcription && !transcription->empty()) {
+                        LOG_I("Processing transcription with LLM: %s", transcription->c_str());
 
-                // Full mode: call LLM
-                std::string llm_response;
-                bool success = va->makeGPTRequest(*transcription, llm_response);
+                        ConversationBuffer::getInstance().addUserMessage(*transcription);
+
+                        // Full mode: call LLM
+                        std::string llm_response;
+                        bool success = va->makeGPTRequest(*transcription, llm_response);
 
                 if (success && !llm_response.empty()) {
                     LOG_I("LLM response received");

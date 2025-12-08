@@ -646,18 +646,32 @@ void AiChatScreen::stopRecording() {
     const uint32_t timeout_ms = 120000; // 2 min
     VoiceAssistant::VoiceCommand response;
     if (assistant.getLastResponse(response, timeout_ms)) {
-        String transcription = response.transcription.c_str();
-        bool handled = handleTranscription(transcription);
-        String status_msg = handled ? "Trascrizione pronta" : "Nessuna trascrizione";
-        lv_color_t status_color = handled ? lv_color_hex(0x70FFBA) : lv_color_hex(0xFF7B7B);
-        setStatus(status_msg, status_color);
-
-        // Append assistant response if any (only in full mode, but text should be empty in STT-only)
-        if (!response.text.empty()) {
-            String meta = response.command.empty() ? "" : "Comando: " + String(response.command.c_str());
-            appendMessage("assistant", response.text.c_str(), meta, response.output.c_str());
+        String transcription = String(response.transcription.c_str());
+        String r_text = String(response.text.c_str());
+        String meta = response.command.empty() ? "" : "Comando: " + String(response.command.c_str());
+        if (autosend_enabled) {
+            // Append user and assistant messages
+            appendMessage("user", transcription);
+            if (r_text.length() > 0) {
+                appendMessage("assistant", r_text, meta, response.output.c_str());
+            }
+            String status_msg = "Messaggio inviato automaticamente";
+            lv_color_t status_color = lv_color_hex(0x70FFBA);
+            setStatus(status_msg, status_color);
+        } else {
+            // Just set transcription in input and show response
+            if (transcription.length() > 0) {
+                lv_textarea_set_text(chat_input, transcription.c_str());
+                if (chat_input) lv_group_focus_obj(chat_input);
+            }
+            if (r_text.length() > 0) {
+                appendMessage("assistant", r_text, meta, response.output.c_str());
+            }
+            String status_msg = "Trascrizione pronta";
+            lv_color_t status_color = lv_color_hex(0x70FFBA);
+            setStatus(status_msg, status_color);
         }
-        loadConversationHistory(); // Refresh buffer display
+        loadConversationHistory(); // Refresh UI
     } else {
         appendMessage("assistant", "Timeout nell'elaborazione audio.", "error", "");
         setStatus("Timeout", lv_color_hex(0xFF7B7B));
