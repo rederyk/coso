@@ -6,6 +6,7 @@
 
 #include "driver/i2s.h"
 #include "esp_err.h"
+#include "esp_heap_caps.h"
 #include "logger.h"
 
 namespace {
@@ -68,6 +69,21 @@ void I2sDriver::init(uint32_t sample_rate,
                      i2s_mclk_multiple_t mclk_multiple) {
     configure(sample_rate, cfg, bytes_per_sample, channels);
 
+    // CRITICAL: Enable PSRAM allocation for I2S DMA buffers to preserve DRAM
+    // This prevents "Insufficient DRAM for TTS" errors in memory-constrained apps
+    size_t free_dram_before = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+    size_t free_psram = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
+    
+    LOG_INFO("I2S init - DRAM: %u bytes free, PSRAM: %u bytes free",
+             (unsigned)free_dram_before, (unsigned)free_psram);
+
+    // Enable external memory allocation for DMA if PSRAM available
+    if (free_psram > 50000) {
+        // Enable PSRAM allocation - I2S will prefer PSRAM for DMA buffers
+        heap_caps_malloc_extmem_enable(40 * 1024);  // Threshold for PSRAM preference
+        LOG_INFO("I2S: PSRAM allocation enabled for DMA buffers");
+    }
+
     i2s_config_t i2s_config = {};
     i2s_config.mode = static_cast<i2s_mode_t>(I2S_MODE_MASTER | I2S_MODE_TX);
     i2s_config.sample_rate = sample_rate;
@@ -94,6 +110,12 @@ void I2sDriver::init(uint32_t sample_rate,
     ESP_ERROR_CHECK(i2s_set_pin(I2S_NUM_0, &pin_config));
 
     installed_ = true;
+
+    size_t free_dram_after = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+    LOG_INFO("I2S init complete - DRAM used: %u bytes (before: %u, after: %u)",
+             (unsigned)(free_dram_before - free_dram_after),
+             (unsigned)free_dram_before,
+             (unsigned)free_dram_after);
 
     LOG_INFO("Driver I2S installato per %d Hz, %u-bit, Stereo (dma len %u, count %u, chunk %u bytes)",
              sample_rate,

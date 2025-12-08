@@ -3589,12 +3589,29 @@ int VoiceAssistant::LuaSandbox::lua_tts_speak(lua_State* L) {
     // - I2S initialization overhead: ~5-10KB
     // - Safe margin for processing: ~20-30KB total
     size_t free_dram = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
-    const size_t MIN_REQUIRED_DRAM = 40 * 1024;  // 40KB minimum threshold (reduced from 120KB)
+    size_t free_psram = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
     
-    if (free_dram < MIN_REQUIRED_DRAM) {
-        LOG_W("[TTS] Insufficient DRAM for TTS: %u bytes free (need ~%u bytes). "
+    // DYNAMIC THRESHOLD: If PSRAM is available, I2S buffers can be allocated from PSRAM
+    // This reduces the DRAM requirement significantly
+    size_t min_required_dram;
+    if (free_psram > 50 * 1024) {
+        // PSRAM available and sufficient - I2S buffers will be allocated from PSRAM
+        // Only need DRAM for I2S initialization (~5-10KB) and processing buffer (~10KB)
+        min_required_dram = 20 * 1024;  // 20KB threshold
+        LOG_I("[TTS] PSRAM available (%u KB free) - reduced DRAM requirement to %u KB",
+              (unsigned)(free_psram / 1024), (unsigned)(min_required_dram / 1024));
+    } else {
+        // PSRAM unavailable or insufficient - all DMA buffers must use DRAM
+        // Need full allocation for I2S DMA (~6-7KB) + overhead (~30KB)
+        min_required_dram = 40 * 1024;  // 40KB threshold
+        LOG_I("[TTS] PSRAM limited (%u KB free) - using standard DRAM requirement of %u KB",
+              (unsigned)(free_psram / 1024), (unsigned)(min_required_dram / 1024));
+    }
+    
+    if (free_dram < min_required_dram) {
+        LOG_W("[TTS] Insufficient DRAM for TTS: %u bytes free (need ~%u bytes, PSRAM: %u bytes). "
               "Cannot allocate I2S DMA buffers.", 
-              (unsigned)free_dram, (unsigned)MIN_REQUIRED_DRAM);
+              (unsigned)free_dram, (unsigned)min_required_dram, (unsigned)free_psram);
         lua_pushnil(L);
         lua_pushstring(L, "Insufficient memory for TTS (low DRAM)");
         return 2;
