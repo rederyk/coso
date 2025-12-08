@@ -623,7 +623,6 @@ void AiChatScreen::startRecording() {
 
     // Start
     recording = true;
-    assistant.setSttOnlyMode(true);
     lv_obj_add_state(ptt_button, LV_STATE_PRESSED); // Visual feedback
     lv_obj_set_style_bg_color(ptt_button, lv_color_hex(0xFF6B6B), LV_PART_MAIN); // Red
     setStatus("Registrazione in corso...", lv_color_hex(0xFF6B6B));
@@ -659,13 +658,9 @@ void AiChatScreen::stopRecording() {
             appendMessage("assistant", response.text.c_str(), meta, response.output.c_str());
         }
         loadConversationHistory(); // Refresh buffer display
-
-        assistant.setSttOnlyMode(false);
     } else {
         appendMessage("assistant", "Timeout nell'elaborazione audio.", "error", "");
         setStatus("Timeout", lv_color_hex(0xFF7B7B));
-
-        assistant.setSttOnlyMode(false);
     }
     updateStatusIcons();
 }
