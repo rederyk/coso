@@ -7,6 +7,8 @@
 #include "core/audio_manager.h"
 #include "core/keyboard_manager.h"
 #include "drivers/sd_card_driver.h"
+#include "core/app_manager.h"
+#include "core/display_manager.h"
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
@@ -303,6 +305,9 @@ void AiChatScreen::onShow() {
     loadConversationHistory();
     updateLayout(snapshot.landscapeLayout);
     if (chat_input) lv_group_focus_obj(chat_input);
+
+    // Ensure dock layer is visible
+    DisplayManager::getInstance().getLauncherLayer();
 
     // Ensure VoiceAssistant ready
     if (snapshot.voiceAssistantEnabled && !VoiceAssistant::getInstance().isInitialized()) {
@@ -699,6 +704,7 @@ void AiChatScreen::setStatus(const String& text, lv_color_t color) {
 }
 
 void AiChatScreen::updateLayout(bool landscape) {
+    // No change needed for content, as root height is fixed and dock is global
     if (!content_container) return;
 
     lv_obj_set_flex_flow(content_container, landscape ? LV_FLEX_FLOW_ROW_WRAP : LV_FLEX_FLOW_COLUMN);
@@ -710,6 +716,8 @@ void AiChatScreen::updateLayout(bool landscape) {
     set_card_width(status_card);
     set_card_width(chat_card);
     set_card_width(input_card);
+
+    // In landscape, dock might need horizontal adjustment, but since it's global, root width adjustment suffices
 }
 
 void AiChatScreen::statusUpdateTimer(lv_timer_t* timer) {
