@@ -29,7 +29,11 @@
 #include "utils/logger.h"
 #include "core/operating_modes.h"
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+
 namespace {
+
 constexpr const char* DEFAULT_ROOT = "/www/index.html";
 constexpr uint32_t SERVER_LOOP_DELAY_MS = 10;
 constexpr uint32_t ASSISTANT_RESPONSE_TIMEOUT_MS = 120000;  // 120 seconds for slow LLM models (e.g., Ollama 20B)
