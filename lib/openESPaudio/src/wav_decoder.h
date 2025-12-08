@@ -39,6 +39,7 @@ private:
     uint16_t bits_per_sample_ = 0;
     uint64_t total_frames_ = 0;
     size_t data_offset_ = 0;      // Offset dei dati PCM nel file
-    size_t data_size_ = 0;        // Dimensione dei dati PCM in bytes
+    uint64_t data_size_ = 0;        // Dimensione dei dati PCM in bytes
     uint64_t current_frame_ = 0;  // Frame corrente di playback
+    uint16_t audio_format_ = 1;    // 1=PCM, 3=IEEE_FLOAT
 };

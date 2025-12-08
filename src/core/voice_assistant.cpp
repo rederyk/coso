@@ -1221,6 +1221,14 @@ bool VoiceAssistant::makeTTSRequest(const std::string& text, std::string& output
     cJSON_AddStringToObject(root, "input", text.c_str());
     cJSON_AddStringToObject(root, "voice", settings.ttsVoice.c_str());
     cJSON_AddNumberToObject(root, "speed", settings.ttsSpeed);
+    cJSON_AddStringToObject(root, "response_format", "wav");
+
+    // Add params object for tts-webui specific settings
+    cJSON* params = cJSON_CreateObject();
+    if (params) {
+        cJSON_AddStringToObject(params, "dtype", "int16"); // Request 16-bit integer PCM audio
+        cJSON_AddItemToObject(root, "params", params);
+    }
 
     char* json_str = cJSON_PrintUnformatted(root);
     std::string request_body(json_str);
@@ -1346,7 +1354,7 @@ bool VoiceAssistant::makeTTSRequest(const std::string& text, std::string& output
     snprintf(filename, sizeof(filename), "tts_%04d%02d%02d_%02d%02d%02d.%s",
              timeinfo->tm_year + 1900, timeinfo->tm_mon + 1, timeinfo->tm_mday,
              timeinfo->tm_hour, timeinfo->tm_min, timeinfo->tm_sec,
-             settings.ttsOutputFormat.c_str());
+             "wav");
 
     // Parse output path to determine filesystem
     std::string output_dir = settings.ttsOutputPath;
@@ -1402,6 +1410,11 @@ bool VoiceAssistant::makeTTSRequest(const std::string& text, std::string& output
     // Build full output path (for logging purposes, keep the original prefix)
     std::string file_path_on_fs = actual_path + "/" + filename;
     output_file_path = output_dir + "/" + filename;
+
+    // Hotfix: If the path was defaulted to SD card, ensure the returned path has the /sd prefix.
+    if (output_dir.find("/littlefs/") != 0 && output_dir.find("/sd/") != 0) {
+        output_file_path = "/sd" + output_file_path;
+    }
 
     // Write audio data to file
     File file;

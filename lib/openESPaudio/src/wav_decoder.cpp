@@ -6,6 +6,7 @@
 #include "logger.h"
 #include <cstring>
 #include <algorithm>
+#include <new>
 
 namespace {
     // Helper per leggere little-endian
@@ -36,8 +37,12 @@ bool WavDecoder::init(IDataSource* source, size_t frames_per_chunk, bool build_s
     }
 
     // Validazione formato
-    if (bits_per_sample_ != 16) {
+    if (audio_format_ == 1 && bits_per_sample_ != 16) {
         LOG_ERROR("WavDecoder: Only 16-bit PCM supported (got %u bits)", bits_per_sample_);
+        return false;
+    }
+    if (audio_format_ == 3 && bits_per_sample_ != 32) {
+        LOG_ERROR("WavDecoder: Only 32-bit IEEE Float supported (got %u bits)", bits_per_sample_);
         return false;
     }
 
@@ -49,8 +54,8 @@ bool WavDecoder::init(IDataSource* source, size_t frames_per_chunk, bool build_s
     initialized_ = true;
     current_frame_ = 0;
 
-    LOG_INFO("WavDecoder initialized: %u Hz, %u ch, %u bits, %llu frames",
-             sample_rate_, channels_, bits_per_sample_, total_frames_);
+    LOG_INFO("WavDecoder initialized: format=%u, %u Hz, %u ch, %u bits, %llu frames",
+             audio_format_, sample_rate_, channels_, bits_per_sample_, total_frames_);
 
     return true;
 }
@@ -65,6 +70,7 @@ void WavDecoder::shutdown() {
     data_offset_ = 0;
     data_size_ = 0;
     current_frame_ = 0;
+    audio_format_ = 1;
 }
 
 bool WavDecoder::parse_wav_header() {
@@ -112,9 +118,9 @@ bool WavDecoder::parse_wav_header() {
                 return false;
             }
 
-            uint16_t audio_format = read_u16_le(fmt_data);
-            if (audio_format != 1) {
-                LOG_ERROR("WavDecoder: Only PCM format supported (got format %u)", audio_format);
+            audio_format_ = read_u16_le(fmt_data);
+            if (audio_format_ != 1 && audio_format_ != 3) {
+                LOG_ERROR("WavDecoder: Only PCM (1) or IEEE_FLOAT (3) formats supported (got format %u)", audio_format_);
                 return false;
             }
 
@@ -129,7 +135,9 @@ bool WavDecoder::parse_wav_header() {
             // Chunk data
             data_offset_ = offset + 8;
             data_size_ = chunk_size;
-            total_frames_ = data_size_ / (channels_ * (bits_per_sample_ / 8));
+            if (bits_per_sample_ > 0) {
+                total_frames_ = data_size_ / (channels_ * (bits_per_sample_ / 8));
+            }
             found_data = true;
             break;
 
@@ -155,7 +163,6 @@ uint64_t WavDecoder::read_frames(int16_t* dst, uint64_t frames) {
         return 0;
     }
 
-    // Calcola quanti frame possiamo effettivamente leggere
     uint64_t frames_left = total_frames_ - current_frame_;
     uint64_t frames_to_read = std::min(frames, frames_left);
 
@@ -163,13 +170,46 @@ uint64_t WavDecoder::read_frames(int16_t* dst, uint64_t frames) {
         return 0; // EOF
     }
 
-    size_t bytes_to_read = frames_to_read * channels_ * sizeof(int16_t);
-    size_t bytes_read = source_->read(reinterpret_cast<uint8_t*>(dst), bytes_to_read);
+    if (audio_format_ == 1) { // PCM 16-bit
+        size_t bytes_to_read = frames_to_read * channels_ * sizeof(int16_t);
+        size_t bytes_read = source_->read(reinterpret_cast<uint8_t*>(dst), bytes_to_read);
+        uint64_t frames_read = bytes_read / (channels_ * sizeof(int16_t));
+        current_frame_ += frames_read;
+        return frames_read;
 
-    uint64_t frames_read = bytes_read / (channels_ * sizeof(int16_t));
-    current_frame_ += frames_read;
+    } else if (audio_format_ == 3) { // IEEE 32-bit Float
+        size_t samples_to_read = frames_to_read * channels_;
+        
+        // Allocate buffer on the heap to avoid stack overflow
+        float* float_buf = new (std::nothrow) float[samples_to_read];
+        if (!float_buf) {
+            LOG_ERROR("WavDecoder: Failed to allocate memory for float buffer");
+            return 0;
+        }
 
-    return frames_read;
+        size_t bytes_to_read = samples_to_read * sizeof(float);
+        size_t bytes_read = source_->read(reinterpret_cast<uint8_t*>(float_buf), bytes_to_read);
+        
+        if (bytes_read == 0) {
+            delete[] float_buf;
+            return 0;
+        }
+
+        uint64_t frames_read = (bytes_read / sizeof(float)) / channels_;
+        
+        // Convert float to int16_t
+        for (size_t i = 0; i < frames_read * channels_; ++i) {
+            // Clamp to [-1.0, 1.0] before conversion
+            float sample = std::max(-1.0f, std::min(1.0f, float_buf[i]));
+            dst[i] = static_cast<int16_t>(sample * 32767.0f);
+        }
+
+        delete[] float_buf; // Free the buffer
+        current_frame_ += frames_read;
+        return frames_read;
+    }
+
+    return 0;
 }
 
 bool WavDecoder::seek_to_frame(uint64_t frame_index) {
@@ -188,7 +228,8 @@ bool WavDecoder::seek_to_frame(uint64_t frame_index) {
         return false;
     }
 
-    size_t byte_offset = data_offset_ + (frame_index * channels_ * sizeof(int16_t));
+    size_t bytes_per_sample = bits_per_sample_ / 8;
+    size_t byte_offset = data_offset_ + (frame_index * channels_ * bytes_per_sample);
 
     if (source_->seek(byte_offset)) {
         current_frame_ = frame_index;
