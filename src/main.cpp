@@ -360,19 +360,19 @@ void setup() {
         AudioManager& audio_manager = AudioManager::getInstance();
         audio_manager.begin();
         logger.info("[Audio] Audio manager ready");
-
-        // Initialize Microphone Manager
-        logger.info("[MicMgr] Initializing microphone manager");
-        MicrophoneManager& mic_manager = MicrophoneManager::getInstance();
-        if (mic_manager.begin()) {
-            logger.info("[MicMgr] Microphone manager ready");
-        } else {
-            logger.warn("[MicMgr] Microphone manager initialization failed");
-        }
     } else {
         // Even in WEB_ONLY, some audio might be useful for notifications
         AudioManager& audio_manager = AudioManager::getInstance();
         audio_manager.begin();
+    }
+
+    // Initialize Microphone Manager (now in all modes)
+    logger.info("[MicMgr] Initializing microphone manager");
+    MicrophoneManager& mic_manager = MicrophoneManager::getInstance();
+    if (mic_manager.begin()) {
+        logger.info("[MicMgr] Microphone manager ready");
+    } else {
+        logger.warn("[MicMgr] Microphone manager initialization failed");
     }
 
     // Initialize Web Data Manager (needed for both UI and web fetches)
