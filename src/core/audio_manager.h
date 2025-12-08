@@ -6,6 +6,7 @@
 #include "audio_player_local.h"
 #include "../lib/openESPaudio/src/timeshift_manager.h"
 #include "../lib/openESPaudio/src/audio_effects.h"
+#include "../lib/openESPaudio/src/audio_types.h"
 
 /**
  * Radio station configuration
@@ -29,8 +30,8 @@ public:
     void tick();
 
     // Playback control
-    bool playFile(const char* path);
-    bool playRadio(const char* url);
+    bool playFile(const char* path, uint32_t expected_sample_rate = 0, uint32_t expected_bitrate = 0);
+    bool playRadio(const char* url, uint32_t expected_sample_rate = 0, uint32_t expected_bitrate = 0);
     bool playRadioStation(size_t station_index);
     void stop();
     void togglePause();

@@ -53,11 +53,11 @@ void AudioManager::tick() {
     }
 }
 
-bool AudioManager::playFile(const char* path) {
+bool AudioManager::playFile(const char* path, uint32_t expected_sample_rate, uint32_t expected_bitrate) {
     if (!path) return false;
 
     auto& logger = Logger::getInstance();
-    logger.infof("[AudioMgr] Playing file: %s", path);
+    logger.infof("[AudioMgr] Playing file: %s (expected sr=%u, br=%u)", path, expected_sample_rate, expected_bitrate);
 
     // Stop current playback
     if (player_->is_playing()) {
@@ -67,24 +67,55 @@ bool AudioManager::playFile(const char* path) {
 
     // Select and arm source
     if (!player_->select_source(path)) {
-        logger.error("[AudioMgr] Failed to select source");
+        logger.errorf("[AudioMgr] Failed to select source for %s", path);
         return false;
     }
 
     if (!player_->arm_source()) {
-        logger.error("[AudioMgr] Failed to arm source");
+        logger.errorf("[AudioMgr] Failed to arm source for %s", path);
         return false;
     }
 
     player_->start();
+
+    // Post-start validation for MP3 (or any format)
+    if (player_->state() == PlayerState::PLAYING) {
+        uint32_t detected_sr = player_->current_sample_rate();
+        uint32_t detected_br = player_->current_bitrate();
+        const char* fmt_str = "UNKNOWN";
+        AudioFormat fmt = player_->current_format();
+        if (fmt == AudioFormat::MP3) fmt_str = "MP3";
+        else if (fmt == AudioFormat::WAV) fmt_str = "WAV";
+        else if (fmt == AudioFormat::AAC) fmt_str = "AAC";
+
+        logger.infof("[AudioMgr] Playback started: format=%s, sr=%u Hz, br=%u kbps",
+                     fmt_str, detected_sr, detected_br);
+
+        if (expected_sample_rate > 0 && detected_sr != expected_sample_rate) {
+            logger.warnf("[AudioMgr] Sample rate mismatch: detected %u != expected %u. Consider forcing.", detected_sr, expected_sample_rate);
+        }
+        if (expected_bitrate > 0 && detected_br != expected_bitrate) {
+            logger.warnf("[AudioMgr] Bitrate mismatch: detected %u != expected %u.", detected_br, expected_bitrate);
+        }
+
+        if (detected_sr == 0 || detected_sr > 96000) {
+            logger.errorf("[AudioMgr] Invalid sample rate detected (%u Hz). Forcing retry or fallback.", detected_sr);
+            player_->stop();
+            return false;
+        }
+    } else {
+        logger.errorf("[AudioMgr] Failed to start playback");
+        return false;
+    }
+
     return true;
 }
 
-bool AudioManager::playRadio(const char* url) {
+bool AudioManager::playRadio(const char* url, uint32_t expected_sample_rate, uint32_t expected_bitrate) {
     if (!url) return false;
 
     auto& logger = Logger::getInstance();
-    logger.infof("[AudioMgr] Starting radio stream: %s", url);
+    logger.infof("[AudioMgr] Starting radio stream: %s (expected sr=%u, br=%u)", url, expected_sample_rate, expected_bitrate);
 
     // Stop current playback
     if (player_->is_playing()) {
@@ -97,13 +128,13 @@ bool AudioManager::playRadio(const char* url) {
     ts->setStorageMode(preferred_storage_mode_);
 
     if (!ts->open(url)) {
-        logger.error("[AudioMgr] Failed to open stream URL");
+        logger.errorf("[AudioMgr] Failed to open stream URL %s", url);
         delete ts;
         return false;
     }
 
     if (!ts->start()) {
-        logger.error("[AudioMgr] Failed to start timeshift download");
+        logger.errorf("[AudioMgr] Failed to start timeshift download for %s", url);
         delete ts;
         return false;
     }
@@ -115,14 +146,14 @@ bool AudioManager::playRadio(const char* url) {
     uint32_t start_wait = millis();
     while (ts->buffered_bytes() == 0) {
         if (millis() - start_wait > MAX_WAIT_MS) {
-            logger.error("[AudioMgr] Timeout waiting for first chunk");
+            logger.errorf("[AudioMgr] Timeout waiting for first chunk from %s", url);
             delete ts;
             return false;
         }
         vTaskDelay(pdMS_TO_TICKS(100));
     }
 
-    logger.info("[AudioMgr] First chunk ready, starting playback");
+    logger.infof("[AudioMgr] First chunk ready (%u bytes), starting playback", (unsigned)ts->buffered_bytes());
 
     // Set auto-pause callback
     ts->set_auto_pause_callback([](bool should_pause) {
@@ -135,12 +166,43 @@ bool AudioManager::playRadio(const char* url) {
     player_->select_source(std::unique_ptr<IDataSource>(ts));
 
     if (!player_->arm_source()) {
-        logger.error("[AudioMgr] Failed to arm timeshift source");
+        logger.errorf("[AudioMgr] Failed to arm timeshift source for %s", url);
         current_timeshift_ = nullptr;
         return false;
     }
 
     player_->start();
+
+    // Post-start validation (for streams, bitrate may be estimated)
+    if (player_->state() == PlayerState::PLAYING) {
+        uint32_t detected_sr = player_->current_sample_rate();
+        uint32_t detected_br = player_->current_bitrate();
+        const char* fmt_str = "UNKNOWN";
+        AudioFormat fmt = player_->current_format();
+        if (fmt == AudioFormat::MP3) fmt_str = "MP3";
+        else if (fmt == AudioFormat::WAV) fmt_str = "WAV";
+        else if (fmt == AudioFormat::AAC) fmt_str = "AAC";
+
+        logger.infof("[AudioMgr] Stream playback started: format=%s, sr=%u Hz, br=%u kbps",
+                     fmt_str, detected_sr, detected_br);
+
+        if (expected_sample_rate > 0 && detected_sr != expected_sample_rate) {
+            logger.warnf("[AudioMgr] Sample rate mismatch in stream: detected %u != expected %u. Consider forcing.", detected_sr, expected_sample_rate);
+        }
+        if (expected_bitrate > 0 && detected_br > 0 && detected_br != expected_bitrate) {
+            logger.warnf("[AudioMgr] Bitrate mismatch in stream: detected %u != expected %u.", detected_br, expected_bitrate);
+        }
+
+        if (detected_sr == 0 || detected_sr > 96000) {
+            logger.errorf("[AudioMgr] Invalid sample rate in stream (%u Hz). Forcing retry or fallback.", detected_sr);
+            player_->stop();
+            return false;
+        }
+    } else {
+        logger.errorf("[AudioMgr] Failed to start stream playback");
+        return false;
+    }
+
     logger.info("[AudioMgr] Radio stream started successfully");
     return true;
 }
@@ -151,7 +213,7 @@ bool AudioManager::playRadioStation(size_t station_index) {
     }
 
     auto& logger = Logger::getInstance();
-    logger.infof("[AudioMgr] Playing station: %s", radio_stations_[station_index].name.c_str());
+    logger.infof("[AudioMgr] Playing station: %s (%s)", radio_stations_[station_index].name.c_str(), radio_stations_[station_index].url.c_str());
 
     return playRadio(radio_stations_[station_index].url.c_str());
 }
@@ -269,9 +331,24 @@ void AudioManager::onMetadata(const Metadata& meta, const char* path) {
 }
 
 void AudioManager::onStart(const char* path) {
-    Logger::getInstance().infof("[AudioMgr] Playback started: %s", path);
+    auto& instance = getInstance();
+    auto& logger = Logger::getInstance();
+    logger.infof("[AudioMgr] Playback started: %s", path ? path : "unknown");
+    
+    // Log detected params on start
+    if (instance.player_) {
+        AudioFormat fmt = instance.player_->current_format();
+        uint32_t sr = instance.player_->current_sample_rate();
+        uint32_t br = instance.player_->current_bitrate();
+        const char* fmt_str = "UNKNOWN";
+        if (fmt == AudioFormat::MP3) fmt_str = "MP3";
+        else if (fmt == AudioFormat::WAV) fmt_str = "WAV";
+        else if (fmt == AudioFormat::AAC) fmt_str = "AAC";
+        logger.infof("[AudioMgr] Detected on start: format=%s, sr=%u Hz, br=%u kbps", fmt_str, sr, br);
+    }
+    
     // Store start time for duration calculation
-    getInstance().playback_start_ms_ = millis();
+    instance.playback_start_ms_ = millis();
 }
 
 void AudioManager::onStop(const char* path, PlayerState state) {
@@ -285,5 +362,24 @@ void AudioManager::onEnd(const char* path) {
 }
 
 void AudioManager::onError(const char* path, const char* detail) {
-    Logger::getInstance().errorf("[AudioMgr] Playback error: %s - %s", path, detail);
+    auto& logger = Logger::getInstance();
+    logger.errorf("[AudioMgr] Playback error: %s - %s", path ? path : "unknown", detail ? detail : "no detail");
+
+    // If MP3-related (check if path ends with .mp3 or detail mentions MP3/decoder)
+    if (path && strstr(path, ".mp3")) {
+        logger.error("[AudioMgr] MP3-specific error detected. Check decoder init (sample rate/bitrate detection).");
+    } else if (detail && (strstr(detail, "decoder") || strstr(detail, "MP3"))) {
+        logger.error("[AudioMgr] Decoder/MP3 init failure. Consider specifying expected sample_rate (e.g., 44100) or bitrate.");
+    }
+
+    // Attempt recovery if not already in error state
+    auto& instance = getInstance();
+    if (instance.player_ && instance.player_->state() != PlayerState::ERROR) {
+        logger.warn("[AudioMgr] Attempting auto-recovery...");
+        if (instance.player_->is_playing() || instance.player_->state() == PlayerState::PLAYING) {
+            instance.player_->stop();
+            vTaskDelay(pdMS_TO_TICKS(500));
+            logger.info("[AudioMgr] Recovery: Playback stopped. Manual restart recommended.");
+        }
+    }
 }
