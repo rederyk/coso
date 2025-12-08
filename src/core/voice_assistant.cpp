@@ -3583,6 +3583,23 @@ int VoiceAssistant::LuaSandbox::lua_cjson_decode(lua_State* L) {
 int VoiceAssistant::LuaSandbox::lua_tts_speak(lua_State* L) {
     const char* text = luaL_checkstring(L, 1);
 
+    // Check available DRAM memory before attempting TTS
+    // With reduced DMA buffers (buf_len=96, buf_count=6 for 24kHz):
+    // - Actual I2S DMA need: ~2-3KB
+    // - I2S initialization overhead: ~5-10KB
+    // - Safe margin for processing: ~20-30KB total
+    size_t free_dram = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+    const size_t MIN_REQUIRED_DRAM = 40 * 1024;  // 40KB minimum threshold (reduced from 120KB)
+    
+    if (free_dram < MIN_REQUIRED_DRAM) {
+        LOG_W("[TTS] Insufficient DRAM for TTS: %u bytes free (need ~%u bytes). "
+              "Cannot allocate I2S DMA buffers.", 
+              (unsigned)free_dram, (unsigned)MIN_REQUIRED_DRAM);
+        lua_pushnil(L);
+        lua_pushstring(L, "Insufficient memory for TTS (low DRAM)");
+        return 2;
+    }
+
     VoiceAssistant& va = VoiceAssistant::getInstance();
     std::string output_file;
     bool success = va.makeTTSRequest(text, output_file);

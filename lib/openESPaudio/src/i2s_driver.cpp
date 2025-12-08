@@ -26,13 +26,16 @@ void I2sDriver::configure(uint32_t sample_rate,
     uint32_t buf_len = cfg.i2s_dma_buf_len;
     uint32_t buf_count = cfg.i2s_dma_buf_count;
 
-    // Adjust for lower sample rates to keep latency tight.
+    // Adjust for lower sample rates but keep allocations small to prevent DMA OOM errors
+    // In memory-constrained scenarios (like script execution), smaller buffers help prevent crashes
     if (sample_rate <= 24000) {
-        buf_len = 192;
-        buf_count = 10;
+        // For 24kHz: reduce from 192/10 to 96/6 to save ~9KB of DMA memory
+        buf_len = 96;      // was 192 - reduced by 50%
+        buf_count = 6;     // was 10 - reduced by 40%
     } else if (sample_rate >= 48000) {
-        buf_len = 256;
-        buf_count = 12;
+        // For 48kHz+: reduce from 256/12 to 128/8 to save DMA memory
+        buf_len = 128;     // was 256 - reduced by 50%
+        buf_count = 8;     // was 12 - reduced by 33%
     }
 
     const uint32_t align = 64 / (bytes_per_sample * channels);

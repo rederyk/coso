@@ -72,8 +72,8 @@ AudioConfig default_audio_config() {
         .default_volume_percent = 75,
         .i2s_write_timeout_ms = kI2sWriteTimeout,
         .i2s_chunk_bytes = kI2sChunkBytes,
-        .i2s_dma_buf_len = 128,  // Reduced from 256 to fix DMA allocation failure
-        .i2s_dma_buf_count = 6,  // Reduced from 12 to fix DMA allocation failure
+        .i2s_dma_buf_len = 64,  // Reduced from 128 to fix DMA allocation failure
+        .i2s_dma_buf_count = 4,  // Reduced from 6 to fix DMA allocation failure
         .i2s_use_apll = true};
     return cfg;
 }
