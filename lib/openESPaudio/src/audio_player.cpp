@@ -18,29 +18,30 @@ constexpr bool kPreferDramRing = false;
 
 #ifdef AUDIO_PRESET_LOW_MEM
 constexpr const char *kConfigProfile = "LOW_MEM";
-constexpr size_t kRingPsram = 64 * 1024;
-constexpr size_t kRingDram = 16 * 1024;
-constexpr size_t kRingMin = 12 * 1024;
-constexpr uint32_t kTargetBufferMs = 250;
-constexpr size_t kProducerMinFree = 12 * 1024;
-constexpr size_t kFileChunk = 512;
-constexpr uint32_t kAudioTaskStack = 8192;
-constexpr uint32_t kFileTaskStack = 2048;
-constexpr uint32_t kI2sWriteTimeout = 200;
-constexpr size_t kI2sChunkBytes = 1024;
+constexpr size_t kRingPsram = 32 * 1024;  // Reduced PSRAM ring for low-mem profile
+constexpr size_t kRingDram = 8 * 1024;    // Reduced DRAM ring
+constexpr size_t kRingMin = 8 * 1024;     // Tighter minimum
+constexpr uint32_t kTargetBufferMs = 200;
+constexpr size_t kProducerMinFree = 8 * 1024;
+constexpr size_t kFileChunk = 256;
+constexpr uint32_t kAudioTaskStack = 6144;  // Reduced stack size
+constexpr uint32_t kFileTaskStack = 1536;
+constexpr uint32_t kI2sWriteTimeout = 150;
+constexpr size_t kI2sChunkBytes = 512;
 #else
 constexpr const char *kConfigProfile = "DEFAULT";
-constexpr size_t kRingPsram = 64 * 1024;
-constexpr size_t kRingDram = 16 * 1024;
-constexpr size_t kRingMin = 16 * 1024;
-constexpr uint32_t kTargetBufferMs = 350;
-constexpr size_t kProducerMinFree = 24 * 1024;
-constexpr size_t kFileChunk = 1024;
-constexpr uint32_t kAudioTaskStack = 8192;
+constexpr size_t kRingPsram = 48 * 1024;  // Slightly reduced PSRAM ring
+constexpr size_t kRingDram = 12 * 1024;   // Reduced DRAM ring
+constexpr size_t kRingMin = 12 * 1024;
+constexpr uint32_t kTargetBufferMs = 300;
+constexpr size_t kProducerMinFree = 16 * 1024;
+constexpr size_t kFileChunk = 512;
+constexpr uint32_t kAudioTaskStack = 7168;  // Reduced stack size
 constexpr uint32_t kFileTaskStack = 2048;
-constexpr uint32_t kI2sWriteTimeout = 250;
-constexpr size_t kI2sChunkBytes = 1024;
+constexpr uint32_t kI2sWriteTimeout = 200;
+constexpr size_t kI2sChunkBytes = 768;
 #endif
+
 
 
 constexpr EventBits_t AUDIO_TASK_DONE_BIT = BIT0;
@@ -71,8 +72,8 @@ AudioConfig default_audio_config() {
         .default_volume_percent = 75,
         .i2s_write_timeout_ms = kI2sWriteTimeout,
         .i2s_chunk_bytes = kI2sChunkBytes,
-        .i2s_dma_buf_len = 256,
-        .i2s_dma_buf_count = 12,
+        .i2s_dma_buf_len = 128,  // Reduced from 256 to fix DMA allocation failure
+        .i2s_dma_buf_count = 6,  // Reduced from 12 to fix DMA allocation failure
         .i2s_use_apll = true};
     return cfg;
 }
@@ -592,12 +593,33 @@ void AudioPlayer::audio_task() {
 
     // ===== ALLOCATE TEMP PCM BUFFER =====
     // Using a heap buffer for PCM data
+    if (output_channels == 0) {
+        LOG_ERROR("Invalid output channels");
+        goto cleanup;
+    }
     pcm_buffer_sample_count = pcm_buffer_size_frames * output_channels;
     pcm_buffer = (int16_t*)heap_caps_malloc(pcm_buffer_sample_count * sizeof(int16_t), MALLOC_CAP_8BIT);
     if (!pcm_buffer) {
-        LOG_ERROR("Failed to allocate PCM buffer");
-        goto cleanup;
+        LOG_WARN("Failed to allocate full PCM buffer in 8-bit DMA, trying internal");
+        pcm_buffer = (int16_t*)heap_caps_malloc(pcm_buffer_sample_count * sizeof(int16_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);
+        if (!pcm_buffer) {
+            // Fallback to smaller buffer in internal
+            pcm_buffer_size_frames = 1024;
+            pcm_buffer_sample_count = pcm_buffer_size_frames * output_channels;
+            pcm_buffer = (int16_t*)heap_caps_malloc(pcm_buffer_sample_count * sizeof(int16_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);
+            if (!pcm_buffer) {
+                LOG_ERROR("Failed to allocate even reduced PCM buffer");
+                goto cleanup;
+            }
+            LOG_WARN("Using reduced PCM buffer size: %u frames in internal RAM", (unsigned)pcm_buffer_size_frames);
+        } else {
+            LOG_INFO("Allocated full PCM buffer in internal DMA");
+        }
+    } else {
+        LOG_INFO("Allocated full PCM buffer in 8-bit DMA (PSRAM fallback)");
     }
+
+
 
     // ===== MAIN PLAYBACK LOOP =====
     LOG_INFO("Starting playback loop...");
