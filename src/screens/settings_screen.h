@@ -26,6 +26,8 @@ private:
     static void handleLedSettingsButton(lv_event_t* e);
     static void handleVoiceAssistantSettingsButton(lv_event_t* e);
     static void handleDeveloperButton(lv_event_t* e);
+    static void handleModeChanged(lv_event_t* e);
+
 
     lv_obj_t* wifi_ssid_input = nullptr;
     lv_obj_t* wifi_pass_input = nullptr;
@@ -41,7 +43,10 @@ private:
     lv_obj_t* info_card = nullptr;
     lv_obj_t* version_label = nullptr;
     lv_obj_t* hint_label = nullptr;
+    lv_obj_t* operating_card = nullptr;
+    lv_obj_t* mode_dropdown = nullptr;
 
     uint32_t settings_listener_id = 0;
     bool updating_from_manager = false;
+
 };

@@ -5,6 +5,8 @@
 #include "utils/color_utils.h"
 #include "core/app_manager.h"
 #include "drivers/rgb_led_driver.h"
+#include "core/operating_modes.h"
+
 
 namespace {
 lv_obj_t* create_card(lv_obj_t* parent, const char* title, const char* subtitle = nullptr, lv_color_t bg_color = lv_color_hex(0x0f3460)) {
@@ -161,9 +163,17 @@ void SettingsScreen::build(lv_obj_t* parent) {
     lv_obj_set_style_text_font(led_brightness_value_label, &lv_font_montserrat_16, 0);
     lv_obj_set_style_text_color(led_brightness_value_label, lv_color_hex(0xe0e0e0), 0);
 
+    // Operating Mode
+    operating_card = create_card(content_container, "⚙️ Operating Mode", "Select UI/Web configuration");
+    mode_dropdown = lv_dropdown_create(operating_card);
+    lv_dropdown_set_options(mode_dropdown, "Full (UI + Web)\nUI Only\nWeb Only");
+    lv_obj_set_width(mode_dropdown, lv_pct(100));
+    lv_obj_add_event_cb(mode_dropdown, handleModeChanged, LV_EVENT_VALUE_CHANGED, this);
+
  
     // Version Info
     info_card = create_card(content_container, UI_SYMBOL_INFO " Info Sistema", "Versione firmware e suggerimenti");
+
     version_label = lv_label_create(info_card);
     lv_obj_set_style_text_font(version_label, &lv_font_montserrat_16, 0);
     lv_obj_set_style_text_color(version_label, lv_color_hex(0xc0c0c0), 0);
@@ -227,9 +237,22 @@ void SettingsScreen::applySnapshot(const SettingsSnapshot& snapshot) {
         lv_label_set_text_fmt(version_label, "Versione firmware: %s", version);
     }
 
+    // Update operating mode dropdown
+    if (mode_dropdown) {
+        int sel = 0;
+        switch (snapshot.operatingMode) {
+            case OPERATING_MODE_FULL: sel = 0; break;
+            case OPERATING_MODE_UI_ONLY: sel = 1; break;
+            case OPERATING_MODE_WEB_ONLY: sel = 2; break;
+            default: sel = 0; break;
+        }
+        lv_dropdown_set_selected(mode_dropdown, sel);
+    }
+
     applyThemeStyles(snapshot);
     updating_from_manager = false;
 }
+
 
 void SettingsScreen::applyThemeStyles(const SettingsSnapshot& snapshot) {
     lv_color_t primary = lv_color_hex(snapshot.primaryColor);
@@ -255,7 +278,10 @@ void SettingsScreen::applyThemeStyles(const SettingsSnapshot& snapshot) {
     styleCard(display_card, true, snapshot);
     styleCard(led_card, true, snapshot);
 
+    styleCard(operating_card, true, snapshot);
+
     styleCard(info_card, false, snapshot);
+
 }
 
 void SettingsScreen::styleCard(lv_obj_t* card, bool allow_half_width, const SettingsSnapshot& snapshot) {
@@ -406,4 +432,21 @@ void SettingsScreen::handleVoiceAssistantSettingsButton(lv_event_t* e) {
     if (app_manager) {
         app_manager->launchApp("VoiceAssistantSettings");
     }
+}
+
+void SettingsScreen::handleModeChanged(lv_event_t* e) {
+    auto* screen = static_cast<SettingsScreen*>(lv_event_get_user_data(e));
+    if (!screen || screen->updating_from_manager) {
+        return;
+    }
+    int selected = lv_dropdown_get_selected(screen->mode_dropdown);
+    OperatingMode_t mode;
+    switch (selected) {
+        case 0: mode = OPERATING_MODE_FULL; break;
+        case 1: mode = OPERATING_MODE_UI_ONLY; break;
+        case 2: mode = OPERATING_MODE_WEB_ONLY; break;
+        default: mode = OPERATING_MODE_FULL; break;
+    }
+    SettingsManager::getInstance().setOperatingMode(mode);
+    Logger::getInstance().info( (String("Operating mode changed to: ") + String((int)mode)).c_str() );
 }

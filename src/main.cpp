@@ -54,6 +54,7 @@
 #include "utils/logger.h"
 #include "utils/lvgl_mutex.h"
 #include "lvgl_power_manager.h"
+#include "core/operating_modes.h"
 
 // ========== CONFIGURAZIONE BUFFER LVGL ==========
 // Modifica LVGL_BUFFER_MODE in platformio.ini per testare diverse modalità:
@@ -69,6 +70,7 @@
   #error "LVGL_BUFFER_MODE deve essere 0, 1 o 2"
 #endif
 
+static bool g_uiEnabled = true;
 static TFT_eSPI tft;
 static lv_disp_draw_buf_t draw_buf;
 // Aumentato a 1/10 dell'altezza dello schermo per migliorare le performance
@@ -276,6 +278,7 @@ void setup() {
     bool initial_landscape = true;
     uint8_t initial_brightness = 80;
     uint8_t initial_led_brightness = 50;
+    OperatingMode_t operatingMode = OPERATING_MODE_FULL;
 
     // Check reset reason for diagnostics
     RESET_REASON reset_reason = rtc_get_reset_reason(0);
@@ -315,8 +318,19 @@ void setup() {
         initial_landscape = settings_mgr.isLandscapeLayout();
         initial_brightness = settings_mgr.getBrightness();
         initial_led_brightness = settings_mgr.getLedBrightness();
+
+        operatingMode = settings_mgr.getOperatingMode();
+        const char* modeStr = "UNKNOWN";
+        switch(operatingMode) {
+            case OPERATING_MODE_UI_ONLY: modeStr = "UI_ONLY"; break;
+            case OPERATING_MODE_WEB_ONLY: modeStr = "WEB_ONLY"; break;
+            case OPERATING_MODE_FULL: modeStr = "FULL"; break;
+        }
+        logger.infof("[OperatingMode] Starting in mode: %s", modeStr);
+        g_uiEnabled = (operatingMode != OPERATING_MODE_WEB_ONLY);
     } else {
         logger.warn("[Settings] Initialization failed - persistent settings disabled");
+        g_uiEnabled = true; // default to full UI if settings fail
     }
 
     if (!ConversationBuffer::getInstance().begin()) {
@@ -340,13 +354,19 @@ void setup() {
         logger.warn("⚠ PSRAM not available - using internal RAM only");
     }
 
-    // Initialize Audio Manager
-    logger.info("[Audio] Initializing audio manager");
-    AudioManager& audio_manager = AudioManager::getInstance();
-    audio_manager.begin();
-    logger.info("[Audio] Audio manager ready");
+    if (operatingMode != OPERATING_MODE_WEB_ONLY) {
+        // Initialize Audio Manager
+        logger.info("[Audio] Initializing audio manager");
+        AudioManager& audio_manager = AudioManager::getInstance();
+        audio_manager.begin();
+        logger.info("[Audio] Audio manager ready");
+    } else {
+        // Even in WEB_ONLY, some audio might be useful for notifications
+        AudioManager& audio_manager = AudioManager::getInstance();
+        audio_manager.begin();
+    }
 
-    // Initialize Microphone Manager
+    // Initialize Microphone Manager (now in all modes)
     logger.info("[MicMgr] Initializing microphone manager");
     MicrophoneManager& mic_manager = MicrophoneManager::getInstance();
     if (mic_manager.begin()) {
@@ -355,7 +375,7 @@ void setup() {
         logger.warn("[MicMgr] Microphone manager initialization failed");
     }
 
-    // Initialize Web Data Manager
+    // Initialize Web Data Manager (needed for both UI and web fetches)
     logger.info("[WebData] Initializing web data manager");
     WebDataManager& web_data_manager = WebDataManager::getInstance();
     if (web_data_manager.begin()) {
@@ -373,7 +393,7 @@ void setup() {
         logger.warn("[Memory] Memory manager initialization failed");
     }
 
-    // Initialize Time Scheduler (Calendar/Alarms)
+    // Initialize Time Scheduler (Calendar/Alarms) - useful for web too
     logger.info("[Scheduler] Initializing time scheduler");
     TimeScheduler& time_scheduler = TimeScheduler::getInstance();
     if (time_scheduler.begin()) {
@@ -382,97 +402,67 @@ void setup() {
         logger.warn("[Scheduler] Time scheduler initialization failed");
     }
 
-    // Initialize Voice Assistant (if enabled in settings)
-    // TODO: Enable after fixing include issues
-    // logger.info("[VoiceAssistant] Initializing voice assistant");
-    // VoiceAssistant& voice_assistant = VoiceAssistant::getInstance();
-    // if (voice_assistant.begin()) {
-    //     logger.info("[VoiceAssistant] Voice assistant initialized successfully");
-    // } else {
-    //     logger.warn("[VoiceAssistant] Voice assistant initialization failed or disabled");
-    // }
-
-    touch_driver_init();
-    bool has_touch = touch_driver_available();
-
-    tft.init();
-    // TFT_eSPI reconfigures TFT_BL inside init(), so attach PWM afterwards to keep control.
-    enableBacklight();
-    BacklightManager::getInstance().setBrightness(initial_brightness);
-
     // Initialize RGB LED early for error indication
     RgbLedManager& rgb_led = RgbLedManager::getInstance();
     rgb_led.begin(42);
     rgb_led.setBrightness(initial_led_brightness);
 
-    lv_init();
-    logMemoryStats("After lv_init");
+    SdCardDriver& sd_driver = SdCardDriver::getInstance();
+    if (!sd_driver.begin()) {
+        logger.warn("[SD] No microSD detected at boot");
+    }
 
-    const size_t draw_buf_bytes = DRAW_BUF_PIXELS * sizeof(lv_color_t);
+    // Initialize Voice Assistant (if enabled in settings) - for UI modes
+    if (operatingMode != OPERATING_MODE_WEB_ONLY && settings_mgr.getVoiceAssistantEnabled()) {
+        logger.info("[VoiceAssistant] Initializing voice assistant");
+        // VoiceAssistant& voice_assistant = VoiceAssistant::getInstance();
+        // if (voice_assistant.begin()) {
+        //     logger.info("[VoiceAssistant] Voice assistant initialized successfully");
+        // } else {
+        //     logger.warn("[VoiceAssistant] Voice assistant initialization failed or disabled");
+        // }
+    }
 
-    // ========== ALLOCAZIONE BUFFER IN BASE A LVGL_BUFFER_MODE ==========
+    if (g_uiEnabled) {
+        touch_driver_init();
+        bool has_touch = touch_driver_available();
 
-    #if LVGL_BUFFER_MODE == 0
-        // Modalità 0: PSRAM Single Buffer (baseline)
-        logger.info("[LVGL] Allocating PSRAM single buffer...");
-        draw_buf_ptr = static_cast<lv_color_t*>(allocatePsramBuffer(draw_buf_bytes, "LVGL buffer"));
-        if (!draw_buf_ptr) {
-            logger.error("[LVGL] FATAL: Failed to allocate PSRAM buffer");
-            rgb_led.setState(RgbLedManager::LedState::ERROR);
-            vTaskDelay(pdMS_TO_TICKS(5000));
-            esp_restart();
-        }
-        lv_disp_draw_buf_init(&draw_buf, draw_buf_ptr, nullptr, DRAW_BUF_PIXELS);
+        tft.init();
+        // TFT_eSPI reconfigures TFT_BL inside init(), so attach PWM afterwards to keep control.
+        enableBacklight();
+        BacklightManager::getInstance().setBrightness(initial_brightness);
 
-    #elif LVGL_BUFFER_MODE == 1
-        // Modalità 1: DRAM Single Buffer (RACCOMANDATO)
-        logger.info("[LVGL] Allocating DRAM single buffer...");
-        draw_buf_ptr = static_cast<lv_color_t*>(
-            heap_caps_malloc(draw_buf_bytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)
-        );
-        if (!draw_buf_ptr) {
-            logger.error("[LVGL] DRAM buffer allocation failed - attempting fallback to PSRAM");
-            logger.warnf("[LVGL] Requested %u bytes DRAM, largest block: %u bytes",
-                        static_cast<unsigned>(draw_buf_bytes),
-                        static_cast<unsigned>(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL)));
-            // Fallback a PSRAM single buffer
-            draw_buf_ptr = static_cast<lv_color_t*>(allocatePsramBuffer(draw_buf_bytes, "LVGL buffer fallback"));
+        lv_init();
+        logMemoryStats("After lv_init");
+
+        const size_t draw_buf_bytes = DRAW_BUF_PIXELS * sizeof(lv_color_t);
+
+        // ========== ALLOCAZIONE BUFFER IN BASE A LVGL_BUFFER_MODE ==========
+
+        #if LVGL_BUFFER_MODE == 0
+            // Modalità 0: PSRAM Single Buffer (baseline)
+            logger.info("[LVGL] Allocating PSRAM single buffer...");
+            draw_buf_ptr = static_cast<lv_color_t*>(allocatePsramBuffer(draw_buf_bytes, "LVGL buffer"));
             if (!draw_buf_ptr) {
-                logger.error("[LVGL] FATAL: Both DRAM and PSRAM buffer allocation failed");
+                logger.error("[LVGL] FATAL: Failed to allocate PSRAM buffer");
                 rgb_led.setState(RgbLedManager::LedState::ERROR);
                 vTaskDelay(pdMS_TO_TICKS(5000));
                 esp_restart();
             }
-        }
-        lv_disp_draw_buf_init(&draw_buf, draw_buf_ptr, nullptr, DRAW_BUF_PIXELS);
+            lv_disp_draw_buf_init(&draw_buf, draw_buf_ptr, nullptr, DRAW_BUF_PIXELS);
 
-    #elif LVGL_BUFFER_MODE == 2
-        // Modalità 2: DRAM Double Buffer (massime performance)
-        logger.info("[LVGL] Allocating DRAM double buffer...");
-        draw_buf_ptr = static_cast<lv_color_t*>(
-            heap_caps_malloc(draw_buf_bytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)
-        );
-        draw_buf_ptr2 = static_cast<lv_color_t*>(
-            heap_caps_malloc(draw_buf_bytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)
-        );
-        if (!draw_buf_ptr || !draw_buf_ptr2) {
-            logger.error("[LVGL] DRAM double buffer allocation failed - attempting fallback");
-            logger.warnf("[LVGL] Requested 2x %u bytes DRAM, largest block: %u bytes",
-                        static_cast<unsigned>(draw_buf_bytes),
-                        static_cast<unsigned>(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL)));
-            // Libera eventuali buffer allocati
-            if (draw_buf_ptr) heap_caps_free(draw_buf_ptr);
-            if (draw_buf_ptr2) heap_caps_free(draw_buf_ptr2);
-            draw_buf_ptr = nullptr;
-            draw_buf_ptr2 = nullptr;
-
-            // Fallback a DRAM single buffer
+        #elif LVGL_BUFFER_MODE == 1
+            // Modalità 1: DRAM Single Buffer (RACCOMANDATO)
+            logger.info("[LVGL] Allocating DRAM single buffer...");
             draw_buf_ptr = static_cast<lv_color_t*>(
                 heap_caps_malloc(draw_buf_bytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)
             );
             if (!draw_buf_ptr) {
-                logger.error("[LVGL] DRAM single buffer fallback failed - trying PSRAM");
-                // Fallback finale a PSRAM single buffer
+                logger.error("[LVGL] DRAM buffer allocation failed - attempting fallback to PSRAM");
+                logger.warnf("[LVGL] Requested %u bytes DRAM, largest block: %u bytes",
+                            static_cast<unsigned>(draw_buf_bytes),
+                            static_cast<unsigned>(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL)));
+                // Fallback a PSRAM single buffer
                 draw_buf_ptr = static_cast<lv_color_t*>(allocatePsramBuffer(draw_buf_bytes, "LVGL buffer fallback"));
                 if (!draw_buf_ptr) {
                     logger.error("[LVGL] FATAL: Both DRAM and PSRAM buffer allocation failed");
@@ -481,188 +471,225 @@ void setup() {
                     esp_restart();
                 }
             }
-        }
-        lv_disp_draw_buf_init(&draw_buf, draw_buf_ptr, draw_buf_ptr2, DRAW_BUF_PIXELS);
-    #endif
+            lv_disp_draw_buf_init(&draw_buf, draw_buf_ptr, nullptr, DRAW_BUF_PIXELS);
 
-    logLvglBufferInfo();
-    logMemoryStats("After draw buffer");
+        #elif LVGL_BUFFER_MODE == 2
+            // Modalità 2: DRAM Double Buffer (massime performance)
+            logger.info("[LVGL] Allocating DRAM double buffer...");
+            draw_buf_ptr = static_cast<lv_color_t*>(
+                heap_caps_malloc(draw_buf_bytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)
+            );
+            draw_buf_ptr2 = static_cast<lv_color_t*>(
+                heap_caps_malloc(draw_buf_bytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)
+            );
+            if (!draw_buf_ptr || !draw_buf_ptr2) {
+                logger.error("[LVGL] DRAM double buffer allocation failed - attempting fallback");
+                logger.warnf("[LVGL] Requested 2x %u bytes DRAM, largest block: %u bytes",
+                            static_cast<unsigned>(draw_buf_bytes),
+                            static_cast<unsigned>(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL)));
+                // Libera eventuali buffer allocati
+                if (draw_buf_ptr) heap_caps_free(draw_buf_ptr);
+                if (draw_buf_ptr2) heap_caps_free(draw_buf_ptr2);
+                draw_buf_ptr = nullptr;
+                draw_buf_ptr2 = nullptr;
 
-    DisplayManager& display_manager = DisplayManager::getInstance();
-    display_manager.begin(&tft, &draw_buf, tft_flush_cb);
-    display_manager.applyOrientation(initial_landscape, true);
-
-    static lv_indev_drv_t indev_drv;
-    lv_indev_drv_init(&indev_drv);
-    indev_drv.type = LV_INDEV_TYPE_POINTER;
-    indev_drv.read_cb = touch_driver_read;
-    lv_indev_drv_register(&indev_drv);
-
-    logger.info("\n[INFO] Board: Freenove FNK0104 (2.8\" ILI9341 + FT6336)");
-    logger.infof("[INFO] Touch controller: %s", has_touch ? "FT6336 detected" : "NOT detected - check wiring/pins");
-    if (has_touch) {
-        logger.info("[INFO] Capacitive touch enabled (LVGL pointer input).");
-    } else {
-        logger.warn("[WARN] Touch input registered but controller did not respond.");
-        logger.warn("       Use Serial logs or src/utils/i2c_scanner.cpp to verify SDA/SCL pins.");
-    }
-
-    SdCardDriver& sd_driver = SdCardDriver::getInstance();
-    if (!sd_driver.begin()) {
-        logger.warn("[SD] No microSD detected at boot");
-    }
-
-    // Inizializza mutex PRIMA di usarlo
-    lvgl_mutex_setup();
-    SystemTasks::init();
-
-    const esp_timer_create_args_t tick_args = {
-        .callback = &lv_tick_handler,
-        .name = "lv_tick"
-    };
-    esp_timer_handle_t tick_handle;
-    if (esp_timer_create(&tick_args, &tick_handle) == ESP_OK) {
-        esp_timer_start_periodic(tick_handle, 1000);
-    } else {
-        logger.error("[LVGL] Failed to create tick timer");
-    }
-
-    // Crea il display principale di LVGL
-    lv_obj_t* screen = lv_scr_act();
-    lv_obj_clear_flag(screen, LV_OBJ_FLAG_SCROLLABLE);
-
-    // Initialize global keyboard manager
-    KeyboardManager::getInstance().init(screen);
-    logger.info("[KeyboardManager] Global keyboard initialized");
-
-    // Inizializza App Manager e crea le app
-    AppManager* app_manager = AppManager::getInstance();
-    app_manager->init(screen);
-    app_manager->getDock()->onOrientationChanged(initial_landscape);
-
-    // Crea le schermate (statiche)
-    static DashboardScreen dashboard;
-    static SettingsScreen settings;
-    static WifiSettingsScreen wifi_settings;
-    static BleSettingsScreen ble_settings;
-    static LedSettingsScreen led_settings;
-    static DeveloperScreen developer;
-    static InfoScreen info;
-    static ThemeSettingsScreen theme_settings;
-    static SystemLogScreen system_log;
-    static SdExplorerScreen sd_explorer;
-    static BleRemoteScreen ble_remote;
-    static BleKeyboardScreen ble_keyboard_screen;
-    static BleMouseScreen ble_mouse_screen;
-    static AudioPlayerScreen audio_player;
-    static WebRadioScreen web_radio;
-    static AudioEffectsScreen audio_effects;
-    static MicrophoneTestScreen microphone_test;
-    static VoiceAssistantSettingsScreen voice_assistant_settings;
-
-    // Registra le app nel dock
-    app_manager->registerApp("dashboard", UI_SYMBOL_HOME, "Home", &dashboard);
-    app_manager->registerApp("settings", UI_SYMBOL_SETTINGS, "Settings", &settings);
-    app_manager->registerApp("theme", UI_SYMBOL_THEME, "Theme", &theme_settings);
-    app_manager->registerApp("ble_remote", UI_SYMBOL_BLUETOOTH, "BLE Remote", &ble_remote);
-    app_manager->registerApp("system_log", UI_SYMBOL_SYSLOG, "SysLog", &system_log);
-    app_manager->registerApp("info", UI_SYMBOL_INFO, "Info", &info);
-    app_manager->registerApp("sd_explorer", UI_SYMBOL_STORAGE, "SD Card", &sd_explorer);
-    app_manager->registerApp("audio_player", LV_SYMBOL_AUDIO, "Music", &audio_player);
-    app_manager->registerApp("web_radio", LV_SYMBOL_WIFI, "Radio", &web_radio);
-    app_manager->registerApp("audio_effects", LV_SYMBOL_SETTINGS, "FX", &audio_effects);
-    app_manager->registerApp("microphone_test", LV_SYMBOL_AUDIO, "Recorder", &microphone_test);
-
-    // Registra le schermate supplementari (non nel dock, accessibili solo da Settings)
-    app_manager->registerHiddenApp("WiFiSettings", &wifi_settings);
-    app_manager->registerHiddenApp("BleSettings", &ble_settings);
-    app_manager->registerHiddenApp("LedSettings", &led_settings);
-    app_manager->registerHiddenApp("Developer", &developer);
-    app_manager->registerHiddenApp("ble_keyboard", &ble_keyboard_screen);
-    app_manager->registerHiddenApp("ble_mouse", &ble_mouse_screen);
-    app_manager->registerHiddenApp("VoiceAssistantSettings", &voice_assistant_settings);
-
-    // Lancia dashboard come app iniziale
-    app_manager->launchApp("dashboard");
-    logMemoryStats("UI ready");
-
-    settings_mgr.addListener([](SettingsManager::SettingKey key, const SettingsSnapshot& snapshot) {
-        UiMessage msg{};
-        Logger& log = Logger::getInstance();
-
-        switch (key) {
-            case SettingsManager::SettingKey::LayoutOrientation:
-                log.infof("[Display] Orientation toggle requested: %s",
-                          snapshot.landscapeLayout ? "Landscape" : "Portrait");
-                msg.type = UiMessageType::ApplyOrientation;
-                msg.value = snapshot.landscapeLayout ? 1u : 0u;
-                break;
-            case SettingsManager::SettingKey::Brightness:
-                msg.type = UiMessageType::Backlight;
-                msg.value = snapshot.brightness;
-                break;
-            case SettingsManager::SettingKey::LedBrightness:
-                msg.type = UiMessageType::LedBrightness;
-                msg.value = snapshot.ledBrightness;
-                break;
-            default:
-                break;
-        }
-
-        if (msg.type != UiMessageType::None) {
-            if (!SystemTasks::postUiMessage(msg, pdMS_TO_TICKS(50))) {
-                log.warn("[System] Failed to enqueue UI message (queue full)");
+                // Fallback a DRAM single buffer
+                draw_buf_ptr = static_cast<lv_color_t*>(
+                    heap_caps_malloc(draw_buf_bytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)
+                );
+                if (!draw_buf_ptr) {
+                    logger.error("[LVGL] DRAM single buffer fallback failed - trying PSRAM");
+                    // Fallback finale a PSRAM single buffer
+                    draw_buf_ptr = static_cast<lv_color_t*>(allocatePsramBuffer(draw_buf_bytes, "LVGL buffer fallback"));
+                    if (!draw_buf_ptr) {
+                        logger.error("[LVGL] FATAL: Both DRAM and PSRAM buffer allocation failed");
+                        rgb_led.setState(RgbLedManager::LedState::ERROR);
+                        vTaskDelay(pdMS_TO_TICKS(5000));
+                        esp_restart();
+                    }
+                }
             }
-        }
-    });
+            lv_disp_draw_buf_init(&draw_buf, draw_buf_ptr, draw_buf_ptr2, DRAW_BUF_PIXELS);
+        #endif
 
-    xTaskCreatePinnedToCore(
-        lvgl_task,
-        "lvgl",
-        TaskConfig::STACK_LVGL,
-        nullptr,
-        TaskConfig::PRIO_LVGL,
-        nullptr,
-        TaskConfig::CORE_UI);
-    logMemoryStats("LVGL task started");
+        logLvglBufferInfo();
+        logMemoryStats("After draw buffer");
 
-    // Create auto-backup timer (every 30 minutes)
-    static lv_timer_t* backup_timer = lv_timer_create([](lv_timer_t* t) {
-        SettingsManager& settings = SettingsManager::getInstance();
-        Logger& log = Logger::getInstance();
+        DisplayManager& display_manager = DisplayManager::getInstance();
+        display_manager.begin(&tft, &draw_buf, tft_flush_cb);
+        display_manager.applyOrientation(initial_landscape, true);
 
-        log.info("[Settings] Performing periodic backup to SD card");
-        if (settings.backupToSD()) {
-            log.info("[Settings] Periodic backup completed successfully");
+        static lv_indev_drv_t indev_drv;
+        lv_indev_drv_init(&indev_drv);
+        indev_drv.type = LV_INDEV_TYPE_POINTER;
+        indev_drv.read_cb = touch_driver_read;
+        lv_indev_drv_register(&indev_drv);
+
+        logger.info("\n[INFO] Board: Freenove FNK0104 (2.8\" ILI9341 + FT6336)");
+        logger.infof("[INFO] Touch controller: %s", has_touch ? "FT6336 detected" : "NOT detected - check wiring/pins");
+        if (has_touch) {
+            logger.info("[INFO] Capacitive touch enabled (LVGL pointer input).");
         } else {
-            log.warn("[Settings] Periodic backup failed (SD card may not be present)");
+            logger.warn("[WARN] Touch input registered but controller did not respond.");
+            logger.warn("       Use Serial logs or src/utils/i2c_scanner.cpp to verify SDA/SCL pins.");
         }
-    }, 30 * 60 * 1000, nullptr);  // 30 minutes in milliseconds
 
-    logger.info("[Settings] Auto-backup timer started (every 30 minutes)");
+        // Inizializza mutex PRIMA di usarlo
+        lvgl_mutex_setup();
+        SystemTasks::init();
 
-    // Create memory logging timer (every 60 seconds)
-    static lv_timer_t* memory_timer = lv_timer_create([](lv_timer_t* t) {
-        logMemoryStats("Periodic");
-    }, 60 * 1000, nullptr);  // 60 seconds in milliseconds
+        const esp_timer_create_args_t tick_args = {
+            .callback = &lv_tick_handler,
+            .name = "lv_tick"
+        };
+        esp_timer_handle_t tick_handle;
+        if (esp_timer_create(&tick_args, &tick_handle) == ESP_OK) {
+            esp_timer_start_periodic(tick_handle, 1000);
+        } else {
+            logger.error("[LVGL] Failed to create tick timer");
+        }
 
-    logger.info("[System] Memory logging started (every 60 seconds)");
+        // Crea il display principale di LVGL
+        lv_obj_t* screen = lv_scr_act();
+        lv_obj_clear_flag(screen, LV_OBJ_FLAG_SCROLLABLE);
 
-    // Initialize LVGL Power Manager
-    logger.info("[LVGLPower] Initializing LVGL Power Manager");
-    LVGLPowerMgr.init();
-    LVGLPowerMgr.setAutoSuspendEnabled(false);  // DISABLED for now - causes freezes
-    LVGLPowerMgr.setAutoSuspendTimeout(30000);  // 30 seconds idle timeout
-    logger.info("[LVGLPower] Power manager ready - manual mode only");
-    logger.warn("[LVGLPower] Auto-suspend DISABLED - use manual switchToVoiceMode() instead");
-    LVGLPowerMgr.printMemoryStats();
+        // Initialize global keyboard manager
+        KeyboardManager::getInstance().init(screen);
+        logger.info("[KeyboardManager] Global keyboard initialized");
+
+        // Inizializza App Manager e crea le app
+        AppManager* app_manager = AppManager::getInstance();
+        app_manager->init(screen);
+        app_manager->getDock()->onOrientationChanged(initial_landscape);
+
+        // Crea le schermate (statiche)
+        static DashboardScreen dashboard;
+        static SettingsScreen settings;
+        static WifiSettingsScreen wifi_settings;
+        static BleSettingsScreen ble_settings;
+        static LedSettingsScreen led_settings;
+        static DeveloperScreen developer;
+        static InfoScreen info;
+        static ThemeSettingsScreen theme_settings;
+        static SystemLogScreen system_log;
+        static SdExplorerScreen sd_explorer;
+        static BleRemoteScreen ble_remote;
+        static BleKeyboardScreen ble_keyboard_screen;
+        static BleMouseScreen ble_mouse_screen;
+        static AudioPlayerScreen audio_player;
+        static WebRadioScreen web_radio;
+        static AudioEffectsScreen audio_effects;
+        static MicrophoneTestScreen microphone_test;
+        static VoiceAssistantSettingsScreen voice_assistant_settings;
+
+        // Registra le app nel dock
+        app_manager->registerApp("dashboard", UI_SYMBOL_HOME, "Home", &dashboard);
+        app_manager->registerApp("settings", UI_SYMBOL_SETTINGS, "Settings", &settings);
+        app_manager->registerApp("theme", UI_SYMBOL_THEME, "Theme", &theme_settings);
+        app_manager->registerApp("ble_remote", UI_SYMBOL_BLUETOOTH, "BLE Remote", &ble_remote);
+        app_manager->registerApp("system_log", UI_SYMBOL_SYSLOG, "SysLog", &system_log);
+        app_manager->registerApp("info", UI_SYMBOL_INFO, "Info", &info);
+        app_manager->registerApp("sd_explorer", UI_SYMBOL_STORAGE, "SD Card", &sd_explorer);
+        app_manager->registerApp("audio_player", LV_SYMBOL_AUDIO, "Music", &audio_player);
+        app_manager->registerApp("web_radio", LV_SYMBOL_WIFI, "Radio", &web_radio);
+        app_manager->registerApp("audio_effects", LV_SYMBOL_SETTINGS, "FX", &audio_effects);
+        app_manager->registerApp("microphone_test", LV_SYMBOL_AUDIO, "Recorder", &microphone_test);
+
+        // Registra le schermate supplementari (non nel dock, accessibili solo da Settings)
+        app_manager->registerHiddenApp("WiFiSettings", &wifi_settings);
+        app_manager->registerHiddenApp("BleSettings", &ble_settings);
+        app_manager->registerHiddenApp("LedSettings", &led_settings);
+        app_manager->registerHiddenApp("Developer", &developer);
+        app_manager->registerHiddenApp("ble_keyboard", &ble_keyboard_screen);
+        app_manager->registerHiddenApp("ble_mouse", &ble_mouse_screen);
+        app_manager->registerHiddenApp("VoiceAssistantSettings", &voice_assistant_settings);
+
+        // Lancia dashboard come app iniziale
+        app_manager->launchApp("dashboard");
+        logMemoryStats("UI ready");
+
+        settings_mgr.addListener([](SettingsManager::SettingKey key, const SettingsSnapshot& snapshot) {
+            UiMessage msg{};
+            Logger& log = Logger::getInstance();
+
+            switch (key) {
+                case SettingsManager::SettingKey::LayoutOrientation:
+                    log.infof("[Display] Orientation toggle requested: %s",
+                              snapshot.landscapeLayout ? "Landscape" : "Portrait");
+                    msg.type = UiMessageType::ApplyOrientation;
+                    msg.value = snapshot.landscapeLayout ? 1u : 0u;
+                    break;
+                case SettingsManager::SettingKey::Brightness:
+                    msg.type = UiMessageType::Backlight;
+                    msg.value = snapshot.brightness;
+                    break;
+                case SettingsManager::SettingKey::LedBrightness:
+                    msg.type = UiMessageType::LedBrightness;
+                    msg.value = snapshot.ledBrightness;
+                    break;
+                default:
+                    break;
+            }
+
+            if (msg.type != UiMessageType::None) {
+                if (!SystemTasks::postUiMessage(msg, pdMS_TO_TICKS(50))) {
+                    log.warn("[System] Failed to enqueue UI message (queue full)");
+                }
+            }
+        });
+
+        xTaskCreatePinnedToCore(
+            lvgl_task,
+            "lvgl",
+            TaskConfig::STACK_LVGL,
+            nullptr,
+            TaskConfig::PRIO_LVGL,
+            nullptr,
+            TaskConfig::CORE_UI);
+        logMemoryStats("LVGL task started");
+
+        // Create auto-backup timer (every 30 minutes)
+        static lv_timer_t* backup_timer = lv_timer_create([](lv_timer_t* t) {
+            SettingsManager& settings = SettingsManager::getInstance();
+            Logger& log = Logger::getInstance();
+
+            log.info("[Settings] Performing periodic backup to SD card");
+            if (settings.backupToSD()) {
+                log.info("[Settings] Periodic backup completed successfully");
+            } else {
+                log.warn("[Settings] Periodic backup failed (SD card may not be present)");
+            }
+        }, 30 * 60 * 1000, nullptr);  // 30 minutes in milliseconds
+
+        logger.info("[Settings] Auto-backup timer started (every 30 minutes)");
+
+        // Create memory logging timer (every 60 seconds)
+        static lv_timer_t* memory_timer = lv_timer_create([](lv_timer_t* t) {
+            logMemoryStats("Periodic");
+        }, 60 * 1000, nullptr);  // 60 seconds in milliseconds
+
+        logger.info("[System] Memory logging started (every 60 seconds)");
+
+        // Initialize LVGL Power Manager
+        logger.info("[LVGLPower] Initializing LVGL Power Manager");
+        LVGLPowerMgr.init();
+        LVGLPowerMgr.setAutoSuspendEnabled(false);  // DISABLED for now - causes freezes
+        LVGLPowerMgr.setAutoSuspendTimeout(30000);  // 30 seconds idle timeout
+        logger.info("[LVGLPower] Power manager ready - manual mode only");
+        logger.warn("[LVGLPower] Auto-suspend DISABLED - use manual switchToVoiceMode() instead");
+        LVGLPowerMgr.printMemoryStats();
+    } else {
+        logger.info("[OperatingMode] WEB_ONLY: Skipping UI/LVGL initialization to save memory");
+    }
 
 }
 
 void loop() {
-    // Update LVGL Power Manager (checks for auto-suspend)
-    // NOTE: Auto-suspend disabled for now, so this just resets idle timer
-    LVGLPowerMgr.update();
+    if (g_uiEnabled) {
+        // Update LVGL Power Manager (checks for auto-suspend)
+        // NOTE: Auto-suspend disabled for now, so this just resets idle timer
+        LVGLPowerMgr.update();
+    }
 
     // Audio manager tick (required for playback)
     AudioManager::getInstance().tick();

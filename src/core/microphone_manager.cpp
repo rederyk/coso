@@ -10,6 +10,9 @@
 #include <limits>
 #include <cstring>
 
+#include "es8311.h"
+#include "driver/i2c.h"
+
 namespace {
 
 // I2S Pin configuration (same as MicrophoneTestScreen)
@@ -417,6 +420,36 @@ void MicrophoneManager::recordingTaskImpl(void* param) {
     initial_header.blockAlign = config.channels * (config.bits_per_sample / 8);
     file.write((uint8_t*)&initial_header, sizeof(WAVHeader));
 
+    // Create ES8311 handle
+    es8311_handle_t es_handle = es8311_create(I2C_NUM_0, 0x18);
+    if (!es_handle) {
+        Logger::getInstance().error("[MicMgr] Failed to create ES8311 handle");
+    } else {
+        Logger::getInstance().info("[MicMgr] ES8311 handle created");
+
+        // Configure sample frequency (assuming MCLK 4.096MHz for 16kHz * 256)
+        esp_err_t ret = es8311_sample_frequency_config(es_handle, 4096000, config.sample_rate);
+        if (ret != ESP_OK) {
+            Logger::getInstance().errorf("[MicMgr] ES8311 sample freq config failed: %s", esp_err_to_name(ret));
+        } else {
+            Logger::getInstance().info("[MicMgr] ES8311 sample frequency configured");
+
+            // Configure for microphone input (analog mic)
+            ret = es8311_microphone_config(es_handle, false);
+            if (ret != ESP_OK) {
+                Logger::getInstance().errorf("[MicMgr] ES8311 mic config failed: %s", esp_err_to_name(ret));
+            } else {
+                Logger::getInstance().info("[MicMgr] ES8311 microphone configured");
+            }
+
+            // Optional: set mic gain to 18dB
+            // ret = es8311_microphone_gain_set(es_handle, ES8311_MIC_GAIN_18DB);
+            // if (ret != ESP_OK) {
+            //     Logger::getInstance().warnf("[MicMgr] Failed to set mic gain: %s", esp_err_to_name(ret));
+            // }
+        }
+    }
+
     // Configure I2S for microphone input
     const i2s_config_t i2s_config = {
         .mode = i2s_mode_t(I2S_MODE_MASTER | I2S_MODE_RX),
@@ -520,29 +553,39 @@ void MicrophoneManager::recordingTaskImpl(void* param) {
             float gain = 1.0f;
             int32_t scaled_peak = chunk_peak;
 
-            if (config.enable_agc && chunk_peak > 0 && chunk_peak < kTargetPeak) {
-                gain = std::min<float>(kMaxGainFactor, kTargetPeak / static_cast<float>(chunk_peak));
-            }
+    // Temporarily disable AGC for debugging
+    if (config.enable_agc && chunk_peak > 0 && chunk_peak < kTargetPeak) {
+        gain = std::min<float>(kMaxGainFactor, kTargetPeak / static_cast<float>(chunk_peak));
+    } else {
+        gain = 1.0f;  // Force no AGC
+    }
 
-            if (gain != 1.0f) {
-                scaled_peak = 0;
-                constexpr int32_t kInt16Min = std::numeric_limits<int16_t>::min();
-                constexpr int32_t kInt16Max = std::numeric_limits<int16_t>::max();
-                for (size_t i = 0; i < sample_count; ++i) {
-                    float scaled_value = samples[i] * gain;
-                    int32_t scaled_int = static_cast<int32_t>(scaled_value);
-                    if (scaled_int < kInt16Min) {
-                        scaled_int = kInt16Min;
-                    } else if (scaled_int > kInt16Max) {
-                        scaled_int = kInt16Max;
-                    }
-                    samples[i] = static_cast<int16_t>(scaled_int);
-                    int32_t abs_value = std::abs(scaled_int);
-                    if (abs_value > scaled_peak) {
-                        scaled_peak = abs_value;
-                    }
-                }
+    // Log first few samples for debugging
+    if (recorded_samples < 10) {
+        Logger::getInstance().infof("[MicMgr] Debug samples %llu-%llu: %d %d %d %d",
+            recorded_samples, recorded_samples + 3,
+            samples[0], samples[1], samples[2], samples[3]);
+    }
+
+    if (gain != 1.0f) {
+        scaled_peak = 0;
+        constexpr int32_t kInt16Min = std::numeric_limits<int16_t>::min();
+        constexpr int32_t kInt16Max = std::numeric_limits<int16_t>::max();
+        for (size_t i = 0; i < sample_count; ++i) {
+            float scaled_value = samples[i] * gain;
+            int32_t scaled_int = static_cast<int32_t>(scaled_value);
+            if (scaled_int < kInt16Min) {
+                scaled_int = kInt16Min;
+            } else if (scaled_int > kInt16Max) {
+                scaled_int = kInt16Max;
             }
+            samples[i] = static_cast<int16_t>(scaled_int);
+            int32_t abs_value = std::abs(scaled_int);
+            if (abs_value > scaled_peak) {
+                scaled_peak = abs_value;
+            }
+        }
+    }
 
             // Write to file
             size_t mono_bytes = sample_count * sizeof(int16_t);
@@ -566,6 +609,12 @@ void MicrophoneManager::recordingTaskImpl(void* param) {
     manager->current_level_.store(0);
     if (config.level_callback) {
         config.level_callback(0);
+    }
+
+    // Delete ES8311 handle
+    if (es_handle) {
+        es8311_delete(es_handle);
+        Logger::getInstance().info("[MicMgr] ES8311 deleted");
     }
 
     // Cleanup I2S

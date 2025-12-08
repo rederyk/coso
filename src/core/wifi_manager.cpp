@@ -7,6 +7,7 @@
 #include "core/system_tasks.h"
 #include "core/web_server_manager.h"
 #include "core/web_data_manager.h"
+#include "core/operating_modes.h"
 
 // Constructor
 WifiManager::WifiManager() {
@@ -93,11 +94,20 @@ void WifiManager::wifi_task(void *pvParameters) {
             } else {
                 log_w("Time sync failed, will retry automatically");
             }
-            // Avvia il server web quando la rete è pronta
-            WebServerManager& web = WebServerManager::getInstance();
-            if (!web.isRunning()) {
-                web.start();
+            
+            // Avvia il server web quando la rete è pronta, solo se richiesto dalla modalità operativa
+            OperatingMode_t mode = settings.getOperatingMode();
+            bool shouldStartWebServer = (mode == OPERATING_MODE_WEB_ONLY || mode == OPERATING_MODE_FULL);
+            if (shouldStartWebServer) {
+                WebServerManager& web = WebServerManager::getInstance();
+                if (!web.isRunning()) {
+                    web.start();
+                }
+                log_i("[WebServer] Started in operating mode: %s", mode == OPERATING_MODE_WEB_ONLY ? "WEB_ONLY" : "FULL");
+            } else {
+                log_i("[WebServer] Skipped starting in UI_ONLY mode");
             }
+            
             // Notifica la UI del cambio di stato
             UiMessage msg{};
             msg.type = UiMessageType::WifiStatus;
@@ -152,10 +162,17 @@ void WifiManager::wifi_task(void *pvParameters) {
                     time_mgr.syncNow(5000);  // Quick resync
                 }
 
-                WebServerManager& web = WebServerManager::getInstance();
-                if (!web.isRunning()) {
-                    web.start();
+                // Riavvia il server web se necessario, controllando la modalità
+                auto& settings = SettingsManager::getInstance();
+                OperatingMode_t mode = settings.getOperatingMode();
+                bool shouldStartWebServer = (mode == OPERATING_MODE_WEB_ONLY || mode == OPERATING_MODE_FULL);
+                if (shouldStartWebServer) {
+                    WebServerManager& web = WebServerManager::getInstance();
+                    if (!web.isRunning()) {
+                        web.start();
+                    }
                 }
+                
                 // Notifica la UI della riconnessione
                 UiMessage msg{};
                 msg.type = UiMessageType::WifiStatus;
