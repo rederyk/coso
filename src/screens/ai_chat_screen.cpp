@@ -174,19 +174,62 @@ void AiChatScreen::build(lv_obj_t* parent) {
     // Send button as chip
     send_button = create_chip_button(actions_row, "Invia", sendButtonEvent, this);
 
-// Mic button as chip
-mic_button = create_chip_button(actions_row, "\xEF\x87\xA4", micButtonEvent, this);  // Mic symbol
-
-// Autosend toggle as checkbox
-autosend_checkbox = lv_checkbox_create(actions_row);
-lv_checkbox_set_text_static(autosend_checkbox,"Autosend");
-lv_obj_add_event_cb(autosend_checkbox, autosendEvent, LV_EVENT_VALUE_CHANGED, nullptr);
-
+    // Autosend toggle as checkbox
+    autosend_checkbox = lv_checkbox_create(actions_row);
+    lv_checkbox_set_text_static(autosend_checkbox,"Autosend");
+    lv_obj_add_event_cb(autosend_checkbox, autosendEvent, LV_EVENT_VALUE_CHANGED, nullptr);
 
     // Memory label below
     memory_label = lv_label_create(input_card);
     lv_label_set_text_static(memory_label, "Buffer: 0 / 30");
     lv_obj_align(memory_label, LV_ALIGN_BOTTOM_RIGHT, -8, -8);
+
+    // PTT Container
+    ptt_container = lv_obj_create(content_container);
+    lv_obj_remove_style_all(ptt_container);
+    lv_obj_set_width(ptt_container, lv_pct(100));
+    lv_obj_set_height(ptt_container, LV_SIZE_CONTENT);
+    lv_obj_set_layout(ptt_container, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(ptt_container, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_all(ptt_container, 10, 0);
+
+    // PTT Button as large block
+    ptt_button = lv_btn_create(ptt_container);
+    lv_obj_set_size(ptt_button, lv_pct(100), 60);
+    lv_obj_set_style_radius(ptt_button, 12, 0);
+    lv_obj_set_style_pad_all(ptt_button, 16, 0);
+    lv_obj_set_style_border_width(ptt_button, 0, 0);
+
+    // Icon and text inside PTT button
+    lv_obj_t* ptt_icon = lv_label_create(ptt_button);
+    lv_label_set_text(ptt_icon, "\xEF\x87\xA4");  // Mic icon
+    lv_obj_set_style_text_font(ptt_icon, &lv_font_montserrat_24, 0);
+    lv_obj_center(ptt_icon);
+
+    lv_obj_t* ptt_label = lv_label_create(ptt_button);
+    lv_label_set_text_static(ptt_label, "PushToTalk");
+    lv_obj_set_style_text_font(ptt_label, &lv_font_montserrat_16, 0);
+    lv_obj_align(ptt_label, LV_ALIGN_BOTTOM_MID, 0, -5);
+
+    // Add events for pressed and released
+    lv_obj_add_event_cb(ptt_button, pttPressedEvent, LV_EVENT_PRESSED, this);
+    lv_obj_add_event_cb(ptt_button, pttReleasedEvent, LV_EVENT_RELEASED, this);
+
+    // Bottom actions container
+    actions_bottom_container = lv_obj_create(content_container);
+    lv_obj_remove_style_all(actions_bottom_container);
+    lv_obj_set_width(actions_bottom_container, lv_pct(100));
+    lv_obj_set_height(actions_bottom_container, LV_SIZE_CONTENT);
+    lv_obj_set_layout(actions_bottom_container, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(actions_bottom_container, LV_FLEX_FLOW_ROW);
+    lv_obj_set_style_pad_all(actions_bottom_container, 8, 0);
+    lv_obj_set_style_pad_column(actions_bottom_container, 10, 0);
+
+    // Reset buffer button
+    reset_buffer_button = create_chip_button(actions_bottom_container, "Reset Buffer", resetBufferEvent, this);
+
+    // Save settings button
+    save_settings_button = create_chip_button(actions_bottom_container, "Salva Impostazioni", saveSettingsEvent, this);
 
     applyTheme(snapshot);
     updateStatusIcons();
@@ -207,9 +250,20 @@ lv_obj_add_event_cb(autosend_checkbox, autosendEvent, LV_EVENT_VALUE_CHANGED, nu
                 case SettingsManager::SettingKey::ThemeBorderRadius:
                 case SettingsManager::SettingKey::LayoutOrientation:
                 case SettingsManager::SettingKey::VoiceAssistantEnabled:
+                case SettingsManager::SettingKey::AutosendEnabled:
                     if (snap.voiceAssistantEnabled && !VoiceAssistant::getInstance().isInitialized()) {
                         if (!VoiceAssistant::getInstance().begin()) {
                             log_e("[AiChatScreen] Failed to initialize VoiceAssistant on settings change");
+                        }
+                    }
+                    if (key == SettingsManager::SettingKey::AutosendEnabled) {
+                        autosend_enabled = snap.autosendEnabled;
+                        if (autosend_checkbox) {
+                            if (autosend_enabled) {
+                                lv_obj_add_state(autosend_checkbox, LV_STATE_CHECKED);
+                            } else {
+                                lv_obj_clear_state(autosend_checkbox, LV_STATE_CHECKED);
+                            }
                         }
                     }
                     applyTheme(snap);
@@ -221,9 +275,11 @@ lv_obj_add_event_cb(autosend_checkbox, autosendEvent, LV_EVENT_VALUE_CHANGED, nu
         });
     }
 
-    // Set initial autosend
-    autosend_enabled = true;
-    lv_obj_add_state(autosend_checkbox, LV_STATE_CHECKED);
+    // Set initial autosend from settings
+    autosend_enabled = snapshot.autosendEnabled;
+    if (autosend_enabled) {
+        lv_obj_add_state(autosend_checkbox, LV_STATE_CHECKED);
+    }
     current_request_id = "";
     polling_active = false;
 }
@@ -231,6 +287,17 @@ lv_obj_add_event_cb(autosend_checkbox, autosendEvent, LV_EVENT_VALUE_CHANGED, nu
 void AiChatScreen::onShow() {
     SettingsManager& settings = SettingsManager::getInstance();
     const SettingsSnapshot& snapshot = settings.getSnapshot();
+    
+    // Update autosend from settings
+    autosend_enabled = snapshot.autosendEnabled;
+    if (autosend_checkbox) {
+        if (autosend_enabled) {
+            lv_obj_add_state(autosend_checkbox, LV_STATE_CHECKED);
+        } else {
+            lv_obj_clear_state(autosend_checkbox, LV_STATE_CHECKED);
+        }
+    }
+    
     applyTheme(snapshot);
     updateStatusIcons();
     loadConversationHistory();
@@ -248,7 +315,7 @@ void AiChatScreen::onShow() {
 void AiChatScreen::onHide() {
     // Stop recording if active
     if (recording) {
-        toggleRecording();
+        stopRecording();
     }
     KeyboardManager::getInstance().hide();
 }
@@ -307,7 +374,30 @@ void AiChatScreen::applyTheme(const SettingsSnapshot& snapshot) {
         lv_obj_set_style_bg_color(btn, accent, LV_PART_MAIN | LV_STATE_PRESSED);
     };
     style_btn(send_button);
-    style_btn(mic_button);
+
+    // Style bottom buttons
+    style_btn(reset_buffer_button);
+    style_btn(save_settings_button);
+
+    // Style PTT button
+    if (ptt_button) {
+        lv_obj_set_style_bg_color(ptt_button, accent, LV_PART_MAIN);
+        lv_obj_set_style_bg_opa(ptt_button, LV_OPA_COVER, LV_PART_MAIN);
+        lv_obj_set_style_radius(ptt_button, snapshot.borderRadius, LV_PART_MAIN);
+        lv_obj_set_style_shadow_width(ptt_button, 12, LV_PART_MAIN);
+        lv_obj_set_style_shadow_opa(ptt_button, LV_OPA_30, LV_PART_MAIN);
+        lv_obj_set_style_shadow_color(ptt_button, lv_color_mix(accent, lv_color_hex(0x000000), LV_OPA_50), LV_PART_MAIN);
+
+        // Text and icon colors
+        lv_obj_t* ptt_icon = lv_obj_get_child(ptt_button, 0);
+        if (ptt_icon) lv_obj_set_style_text_color(ptt_icon, text, LV_PART_MAIN);
+        lv_obj_t* ptt_label = lv_obj_get_child(ptt_button, 1);
+        if (ptt_label) lv_obj_set_style_text_color(ptt_label, text, LV_PART_MAIN);
+
+        // Pressed state - lighter accent
+        lv_color_t pressed_color = lv_color_mix(accent, text, LV_OPA_30); // Lighter
+        lv_obj_set_style_bg_color(ptt_button, pressed_color, LV_PART_MAIN | LV_STATE_PRESSED);
+    }
 
     if (chat_input) {
         lv_obj_set_style_bg_color(chat_input, lv_color_mix(card, accent, LV_OPA_20), LV_PART_MAIN);
@@ -509,7 +599,7 @@ void AiChatScreen::sendChatMessage() {
     lv_obj_clear_state(send_button, LV_STATE_DISABLED);
 }
 
-void AiChatScreen::toggleRecording() {
+void AiChatScreen::startRecording() {
     SettingsManager& settings = SettingsManager::getInstance();
     if (!settings.getVoiceAssistantEnabled()) {
         setStatus("AI non abilitato", lv_color_hex(0xFF7B7B));
@@ -524,40 +614,53 @@ void AiChatScreen::toggleRecording() {
         }
     }
 
-    if (!recording) {
-        // Start
-        recording = true;
-        lv_obj_add_state(mic_button, LV_STATE_DISABLED);
-        lv_obj_set_style_bg_color(mic_button, lv_color_hex(0xFF6B6B), 0); // Red
-        setStatus("Registrazione in corso...", lv_color_hex(0xFF6B6B));
-        assistant.startRecording();
-        lv_obj_add_state(send_button, LV_STATE_DISABLED);
-    } else {
-        // Stop
-        recording = false;
-        lv_obj_clear_state(mic_button, LV_STATE_DISABLED);
-        lv_obj_set_style_bg_color(mic_button, lv_color_hex(0x9FB0C6), 0); // Muted
-        setStatus("Elaborazione...", lv_color_hex(0x7EE7C0));
-        lv_obj_clear_state(send_button, LV_STATE_DISABLED);
+    if (recording) return; // Already recording
 
-        VoiceAssistant::VoiceCommand response;
-        assistant.stopRecordingAndProcess();
-        const uint32_t timeout_ms = 120000; // 2 min
-        if (assistant.getLastResponse(response, timeout_ms)) {
-            String transcription = response.transcription.c_str();
-            if (handleTranscription(transcription)) {
-                setStatus("Trascrizione pronta", lv_color_hex(0x70FFBA));
-            } else {
-                setStatus("Nessuna trascrizione", lv_color_hex(0xFF7B7B));
-            }
-            // Append assistant response
+    // Start
+    recording = true;
+    assistant.setSttOnlyMode(true);
+    lv_obj_add_state(ptt_button, LV_STATE_PRESSED); // Visual feedback
+    lv_obj_set_style_bg_color(ptt_button, lv_color_hex(0xFF6B6B), LV_PART_MAIN); // Red
+    setStatus("Registrazione in corso...", lv_color_hex(0xFF6B6B));
+    assistant.startRecording();
+    lv_obj_add_state(send_button, LV_STATE_DISABLED);
+    updateStatusIcons();
+}
+
+void AiChatScreen::stopRecording() {
+    if (!recording) return;
+
+    // Stop
+    recording = false;
+    lv_obj_clear_state(ptt_button, LV_STATE_PRESSED);
+    lv_obj_set_style_bg_color(ptt_button, lv_color_hex(instance ? lv_color_hex(SettingsManager::getInstance().getSnapshot().accentColor).full : 0x00FF00), LV_PART_MAIN); // Reset to accent
+    setStatus("Elaborazione...", lv_color_hex(0x7EE7C0));
+    lv_obj_clear_state(send_button, LV_STATE_DISABLED);
+
+    VoiceAssistant& assistant = VoiceAssistant::getInstance();
+    assistant.stopRecordingAndProcess();
+    const uint32_t timeout_ms = 120000; // 2 min
+    VoiceAssistant::VoiceCommand response;
+    if (assistant.getLastResponse(response, timeout_ms)) {
+        String transcription = response.transcription.c_str();
+        bool handled = handleTranscription(transcription);
+        String status_msg = handled ? "Trascrizione pronta" : "Nessuna trascrizione";
+        lv_color_t status_color = handled ? lv_color_hex(0x70FFBA) : lv_color_hex(0xFF7B7B);
+        setStatus(status_msg, status_color);
+
+        // Append assistant response if any (only in full mode, but text should be empty in STT-only)
+        if (!response.text.empty()) {
             String meta = response.command.empty() ? "" : "Comando: " + String(response.command.c_str());
             appendMessage("assistant", response.text.c_str(), meta, response.output.c_str());
-            loadConversationHistory(); // Refresh buffer display
-        } else {
-            appendMessage("assistant", "Timeout nell'elaborazione audio.", "error", "");
-            setStatus("Timeout", lv_color_hex(0xFF7B7B));
         }
+        loadConversationHistory(); // Refresh buffer display
+
+        assistant.setSttOnlyMode(false);
+    } else {
+        appendMessage("assistant", "Timeout nell'elaborazione audio.", "error", "");
+        setStatus("Timeout", lv_color_hex(0xFF7B7B));
+
+        assistant.setSttOnlyMode(false);
     }
     updateStatusIcons();
 }
@@ -649,15 +752,21 @@ void AiChatScreen::pollRequestTimer(lv_timer_t* timer) {
     }
 }
 
-void AiChatScreen::sendButtonEvent(lv_event_t* e) {
+void AiChatScreen::pttPressedEvent(lv_event_t* e) {
     if (instance) {
-        instance->sendChatMessage();
+        instance->startRecording();
     }
 }
 
-void AiChatScreen::micButtonEvent(lv_event_t* e) {
+void AiChatScreen::pttReleasedEvent(lv_event_t* e) {
     if (instance) {
-        instance->toggleRecording();
+        instance->stopRecording();
+    }
+}
+
+void AiChatScreen::sendButtonEvent(lv_event_t* e) {
+    if (instance) {
+        instance->sendChatMessage();
     }
 }
 
@@ -680,13 +789,34 @@ void AiChatScreen::inputEvent(lv_event_t* e) {
 
 void AiChatScreen::autosendEvent(lv_event_t* e) {
     if (instance) {
-        instance->autosend_enabled = lv_obj_has_state(e->target, LV_STATE_CHECKED);
-        // Save to settings later
+        bool enabled = lv_obj_has_state(e->target, LV_STATE_CHECKED);
+        instance->autosend_enabled = enabled;
+        SettingsManager::getInstance().setAutosendEnabled(enabled);
+        instance->setStatus("Autosend aggiornato", lv_color_hex(0x70FFBA));
+    }
+}
+
+void AiChatScreen::resetBufferEvent(lv_event_t* e) {
+    if (instance) {
+        ConversationBuffer& buffer = ConversationBuffer::getInstance();
+        if (buffer.begin()) {
+            buffer.clear();
+            instance->loadConversationHistory();
+            instance->setStatus("Buffer resettato", lv_color_hex(0x70FFBA));
+        } else {
+            instance->setStatus("Errore reset buffer", lv_color_hex(0xFF7B7B));
+        }
+    }
+}
+
+void AiChatScreen::saveSettingsEvent(lv_event_t* e) {
+    if (instance) {
+        SettingsManager& settings = SettingsManager::getInstance();
+        settings.setAutosendEnabled(instance->autosend_enabled);
+        instance->setStatus("Impostazioni salvate", lv_color_hex(0x70FFBA));
     }
 }
 
 void AiChatScreen::staticInit() {
     // Any static initialization if needed
 }
-
-// Note: Add to ai_chat_screen.h: std::string current_request_id; bool polling_active = false; lv_timer_t* poll_timer = nullptr;

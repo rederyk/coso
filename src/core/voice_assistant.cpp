@@ -721,7 +721,9 @@ void VoiceAssistant::speechToTextTask(void* param) {
         if (success && !transcription.empty()) {
             LOG_I("STT successful: %s", transcription.c_str());
 
-            ConversationBuffer::getInstance().addUserMessage(transcription, transcription);
+            if (!va->stt_only_mode.load()) {
+                ConversationBuffer::getInstance().addUserMessage(transcription, transcription);
+            }
 
             // Send transcription to AI processing task
             std::string* text_copy = new std::string(transcription);
@@ -749,159 +751,174 @@ void VoiceAssistant::aiProcessingTask(void* param) {
             if (transcription && !transcription->empty()) {
                 LOG_I("Processing transcription with LLM: %s", transcription->c_str());
 
-                // Call LLM to convert text to command
-                std::string llm_response;
-                bool success = va->makeGPTRequest(*transcription, llm_response);
-
-                if (success && !llm_response.empty()) {
-                    LOG_I("LLM response received");
-
-                    // Parse command from LLM response
+                if (va->stt_only_mode.load()) {
+                    // STT-only mode: no LLM, just return transcription
                     VoiceCommand cmd;
                     cmd.transcription = *transcription;
-                    if (va->parseGPTCommand(llm_response, cmd)) {
-                        LOG_I("Command parsed successfully: %s (text: %s)", cmd.command.c_str(), cmd.text.c_str());
+                    cmd.text = "";  // Empty to avoid appending assistant message
+                    LOG_I("STT-only mode: returning transcription only");
 
-                        // Check if this is a Lua script command
-                        bool is_script_command = (cmd.command == "lua_script" ||
-                                                 cmd.command.find("script") != std::string::npos ||
-                                                 (!cmd.args.empty() && cmd.args[0].find("function") != std::string::npos));
-
-                        if (is_script_command) {
-                            // Execute as Lua script
-                            std::string script_content;
-                            if (cmd.command == "lua_script" && !cmd.args.empty()) {
-                                // Script content is in args
-                                script_content = cmd.args[0];
-                            } else if (!cmd.args.empty()) {
-                                // Try to extract script from args
-                                script_content = cmd.args[0];
-                            } else {
-                                // Use the text field as script
-                                script_content = cmd.text;
-                            }
-
-                            LOG_I("Executing Lua script: %s", script_content.c_str());
-                            CommandResult script_result = va->executeLuaScript(script_content);
-
-                            // Capture script output
-                            cmd.output = script_result.message;
-                            if (!cmd.output.empty()) {
-                                LOG_I("Lua command output: %s", cmd.output.c_str());
-                            }
-
-                            if (script_result.success) {
-                                LOG_I("Lua script executed successfully: %s", script_result.message.c_str());
-                                cmd.text = "Script eseguito con successo. Output: " + script_result.message;
-                            } else {
-                                LOG_E("Lua script execution failed: %s", script_result.message.c_str());
-                                cmd.text = "Errore nell'esecuzione dello script: " + script_result.message;
-                            }
-
-                            // Phase 1-2: Output Refinement - Check if Lua output needs refinement
-                            if (script_result.success && !cmd.output.empty()) {
-                                // Phase 2: If LLM didn't set needs_refinement flag, use heuristic
-                                if (!cmd.needs_refinement) {
-                                    cmd.needs_refinement = va->shouldRefineOutput(cmd);
-                                    LOG_I("Using heuristic for refinement decision: %s",
-                                          cmd.needs_refinement ? "true" : "false");
-                                }
-
-                                if (cmd.needs_refinement) {
-                                    LOG_I("Lua output needs refinement, processing...");
-                                    bool refined = va->refineCommandOutput(cmd);
-
-                                    if (refined && !cmd.refined_output.empty()) {
-                                        // Replace cmd.text with refined output for user display
-                                        cmd.text = cmd.refined_output;
-                                        LOG_I("Using refined output: %s", cmd.refined_output.c_str());
-                                    } else {
-                                        LOG_W("Refinement failed, using original output");
-                                    }
-                                }
-                            }
-                        } else {
-                            // Execute command via CommandCenter only if command is not "none"
-                            if (cmd.command != "none" && cmd.command != "unknown" && !cmd.command.empty()) {
-                                CommandResult result = CommandCenter::getInstance().executeCommand(cmd.command, cmd.args);
-
-                                // Capture command output
-                                cmd.output = result.message;
-                                if (!cmd.output.empty()) {
-                                    LOG_I("Command output: %s", cmd.output.c_str());
-                                }
-
-                                if (result.success) {
-                                    LOG_I("Command executed successfully: %s", result.message.c_str());
-
-                                    // Phase 1-2: Output Refinement - Check if command output needs refinement
-                                    if (!cmd.output.empty()) {
-                                        // Phase 2: If LLM didn't set needs_refinement flag, use heuristic
-                                        if (!cmd.needs_refinement) {
-                                            cmd.needs_refinement = va->shouldRefineOutput(cmd);
-                                            LOG_I("Using heuristic for refinement decision: %s",
-                                                  cmd.needs_refinement ? "true" : "false");
-                                        }
-
-                                        if (cmd.needs_refinement) {
-                                            LOG_I("Command output needs refinement, processing...");
-                                            bool refined = va->refineCommandOutput(cmd);
-
-                                            if (refined && !cmd.refined_output.empty()) {
-                                                // Replace cmd.text with refined output for user display
-                                                cmd.text = cmd.refined_output;
-                                                LOG_I("Using refined output: %s", cmd.refined_output.c_str());
-                                            } else {
-                                                LOG_W("Refinement failed, using original output");
-                                            }
-                                        }
-                                    }
-                                } else {
-                                    LOG_E("Command execution failed: %s", result.message.c_str());
-                                }
-                            } else {
-                                LOG_I("No command to execute (conversational response only)");
-                            }
-                        }
-
-                        va->captureCommandOutputVariables(cmd);
-                        const std::string response_text = cmd.text.empty() ? std::string("Comando elaborato") : cmd.text;
-                        ConversationBuffer::getInstance().addAssistantMessage(response_text,
-                                                                             cmd.command,
-                                                                             cmd.args,
-                                                                             cmd.transcription,
-                                                                             cmd.output,
-                                                                             cmd.refined_output);
-
-                        // Send result to voice command queue for external consumption (screen/web)
-                        VoiceCommand* cmd_copy = new VoiceCommand(cmd);
-                        if (xQueueSend(va->voiceCommandQueue_, &cmd_copy, pdMS_TO_TICKS(100)) != pdPASS) {
-                            LOG_W("Voice command queue full");
-                            delete cmd_copy;
-                        }
-                    } else {
-                        LOG_E("Failed to parse command from LLM response");
-                        // Fallback: use raw LLM response as text if JSON parsing fails
-                        cmd.command = "none";
-                        cmd.text = llm_response;
-                        cmd.args.clear();
-
-                        LOG_I("Using raw LLM response as fallback text");
-                        ConversationBuffer::getInstance().addAssistantMessage(llm_response,
-                                                                             "none",
-                                                                             std::vector<std::string>(),
-                                                                             cmd.transcription,
-                                                                             cmd.output);
-
-                        // Send fallback response to queue
-                        VoiceCommand* cmd_copy = new VoiceCommand(cmd);
-                        if (xQueueSend(va->voiceCommandQueue_, &cmd_copy, pdMS_TO_TICKS(100)) != pdPASS) {
-                            LOG_W("Voice command queue full");
-                            delete cmd_copy;
-                        }
+                    // Send to voice command queue
+                    VoiceCommand* cmd_copy = new VoiceCommand(cmd);
+                    if (xQueueSend(va->voiceCommandQueue_, &cmd_copy, pdMS_TO_TICKS(100)) != pdPASS) {
+                        LOG_W("Voice command queue full");
+                        delete cmd_copy;
                     }
                 } else {
-                    LOG_E("LLM request failed or empty response");
+                    // Full mode: call LLM
+                    std::string llm_response;
+                    bool success = va->makeGPTRequest(*transcription, llm_response);
+
+                    if (success && !llm_response.empty()) {
+                        LOG_I("LLM response received");
+
+                        // Parse command from LLM response
+                        VoiceCommand cmd;
+                        cmd.transcription = *transcription;
+                        if (va->parseGPTCommand(llm_response, cmd)) {
+                            LOG_I("Command parsed successfully: %s (text: %s)", cmd.command.c_str(), cmd.text.c_str());
+
+                            // Check if this is a Lua script command
+                            bool is_script_command = (cmd.command == "lua_script" ||
+                                                     cmd.command.find("script") != std::string::npos ||
+                                                     (!cmd.args.empty() && cmd.args[0].find("function") != std::string::npos));
+
+                            if (is_script_command) {
+                                // Execute as Lua script
+                                std::string script_content;
+                                if (cmd.command == "lua_script" && !cmd.args.empty()) {
+                                    // Script content is in args
+                                    script_content = cmd.args[0];
+                                } else if (!cmd.args.empty()) {
+                                    // Try to extract script from args
+                                    script_content = cmd.args[0];
+                                } else {
+                                    // Use the text field as script
+                                    script_content = cmd.text;
+                                }
+
+                                LOG_I("Executing Lua script: %s", script_content.c_str());
+                                CommandResult script_result = va->executeLuaScript(script_content);
+
+                                // Capture script output
+                                cmd.output = script_result.message;
+                                if (!cmd.output.empty()) {
+                                    LOG_I("Lua command output: %s", cmd.output.c_str());
+                                }
+
+                                if (script_result.success) {
+                                    LOG_I("Lua script executed successfully: %s", script_result.message.c_str());
+                                    cmd.text = "Script eseguito con successo. Output: " + script_result.message;
+                                } else {
+                                    LOG_E("Lua script execution failed: %s", script_result.message.c_str());
+                                    cmd.text = "Errore nell'esecuzione dello script: " + script_result.message;
+                                }
+
+                                // Phase 1-2: Output Refinement - Check if Lua output needs refinement
+                                if (script_result.success && !cmd.output.empty()) {
+                                    // Phase 2: If LLM didn't set needs_refinement flag, use heuristic
+                                    if (!cmd.needs_refinement) {
+                                        cmd.needs_refinement = va->shouldRefineOutput(cmd);
+                                        LOG_I("Using heuristic for refinement decision: %s",
+                                              cmd.needs_refinement ? "true" : "false");
+                                    }
+
+                                    if (cmd.needs_refinement) {
+                                        LOG_I("Lua output needs refinement, processing...");
+                                        bool refined = va->refineCommandOutput(cmd);
+
+                                        if (refined && !cmd.refined_output.empty()) {
+                                            // Replace cmd.text with refined output for user display
+                                            cmd.text = cmd.refined_output;
+                                            LOG_I("Using refined output: %s", cmd.refined_output.c_str());
+                                        } else {
+                                            LOG_W("Refinement failed, using original output");
+                                        }
+                                    }
+                                }
+                            } else {
+                                // Execute command via CommandCenter only if command is not "none"
+                                if (cmd.command != "none" && cmd.command != "unknown" && !cmd.command.empty()) {
+                                    CommandResult result = CommandCenter::getInstance().executeCommand(cmd.command, cmd.args);
+
+                                    // Capture command output
+                                    cmd.output = result.message;
+                                    if (!cmd.output.empty()) {
+                                        LOG_I("Command output: %s", cmd.output.c_str());
+                                    }
+
+                                    if (result.success) {
+                                        LOG_I("Command executed successfully: %s", result.message.c_str());
+
+                                        // Phase 1-2: Output Refinement - Check if command output needs refinement
+                                        if (!cmd.output.empty()) {
+                                            // Phase 2: If LLM didn't set needs_refinement flag, use heuristic
+                                            if (!cmd.needs_refinement) {
+                                                cmd.needs_refinement = va->shouldRefineOutput(cmd);
+                                                LOG_I("Using heuristic for refinement decision: %s",
+                                                      cmd.needs_refinement ? "true" : "false");
+                                            }
+
+                                            if (cmd.needs_refinement) {
+                                                LOG_I("Command output needs refinement, processing...");
+                                                bool refined = va->refineCommandOutput(cmd);
+
+                                                if (refined && !cmd.refined_output.empty()) {
+                                                    // Replace cmd.text with refined output for user display
+                                                    cmd.text = cmd.refined_output;
+                                                    LOG_I("Using refined output: %s", cmd.refined_output.c_str());
+                                                } else {
+                                                    LOG_W("Refinement failed, using original output");
+                                                }
+                                            }
+                                        }
+                                    } else {
+                                        LOG_E("Command execution failed: %s", result.message.c_str());
+                                    }
+                                } else {
+                                    LOG_I("No command to execute (conversational response only)");
+                                }
+                            }
+
+                            va->captureCommandOutputVariables(cmd);
+                            const std::string response_text = cmd.text.empty() ? std::string("Comando elaborato") : cmd.text;
+                            ConversationBuffer::getInstance().addAssistantMessage(response_text,
+                                                                                 cmd.command,
+                                                                                 cmd.args,
+                                                                                 cmd.transcription,
+                                                                                 cmd.output,
+                                                                                 cmd.refined_output);
+
+                            // Send result to voice command queue for external consumption (screen/web)
+                            VoiceCommand* cmd_copy = new VoiceCommand(cmd);
+                            if (xQueueSend(va->voiceCommandQueue_, &cmd_copy, pdMS_TO_TICKS(100)) != pdPASS) {
+                                LOG_W("Voice command queue full");
+                                delete cmd_copy;
+                            }
+                        } else {
+                            LOG_E("Failed to parse command from LLM response");
+                            // Fallback: use raw LLM response as text if JSON parsing fails
+                            cmd.command = "none";
+                            cmd.text = llm_response;
+                            cmd.args.clear();
+
+                            LOG_I("Using raw LLM response as fallback text");
+                            ConversationBuffer::getInstance().addAssistantMessage(llm_response,
+                                                                                 "none",
+                                                                                 std::vector<std::string>(),
+                                                                                 cmd.transcription,
+                                                                                 cmd.output);
+
+                            // Send fallback response to queue
+                            VoiceCommand* cmd_copy = new VoiceCommand(cmd);
+                            if (xQueueSend(va->voiceCommandQueue_, &cmd_copy, pdMS_TO_TICKS(100)) != pdPASS) {
+                                LOG_W("Voice command queue full");
+                                delete cmd_copy;
+                            }
+                        }
+                    } else {
+                        LOG_E("LLM request failed or empty response");
+                    }
                 }
 
                 delete transcription;
@@ -2140,6 +2157,11 @@ bool VoiceAssistant::sendTextMessage(const std::string& text) {
         return false;
     }
 
+    if (stt_only_mode.load()) {
+        LOG_W("sendTextMessage called in STT-only mode, skipping");
+        return false;
+    }
+
     LOG_I("Sending text message to LLM: %s", text.c_str());
 
     ConversationBuffer::getInstance().addUserMessage(text);
@@ -2153,6 +2175,11 @@ bool VoiceAssistant::sendTextMessage(const std::string& text) {
     }
 
     return true;
+}
+
+void VoiceAssistant::setSttOnlyMode(bool enable) {
+    stt_only_mode.store(enable);
+    LOG_I("STT-only mode %s", enable ? "enabled" : "disabled");
 }
 
 bool VoiceAssistant::getLastResponse(VoiceCommand& response, uint32_t timeout_ms) {

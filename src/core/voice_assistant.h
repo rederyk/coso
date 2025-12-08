@@ -103,6 +103,9 @@ public:
     /** Get the last LLM response (blocking call with timeout) */
     bool getLastResponse(VoiceCommand& response, uint32_t timeout_ms = 5000);
 
+    /** Set STT-only mode (for chat PTT, skips LLM processing) */
+    void setSttOnlyMode(bool enable);
+
     QueueHandle_t getCommandQueue() const { return voiceCommandQueue_; }
 
     /** Get the last recorded file path (for external use) */
@@ -237,6 +240,8 @@ private:
 
     std::queue<std::string> pending_recordings_;
     std::mutex pending_recordings_mutex_;
+
+    std::atomic<bool> stt_only_mode{false};
 
     LuaSandbox lua_sandbox_;  // Lua scripting engine
     std::mutex lua_mutex_;

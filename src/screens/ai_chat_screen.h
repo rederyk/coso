@@ -16,6 +16,11 @@ public:
     void onShow() override;
     void onHide() override;
 
+    static AiChatScreen* instance;
+
+    static void pttPressedEvent(lv_event_t* e);
+    static void pttReleasedEvent(lv_event_t* e);
+
 private:
     void applyTheme(const SettingsSnapshot& snapshot);
     void updateStatusIcons();
@@ -54,6 +59,11 @@ private:
     lv_obj_t* autosend_checkbox = nullptr;
     lv_obj_t* status_label = nullptr;
     lv_obj_t* memory_label = nullptr;
+    lv_obj_t* ptt_button = nullptr;
+    lv_obj_t* ptt_container = nullptr;
+    lv_obj_t* actions_bottom_container = nullptr;
+    lv_obj_t* reset_buffer_button = nullptr;
+    lv_obj_t* save_settings_button = nullptr;
 
     lv_timer_t* status_timer = nullptr;
     lv_timer_t* poll_timer = nullptr;
@@ -64,6 +74,10 @@ private:
     bool polling_active = false;
     std::string current_request_id;
 
-    static AiChatScreen* instance;
     void staticInit();
+
+    void startRecording();
+    void stopRecording();
+    static void resetBufferEvent(lv_event_t* e);
+    static void saveSettingsEvent(lv_event_t* e);
 };

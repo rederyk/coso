@@ -903,6 +903,15 @@ void SettingsManager::setVoiceAssistantSystemPromptTemplate(const std::string& p
     notify(SettingKey::VoiceAssistantSystemPrompt);
 }
 
+void SettingsManager::setAutosendEnabled(bool enabled) {
+    if (!initialized_ || enabled == current_.autosendEnabled) {
+        return;
+    }
+    current_.autosendEnabled = enabled;
+    persistSnapshot();
+    notify(SettingKey::AutosendEnabled);
+}
+
 // Time & NTP setters
 void SettingsManager::setTimezone(const std::string& tz) {
     if (!initialized_ || tz == current_.timezone) {

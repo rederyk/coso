@@ -44,6 +44,7 @@ struct SettingsSnapshot {
     bool localApiMode = false;  // Toggle between cloud and local Docker APIs
     std::string dockerHostIp = "192.168.1.51";  // IP of Docker host for local APIs
     std::string voiceAssistantSystemPromptTemplate;  // Leave empty to use LittleFS prompt by default
+    bool autosendEnabled = true;  // Auto-send transcription in AI chat
 
     // Whisper STT endpoints
     std::string whisperCloudEndpoint = "https://api.openai.com/v1/audio/transcriptions";
@@ -148,6 +149,7 @@ public:
         LlmLocalEndpoint,
         LlmModel,
         VoiceAssistantSystemPrompt,
+        AutosendEnabled,
 
         // TTS
         TtsEnabled,
@@ -312,6 +314,9 @@ public:
 
     const std::string& getLlmModel() const { return current_.llmModel; }
     void setLlmModel(const std::string& model);
+
+    bool getAutosendEnabled() const { return current_.autosendEnabled; }
+    void setAutosendEnabled(bool enabled);
 
     // TTS
     bool getTtsEnabled() const { return current_.ttsEnabled; }
