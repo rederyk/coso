@@ -27,6 +27,7 @@
 #include "drivers/sd_card_driver.h"
 #include "psram_helpers.h"
 #include "utils/logger.h"
+#include "core/operating_modes.h"
 
 namespace {
 constexpr const char* DEFAULT_ROOT = "/www/index.html";
@@ -420,6 +421,10 @@ void WebServerManager::registerRoutes() {
     server_->on("/api/assistant/prompt/variables", HTTP_GET, [this]() { handleAssistantPromptVariables(); });
     server_->on("/api/assistant/models", HTTP_GET, [this]() { handleAssistantModels(); });
 
+    // System operating mode endpoint
+    server_->on("/api/system/mode", HTTP_GET, [this]() { handleGetOperatingMode(); });
+    server_->on("/api/system/mode", HTTP_POST, [this]() { handleSetOperatingMode(); });
+
     // ========== CALENDAR / SCHEDULER ENDPOINTS ==========
     server_->on("/calendar", HTTP_GET, [this]() { handleCalendarPage(); });
     server_->on("/api/calendar/events", HTTP_GET, [this]() { handleCalendarEventsList(); });
@@ -737,6 +742,8 @@ void WebServerManager::handleAssistantChatStatus() {
 
 void WebServerManager::handleAssistantAudioStart() {
     SettingsManager& settings = SettingsManager::getInstance();
+    OperatingMode_t mode = settings.getOperatingMode();
+    bool has_ui = (mode == OPERATING_MODE_UI_ONLY || mode == OPERATING_MODE_FULL);
     VoiceAssistant& assistant = VoiceAssistant::getInstance();
 
     if (!settings.getVoiceAssistantEnabled()) {
@@ -747,19 +754,28 @@ void WebServerManager::handleAssistantAudioStart() {
     if (!assistant.isInitialized()) {
         Logger::getInstance().info("[VoiceAssistant] Initializing before web recording");
 
-        // Suspend LVGL to free DRAM for voice assistant initialization
-        Logger::getInstance().info("[VoiceAssistant] Suspending LVGL to free memory...");
-        LVGLPowerMgr.switchToVoiceMode();
-        vTaskDelay(pdMS_TO_TICKS(100)); // Give time for suspend to complete
+        bool suspended_lvgl = false;
+        if (has_ui) {
+            Logger::getInstance().info("[VoiceAssistant] Suspending LVGL to free memory...");
+            LVGLPowerMgr.switchToVoiceMode();
+            vTaskDelay(pdMS_TO_TICKS(100)); // Give time for suspend to complete
+            suspended_lvgl = true;
+        }
 
         if (!assistant.begin()) {
             Logger::getInstance().warn("[VoiceAssistant] Initialization failed before recording");
-            // Resume LVGL on failure
-            LVGLPowerMgr.switchToUIMode();
+            if (suspended_lvgl) {
+                // Resume LVGL on failure
+                LVGLPowerMgr.switchToUIMode();
+            }
             sendJson(503, "{\"status\":\"error\",\"message\":\"Voice assistant unavailable\"}");
             return;
         }
-        Logger::getInstance().info("[VoiceAssistant] Initialized successfully with suspended LVGL");
+        if (suspended_lvgl) {
+            Logger::getInstance().info("[VoiceAssistant] Initialized successfully with suspended LVGL");
+        } else {
+            Logger::getInstance().info("[VoiceAssistant] Initialized successfully (no UI to suspend)");
+        }
     }
 
     assistant.startRecording();
@@ -767,13 +783,24 @@ void WebServerManager::handleAssistantAudioStart() {
 }
 
 void WebServerManager::handleAssistantAudioStop() {
+    SettingsManager& settings = SettingsManager::getInstance();
+    OperatingMode_t mode = settings.getOperatingMode();
+    bool has_ui = (mode == OPERATING_MODE_UI_ONLY || mode == OPERATING_MODE_FULL);
     VoiceAssistant& assistant = VoiceAssistant::getInstance();
     assistant.stopRecordingAndProcess();
 
     VoiceAssistant::VoiceCommand response;
     if (!assistant.getLastResponse(response, ASSISTANT_RESPONSE_TIMEOUT_MS)) {
         sendJson(504, "{\"status\":\"error\",\"message\":\"No response from assistant\"}");
+        if (has_ui) {
+            LVGLPowerMgr.switchToUIMode();
+        }
         return;
+    }
+
+    // Resume UI after successful processing
+    if (has_ui) {
+        LVGLPowerMgr.switchToUIMode();
     }
 
     StaticJsonDocument<512> doc;
@@ -2510,4 +2537,84 @@ void WebServerManager::handleTtsOptions() {
     String response;
     serializeJson(*doc, response);
     sendJson(200, response);
+}
+
+void WebServerManager::handleGetOperatingMode() {
+    SettingsManager& settings = SettingsManager::getInstance();
+    OperatingMode_t mode = settings.getOperatingMode();
+    const char* modeStr = "UNKNOWN";
+    switch(mode) {
+        case OPERATING_MODE_UI_ONLY: modeStr = "UI_ONLY"; break;
+        case OPERATING_MODE_WEB_ONLY: modeStr = "WEB_ONLY"; break;
+        case OPERATING_MODE_FULL: modeStr = "FULL"; break;
+    }
+
+    StaticJsonDocument<256> doc;
+    doc["status"] = "success";
+    doc["mode"] = modeStr;
+    doc["modeId"] = static_cast<int>(mode);
+    doc["has_ui"] = (mode != OPERATING_MODE_WEB_ONLY);
+    doc["has_web"] = (mode != OPERATING_MODE_UI_ONLY);
+
+    String response;
+    serializeJson(doc, response);
+    sendJson(200, response);
+}
+
+void WebServerManager::handleSetOperatingMode() {
+    String body = server_->arg("plain");
+    if (body.isEmpty()) {
+        sendJson(400, "{\"status\":\"error\",\"message\":\"Empty body\"}");
+        return;
+    }
+
+    StaticJsonDocument<128> doc;
+    auto err = deserializeJson(doc, body);
+    if (err) {
+        sendJson(400, "{\"status\":\"error\",\"message\":\"Invalid JSON\"}");
+        return;
+    }
+
+    const char* modeStr = doc["mode"] | "";
+    OperatingMode_t newMode;
+    if (strcmp(modeStr, "UI_ONLY") == 0) {
+        newMode = OPERATING_MODE_UI_ONLY;
+    } else if (strcmp(modeStr, "WEB_ONLY") == 0) {
+        newMode = OPERATING_MODE_WEB_ONLY;
+    } else if (strcmp(modeStr, "FULL") == 0) {
+        newMode = OPERATING_MODE_FULL;
+    } else {
+        sendJson(400, "{\"status\":\"error\",\"message\":\"Invalid mode: UI_ONLY, WEB_ONLY, or FULL\"}");
+        return;
+    }
+
+    SettingsManager& settings = SettingsManager::getInstance();
+    OperatingMode_t currentMode = settings.getOperatingMode();
+    if (newMode == currentMode) {
+        sendJson(200, "{\"status\":\"success\",\"message\":\"Mode unchanged\"}");
+        return;
+    }
+
+    settings.setOperatingMode(newMode);
+
+    const char* action = "unchanged";
+    if (newMode == OPERATING_MODE_WEB_ONLY && currentMode != OPERATING_MODE_WEB_ONLY) {
+        action = "UI will be suspended";
+    } else if (newMode != OPERATING_MODE_WEB_ONLY && currentMode == OPERATING_MODE_WEB_ONLY) {
+        action = "UI will be initialized";
+    }
+
+    Logger::getInstance().infof("[OperatingMode] Changed from %d to %d (%s) - reboot required for full effect", 
+                                static_cast<int>(currentMode), static_cast<int>(newMode), modeStr);
+
+    StaticJsonDocument<256> response;
+    response["status"] = "success";
+    response["mode"] = modeStr;
+    response["modeId"] = static_cast<int>(newMode);
+    response["action"] = action;
+    response["note"] = "Changes take effect after reboot. Some services (web server) adjust immediately.";
+
+    String payload;
+    serializeJson(response, payload);
+    sendJson(200, payload);
 }

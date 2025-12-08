@@ -85,6 +85,7 @@ void fillJsonFromSnapshot(const SettingsSnapshot& snapshot, JsonDocument& doc) {
 
     // System
     JsonObject system = doc["system"].to<JsonObject>();
+    system["operatingMode"] = snapshot.operatingMode;
     system["version"] = snapshot.version;
     system["bootCount"] = snapshot.bootCount;
     system["settingsVersion"] = snapshot.settingsVersion;
@@ -168,6 +169,7 @@ void fillSnapshotFromJson(SettingsSnapshot& snapshot, const JsonDocument& doc) {
     }
 
     // System
+    snapshot.operatingMode = static_cast<OperatingMode_t>(doc["system"]["operatingMode"] | static_cast<int>(snapshot.operatingMode));
     snapshot.version = doc["system"]["version"] | snapshot.version;
     snapshot.bootCount = doc["system"]["bootCount"] | snapshot.bootCount;
     snapshot.settingsVersion = doc["system"]["settingsVersion"] | snapshot.settingsVersion;

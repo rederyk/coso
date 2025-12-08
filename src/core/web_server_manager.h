@@ -74,6 +74,10 @@ private:
     void handleTtsSettingsImport();
     void handleTtsOptions();
 
+    // System operating mode handlers
+    void handleGetOperatingMode();
+    void handleSetOperatingMode();
+
     bool normalizeSdPath(const String& raw, std::string& out) const;
     bool sanitizeFilename(const String& raw, std::string& out) const;
     std::string joinPaths(const std::string& parent, const std::string& child) const;

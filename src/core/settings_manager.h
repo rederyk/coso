@@ -2,6 +2,7 @@
 
 #include "core/theme_palette.h"
 #include "core/voice_assistant_prompt.h"
+#include "core/operating_modes.h"
 #include <cstdint>
 #include <functional>
 #include <string>
@@ -93,6 +94,7 @@ struct SettingsSnapshot {
     std::vector<std::string> storageAllowedLittleFsPaths;
 
     // System
+    OperatingMode_t operatingMode = OPERATING_MODE_FULL;
     std::string version;
     uint32_t bootCount = 0;
     uint32_t settingsVersion = 1;  // For migration support
@@ -102,6 +104,11 @@ struct SettingsSnapshot {
 class SettingsManager {
 public:
     enum class SettingKey : uint8_t {
+        // System
+        OperatingMode,
+        Version,
+        BootCount,
+
         // WiFi & Network
         WifiSsid,
         WifiPassword,
@@ -171,10 +178,6 @@ public:
         AutoTimeSync,
         TimeSyncIntervalHours,
 
-        // System
-        Version,
-        BootCount,
-
         StorageSdWhitelist,
         StorageLittleFsWhitelist
     };
@@ -187,6 +190,9 @@ public:
     void reset();
 
     const SettingsSnapshot& getSnapshot() const { return current_; }
+
+    OperatingMode_t getOperatingMode() const { return current_.operatingMode; }
+    void setOperatingMode(OperatingMode_t mode);
 
     const std::string& getWifiSsid() const { return current_.wifiSsid; }
     void setWifiSsid(const std::string& ssid);

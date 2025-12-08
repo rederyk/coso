@@ -70,8 +70,8 @@ void SettingsManager::reset() {
     loadDefaults();
     persistSnapshot();
 
-    notify(SettingKey::WifiSsid);
     notify(SettingKey::WifiPassword);
+    notify(SettingKey::OperatingMode);
     notify(SettingKey::Brightness);
     notify(SettingKey::Theme);
     notify(SettingKey::Version);
@@ -90,6 +90,15 @@ void SettingsManager::reset() {
     notify(SettingKey::BleMaxConnections);
     notify(SettingKey::StorageSdWhitelist);
     notify(SettingKey::StorageLittleFsWhitelist);
+}
+
+void SettingsManager::setOperatingMode(OperatingMode_t mode) {
+    if (!initialized_ || mode == current_.operatingMode) {
+        return;
+    }
+    current_.operatingMode = mode;
+    persistSnapshot();
+    notify(SettingKey::OperatingMode);
 }
 
 void SettingsManager::setWifiSsid(const std::string& ssid) {
@@ -366,6 +375,7 @@ void SettingsManager::loadDefaults() {
     current_.storageAllowedLittleFsPaths = {"/webdata", "/memory"};
 
     // System
+    current_.operatingMode = OPERATING_MODE_FULL;
     current_.version = DEFAULT_VERSION;
     current_.bootCount = 0;
     current_.settingsVersion = SETTINGS_VERSION;
