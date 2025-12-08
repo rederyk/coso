@@ -22,8 +22,12 @@ extern "C" {
 }
 
 /**
- * Voice Assistant Module
- * Implements local voice processing using OpenAI APIs with three FreeRTOS tasks
+ * Voice Assistant Module - Refactored for Clean Separation of Concerns
+ * 
+ * NEW ARCHITECTURE:
+ * 1. STT Task: ONLY transcribes audio, sends to transcriptionQueue_
+ * 2. AI Task: ALWAYS processes text through LLM, sends to voiceCommandQueue_
+ * 3. UI Layer: Decides whether to auto-submit transcription to LLM based on settings
  */
 class VoiceAssistant {
 public:
@@ -80,6 +84,33 @@ public:
         } payload;
     };
 
+    /** Request types for unified submission API */
+    enum class RequestType {
+        STT,      // Speech-to-text
+        LLM,      // Language model
+        TTS,      // Text-to-speech
+        COMMAND   // Command execution
+    };
+
+    /** Unified request status tracking */
+    enum class RequestStatus {
+        PENDING,     // Queued, not started
+        PROCESSING,  // Currently being processed
+        COMPLETED,   // Successfully completed
+        FAILED,      // Failed with error
+        TIMEOUT      // Request timed out
+    };
+
+    /** Unified result for any request type */
+    struct RequestResult {
+        RequestStatus status;
+        std::string output;           // Transcription, LLM response, audio file path, or command result
+        VoiceCommand command_response; // For LLM requests, the parsed command
+        std::string error_message;
+        uint64_t created_at_ms;
+        uint64_t completed_at_ms;
+    };
+
     static VoiceAssistant& getInstance();
 
     bool begin();
@@ -87,6 +118,56 @@ public:
 
     bool isEnabled() const;
     bool isInitialized() const;
+
+    // ===== NEW INDEPENDENT API =====
+    
+    /**
+     * Submit audio file for STT transcription
+     * @param audio_file Path to audio file
+     * @param request_id Output: unique request identifier
+     * @return true if queued successfully
+     */
+    bool submitSTT(const std::string& audio_file, std::string& request_id);
+
+    /**
+     * Submit text for LLM processing
+     * @param text Input text message
+     * @param request_id Output: unique request identifier
+     * @return true if queued successfully
+     */
+    bool submitLLM(const std::string& text, std::string& request_id);
+
+    /**
+     * Submit text for TTS (text-to-speech)
+     * @param text Text to synthesize
+     * @param request_id Output: unique request identifier
+     * @return true if queued successfully
+     */
+    bool submitTTS(const std::string& text, std::string& request_id);
+
+    /**
+     * Submit command for execution (Lua or CommandCenter)
+     * @param command Command name
+     * @param args Command arguments
+     * @param request_id Output: unique request identifier
+     * @return true if queued successfully
+     */
+    bool submitCommand(const std::string& command, const std::vector<std::string>& args, std::string& request_id);
+
+    /**
+     * Check status of any submitted request
+     * @param request_id The request to check
+     * @param result Output: request result
+     * @return true if request_id exists
+     */
+    bool getRequestStatus(const std::string& request_id, RequestResult& result);
+
+    /**
+     * Cancel a pending or processing request
+     * @param request_id The request to cancel
+     * @return true if cancelled successfully
+     */
+    bool cancelRequest(const std::string& request_id);
 
     /** Manually trigger voice assistant listening, bypassing wake word */
     void triggerListening();
@@ -103,8 +184,11 @@ public:
     /** Get the last LLM response (blocking call with timeout) */
     bool getLastResponse(VoiceCommand& response, uint32_t timeout_ms = 5000);
 
-    QueueHandle_t getCommandQueue() const { return voiceCommandQueue_; }
+    /** Get last transcription (without LLM processing) - NEW for autosend logic */
+    bool getLastTranscription(std::string& transcription, uint32_t timeout_ms = 500);
 
+    QueueHandle_t getCommandQueue() const { return voiceCommandQueue_; }
+    QueueHandle_t getTranscriptionQueue() const { return voiceTranscriptionQueue_; }
 
     /** Get the last recorded file path (for external use) */
     std::string getLastRecordedFile() const;
@@ -200,9 +284,9 @@ private:
     VoiceAssistant& operator=(const VoiceAssistant&) = delete;
 
     // Task functions
-    static void recordingTask(void* param);      // Manages recording via MicrophoneTestScreen
-    static void speechToTextTask(void* param);
-    static void aiProcessingTask(void* param);
+    static void recordingTask(void* param);
+    static void speechToTextTask(void* param);    // STT ONLY - no LLM processing
+    static void aiProcessingTask(void* param);     // LLM ALWAYS - no conditional autosend logic
 
     // HTTP helpers
     bool makeWhisperRequest(const std::string& file_path, std::string& transcription);
@@ -223,33 +307,33 @@ private:
     bool sendCommand(VoiceCommand* cmd);
 
     QueueHandle_t audioQueue_ = nullptr;
-    QueueHandle_t transcriptionQueue_ = nullptr;
+    QueueHandle_t transcriptionQueue_ = nullptr;          // For LLM processing (AI task input)
+    QueueHandle_t voiceTranscriptionQueue_ = nullptr;    // NEW: For STT results (UI consumes)
     QueueHandle_t commandQueue_ = nullptr;
-    QueueHandle_t voiceCommandQueue_ = nullptr; // Public command output
+    QueueHandle_t voiceCommandQueue_ = nullptr;           // Final LLM results (UI receives)
 
-    TaskHandle_t recordingTask_ = nullptr;    // Manages recording via MicrophoneTestScreen
+    TaskHandle_t recordingTask_ = nullptr;
     TaskHandle_t sttTask_ = nullptr;
     TaskHandle_t aiTask_ = nullptr;
 
     bool initialized_ = false;
-    std::atomic<bool> stop_recording_flag_{false};  // Flag to stop recording
-    std::string last_recorded_file_;                // Path to last recorded file
+    std::atomic<bool> stop_recording_flag_{false};
+    std::string last_recorded_file_;
     mutable std::mutex last_recorded_mutex_;
 
     std::queue<std::string> pending_recordings_;
     std::mutex pending_recordings_mutex_;
 
-
-    LuaSandbox lua_sandbox_;  // Lua scripting engine
+    LuaSandbox lua_sandbox_;
     std::mutex lua_mutex_;
     std::unordered_map<std::string, std::string> prompt_variables_;
     mutable std::mutex prompt_variables_mutex_;
 
-    // Ollama models cache (to avoid repeated API calls)
+    // Ollama models cache
     std::vector<std::string> cached_ollama_models_;
     std::string cached_ollama_endpoint_;
     uint32_t ollama_cache_timestamp_ = 0;
-    static constexpr uint32_t OLLAMA_CACHE_TTL_MS = 60000; // 60 seconds
+    static constexpr uint32_t OLLAMA_CACHE_TTL_MS = 60000;
     mutable std::mutex ollama_cache_mutex_;
 
     void captureCommandOutputVariables(const VoiceCommand& cmd);

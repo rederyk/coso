@@ -638,43 +638,61 @@ void AiChatScreen::stopRecording() {
     recording = false;
     lv_obj_clear_state(ptt_button, LV_STATE_PRESSED);
     lv_obj_set_style_bg_color(ptt_button, lv_color_hex(instance ? lv_color_hex(SettingsManager::getInstance().getSnapshot().accentColor).full : 0x00FF00), LV_PART_MAIN); // Reset to accent
-    setStatus("Elaborazione...", lv_color_hex(0x7EE7C0));
     lv_obj_clear_state(send_button, LV_STATE_DISABLED);
 
     VoiceAssistant& assistant = VoiceAssistant::getInstance();
     assistant.stopRecordingAndProcess();
-    const uint32_t timeout_ms = 120000; // 2 min
-    VoiceAssistant::VoiceCommand response;
-    if (assistant.getLastResponse(response, timeout_ms)) {
-        String transcription = String(response.transcription.c_str());
-        String r_text = String(response.text.c_str());
-        String meta = response.command.empty() ? "" : "Comando: " + String(response.command.c_str());
+
+    // Get transcription first (STT only)
+    std::string transcription;
+    const uint32_t stt_timeout_ms = 30000; // 30s for STT
+    if (assistant.getLastTranscription(transcription, stt_timeout_ms)) {
+        setStatus("Trascrizione completata", lv_color_hex(0x7EE7C0));
+
         if (autosend_enabled) {
-            // Append user and assistant messages
-            appendMessage("user", transcription);
-            if (r_text.length() > 0) {
-                appendMessage("assistant", r_text, meta, response.output.c_str());
+            // Auto-send to LLM
+            appendMessage("user", transcription.c_str());
+            setStatus("Elaborando con AI...", lv_color_hex(0x7EE7C0));
+            lv_obj_add_state(send_button, LV_STATE_DISABLED);
+
+            // Send to LLM
+            std::string req_id;
+            if (assistant.sendTextMessage(transcription)) {
+                // Wait for LLM response
+                const uint32_t llm_timeout_ms = 120000; // 2 min for LLM
+                VoiceAssistant::VoiceCommand response;
+                if (assistant.getLastResponse(response, llm_timeout_ms)) {
+                    String r_text = String(response.text.c_str());
+                    String meta = response.command.empty() ? "" : "Comando: " + String(response.command.c_str());
+                    if (r_text.length() > 0) {
+                        appendMessage("assistant", r_text, meta, response.output.c_str());
+                    }
+                    String status_msg = "Risposta AI generata";
+                    lv_color_t status_color = lv_color_hex(0x70FFBA);
+                    setStatus(status_msg, status_color);
+                } else {
+                    appendMessage("assistant", "Timeout nell'elaborazione AI.", "error", "");
+                    setStatus("Timeout AI", lv_color_hex(0xFF7B7B));
+                }
+            } else {
+                appendMessage("assistant", "Errore nell'invio al AI.", "error", "");
+                setStatus("Errore invio", lv_color_hex(0xFF7B7B));
             }
-            String status_msg = "Messaggio inviato automaticamente";
-            lv_color_t status_color = lv_color_hex(0x70FFBA);
-            setStatus(status_msg, status_color);
+            lv_obj_clear_state(send_button, LV_STATE_DISABLED);
         } else {
-            // Just set transcription in input and show response
-            if (transcription.length() > 0) {
+            // Just set transcription in input
+            if (!transcription.empty()) {
                 lv_textarea_set_text(chat_input, transcription.c_str());
                 if (chat_input) lv_group_focus_obj(chat_input);
             }
-            if (r_text.length() > 0) {
-                appendMessage("assistant", r_text, meta, response.output.c_str());
-            }
-            String status_msg = "Trascrizione pronta";
+            String status_msg = "Trascrizione pronta per invio manuale";
             lv_color_t status_color = lv_color_hex(0x70FFBA);
             setStatus(status_msg, status_color);
         }
         loadConversationHistory(); // Refresh UI
     } else {
-        appendMessage("assistant", "Timeout nell'elaborazione audio.", "error", "");
-        setStatus("Timeout", lv_color_hex(0xFF7B7B));
+        appendMessage("assistant", "Timeout o errore nella trascrizione audio.", "error", "");
+        setStatus("Errore STT", lv_color_hex(0xFF7B7B));
     }
     updateStatusIcons();
 }

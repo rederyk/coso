@@ -34,6 +34,19 @@ constexpr const char* TAG = "VoiceAssistant";
 #define LOG_E(format, ...) Logger::getInstance().errorf("[VoiceAssistant] " format, ##__VA_ARGS__)
 #define LOG_W(format, ...) Logger::getInstance().warnf("[VoiceAssistant] " format, ##__VA_ARGS__)
 
+// Unified request structure for independent API
+struct UnifiedRequest {
+    std::string request_id;
+    VoiceAssistant::RequestType type;
+    VoiceAssistant::RequestStatus status;
+    std::string input;  // audio file, text, command name, etc.
+    std::vector<std::string> args;  // for commands
+    VoiceAssistant::RequestResult result;
+    uint64_t created_at_ms;
+    uint64_t started_at_ms;
+    uint64_t completed_at_ms;
+};
+
 // Task priorities and stack sizes
 constexpr UBaseType_t RECORDING_TASK_PRIORITY = 4;
 
@@ -477,10 +490,11 @@ bool VoiceAssistant::begin() {
     // Create queues
     audioQueue_ = xQueueCreate(AUDIO_QUEUE_SIZE, sizeof(QueueMessage*));
     transcriptionQueue_ = xQueueCreate(TEXT_QUEUE_SIZE, sizeof(std::string*));
+    voiceTranscriptionQueue_ = xQueueCreate(TEXT_QUEUE_SIZE, sizeof(std::string*));
     commandQueue_ = xQueueCreate(COMMAND_QUEUE_SIZE, sizeof(VoiceCommand*));
     voiceCommandQueue_ = xQueueCreate(VOICE_COMMAND_QUEUE_SIZE, sizeof(VoiceCommand*));
 
-    if (!audioQueue_ || !transcriptionQueue_ || !commandQueue_ || !voiceCommandQueue_) {
+    if (!audioQueue_ || !transcriptionQueue_ || !voiceTranscriptionQueue_ || !commandQueue_ || !voiceCommandQueue_) {
         LOG_E("Failed to create queues");
         end();
         return false;
@@ -559,6 +573,10 @@ void VoiceAssistant::end() {
     if (voiceCommandQueue_) {
         vQueueDelete(voiceCommandQueue_);
         voiceCommandQueue_ = nullptr;
+    }
+    if (voiceTranscriptionQueue_) {
+        vQueueDelete(voiceTranscriptionQueue_);
+        voiceTranscriptionQueue_ = nullptr;
     }
 
     LOG_I("Voice assistant deinitialized");
@@ -676,6 +694,16 @@ void VoiceAssistant::recordingTask(void* param) {
 
     } else {
         LOG_E("Recording failed");
+        
+        // Notify UI about failure via voiceCommandQueue
+        VoiceCommand* cmd = new VoiceCommand();
+        cmd->command = "error";
+        cmd->text = "Errore registrazione audio";
+        cmd->output = "Microphone recording failed";
+        
+        if (xQueueSend(va->voiceCommandQueue_, &cmd, pdMS_TO_TICKS(100)) != pdPASS) {
+             delete cmd;
+        }
     }
 
     // Clear task handle and cleanup
@@ -718,18 +746,28 @@ void VoiceAssistant::speechToTextTask(void* param) {
         std::string transcription;
         bool success = va->makeWhisperRequest(queued_file, transcription);
 
-    if (success && !transcription.empty()) {
-        LOG_I("STT successful: %s", transcription.c_str());
+        if (success && !transcription.empty()) {
+            LOG_I("STT successful: %s", transcription.c_str());
 
-        // Send transcription to AI processing task
-        std::string* text_copy = new std::string(transcription);
-        if (xQueueSend(va->transcriptionQueue_, &text_copy, pdMS_TO_TICKS(1000)) != pdPASS) {
-            LOG_W("Transcription queue full, discarding text");
-            delete text_copy;
+            // Send ONLY to UI layer for autosend decision (LLM processing now controlled by UI)
+            std::string* transcription_copy = new std::string(transcription);
+            if (xQueueSend(va->voiceTranscriptionQueue_, &transcription_copy, pdMS_TO_TICKS(1000)) != pdPASS) {
+                LOG_W("Voice transcription queue full");
+                delete transcription_copy;
+            }
+        } else {
+            LOG_E("STT failed or empty transcription");
+            
+            // Notify UI about STT failure
+            VoiceCommand* cmd = new VoiceCommand();
+            cmd->command = "error";
+            cmd->text = "Errore trascrizione";
+            cmd->output = "Speech to text failed";
+            
+            if (xQueueSend(va->voiceCommandQueue_, &cmd, pdMS_TO_TICKS(100)) != pdPASS) {
+                 delete cmd;
+            }
         }
-    } else {
-        LOG_E("STT failed or empty transcription");
-    }
     }
 
     LOG_I("Speech-to-text task ended");
@@ -741,24 +779,21 @@ void VoiceAssistant::aiProcessingTask(void* param) {
     LOG_I("AI processing task started");
 
     while (va->initialized_) {
-        // Wait for transcribed text from STT task
-                std::string* transcription = nullptr;
-                if (xQueueReceive(va->transcriptionQueue_, &transcription, pdMS_TO_TICKS(1000)) == pdPASS) {
-                    if (transcription && !transcription->empty()) {
-                        LOG_I("Processing transcription with LLM: %s", transcription->c_str());
+        // Wait for text to process (from submitLLM or send text message)
+        std::string* text = nullptr;
+        if (xQueueReceive(va->transcriptionQueue_, &text, pdMS_TO_TICKS(1000)) == pdPASS) {
+            if (text && !text->empty()) {
+                LOG_I("Processing text with LLM: %s", text->c_str());
 
-                        ConversationBuffer::getInstance().addUserMessage(*transcription);
-
-                        // Full mode: call LLM
-                        std::string llm_response;
-                        bool success = va->makeGPTRequest(*transcription, llm_response);
+                // Call LLM
+                std::string llm_response;
+                bool success = va->makeGPTRequest(*text, llm_response);
 
                 if (success && !llm_response.empty()) {
                     LOG_I("LLM response received");
 
                     // Parse command from LLM response
                     VoiceCommand cmd;
-                    cmd.transcription = *transcription;
                     if (va->parseGPTCommand(llm_response, cmd)) {
                         LOG_I("Command parsed successfully: %s (text: %s)", cmd.command.c_str(), cmd.text.c_str());
 
@@ -771,20 +806,16 @@ void VoiceAssistant::aiProcessingTask(void* param) {
                             // Execute as Lua script
                             std::string script_content;
                             if (cmd.command == "lua_script" && !cmd.args.empty()) {
-                                // Script content is in args
                                 script_content = cmd.args[0];
                             } else if (!cmd.args.empty()) {
-                                // Try to extract script from args
                                 script_content = cmd.args[0];
                             } else {
-                                // Use the text field as script
                                 script_content = cmd.text;
                             }
 
                             LOG_I("Executing Lua script: %s", script_content.c_str());
                             CommandResult script_result = va->executeLuaScript(script_content);
 
-                            // Capture script output
                             cmd.output = script_result.message;
                             if (!cmd.output.empty()) {
                                 LOG_I("Lua command output: %s", cmd.output.c_str());
@@ -798,9 +829,7 @@ void VoiceAssistant::aiProcessingTask(void* param) {
                                 cmd.text = "Errore nell'esecuzione dello script: " + script_result.message;
                             }
 
-                            // Phase 1-2: Output Refinement - Check if Lua output needs refinement
                             if (script_result.success && !cmd.output.empty()) {
-                                // Phase 2: If LLM didn't set needs_refinement flag, use heuristic
                                 if (!cmd.needs_refinement) {
                                     cmd.needs_refinement = va->shouldRefineOutput(cmd);
                                     LOG_I("Using heuristic for refinement decision: %s",
@@ -812,7 +841,6 @@ void VoiceAssistant::aiProcessingTask(void* param) {
                                     bool refined = va->refineCommandOutput(cmd);
 
                                     if (refined && !cmd.refined_output.empty()) {
-                                        // Replace cmd.text with refined output for user display
                                         cmd.text = cmd.refined_output;
                                         LOG_I("Using refined output: %s", cmd.refined_output.c_str());
                                     } else {
@@ -821,11 +849,9 @@ void VoiceAssistant::aiProcessingTask(void* param) {
                                 }
                             }
                         } else {
-                            // Execute command via CommandCenter only if command is not "none"
                             if (cmd.command != "none" && cmd.command != "unknown" && !cmd.command.empty()) {
                                 CommandResult result = CommandCenter::getInstance().executeCommand(cmd.command, cmd.args);
 
-                                // Capture command output
                                 cmd.output = result.message;
                                 if (!cmd.output.empty()) {
                                     LOG_I("Command output: %s", cmd.output.c_str());
@@ -834,9 +860,7 @@ void VoiceAssistant::aiProcessingTask(void* param) {
                                 if (result.success) {
                                     LOG_I("Command executed successfully: %s", result.message.c_str());
 
-                                    // Phase 1-2: Output Refinement - Check if command output needs refinement
                                     if (!cmd.output.empty()) {
-                                        // Phase 2: If LLM didn't set needs_refinement flag, use heuristic
                                         if (!cmd.needs_refinement) {
                                             cmd.needs_refinement = va->shouldRefineOutput(cmd);
                                             LOG_I("Using heuristic for refinement decision: %s",
@@ -848,7 +872,6 @@ void VoiceAssistant::aiProcessingTask(void* param) {
                                             bool refined = va->refineCommandOutput(cmd);
 
                                             if (refined && !cmd.refined_output.empty()) {
-                                                // Replace cmd.text with refined output for user display
                                                 cmd.text = cmd.refined_output;
                                                 LOG_I("Using refined output: %s", cmd.refined_output.c_str());
                                             } else {
@@ -869,11 +892,9 @@ void VoiceAssistant::aiProcessingTask(void* param) {
                         ConversationBuffer::getInstance().addAssistantMessage(response_text,
                                                                              cmd.command,
                                                                              cmd.args,
-                                                                             cmd.transcription,
                                                                              cmd.output,
                                                                              cmd.refined_output);
 
-                        // Send result to voice command queue for external consumption (screen/web)
                         VoiceCommand* cmd_copy = new VoiceCommand(cmd);
                         if (xQueueSend(va->voiceCommandQueue_, &cmd_copy, pdMS_TO_TICKS(100)) != pdPASS) {
                             LOG_W("Voice command queue full");
@@ -881,7 +902,7 @@ void VoiceAssistant::aiProcessingTask(void* param) {
                         }
                     } else {
                         LOG_E("Failed to parse command from LLM response");
-                        // Fallback: use raw LLM response as text if JSON parsing fails
+                        VoiceCommand cmd;
                         cmd.command = "none";
                         cmd.text = llm_response;
                         cmd.args.clear();
@@ -889,11 +910,8 @@ void VoiceAssistant::aiProcessingTask(void* param) {
                         LOG_I("Using raw LLM response as fallback text");
                         ConversationBuffer::getInstance().addAssistantMessage(llm_response,
                                                                              "none",
-                                                                             std::vector<std::string>(),
-                                                                             cmd.transcription,
-                                                                             cmd.output);
+                                                                             std::vector<std::string>());
 
-                        // Send fallback response to queue
                         VoiceCommand* cmd_copy = new VoiceCommand(cmd);
                         if (xQueueSend(va->voiceCommandQueue_, &cmd_copy, pdMS_TO_TICKS(100)) != pdPASS) {
                             LOG_W("Voice command queue full");
@@ -903,7 +921,7 @@ void VoiceAssistant::aiProcessingTask(void* param) {
                 } else {
                     LOG_E("LLM request failed or empty response");
                 }
-                delete transcription;
+                delete text;
             }
         }
     }
@@ -2138,6 +2156,221 @@ bool VoiceAssistant::refineCommandOutput(VoiceCommand& cmd) {
         cJSON_Delete(root);
         return true;
     }
+}
+
+// ===== NEW INDEPENDENT API IMPLEMENTATION =====
+
+// Request storage for unified API
+static std::unordered_map<std::string, VoiceAssistant::RequestResult> g_request_results;
+static std::mutex g_request_results_mutex;
+static uint32_t g_request_counter = 0;
+static std::mutex g_request_counter_mutex;
+
+std::string generateRequestId() {
+    std::lock_guard<std::mutex> lock(g_request_counter_mutex);
+    return "req_" + std::to_string(millis()) + "_" + std::to_string(g_request_counter++);
+}
+
+bool VoiceAssistant::submitSTT(const std::string& audio_file, std::string& request_id) {
+    if (!initialized_) {
+        LOG_E("VoiceAssistant not initialized");
+        return false;
+    }
+
+    if (audio_file.empty()) {
+        LOG_E("Empty audio file path");
+        return false;
+    }
+
+    request_id = generateRequestId();
+    LOG_I("Submitting STT request %s for file: %s", request_id.c_str(), audio_file.c_str());
+
+    // Create result entry
+    {
+        std::lock_guard<std::mutex> lock(g_request_results_mutex);
+        RequestResult result;
+        result.status = RequestStatus::PENDING;
+        result.created_at_ms = millis();
+        g_request_results[request_id] = result;
+    }
+
+    // Queue for STT processing - add file to pending recordings
+    {
+        std::lock_guard<std::mutex> lock(pending_recordings_mutex_);
+        pending_recordings_.push(audio_file);
+    }
+
+    // Notify STT task
+    if (sttTask_) {
+        xTaskNotifyGive(sttTask_);
+    }
+
+    return true;
+}
+
+bool VoiceAssistant::submitLLM(const std::string& text, std::string& request_id) {
+    if (!initialized_) {
+        LOG_E("VoiceAssistant not initialized");
+        return false;
+    }
+
+    if (text.empty()) {
+        LOG_E("Empty text message");
+        return false;
+    }
+
+    request_id = generateRequestId();
+    LOG_I("Submitting LLM request %s for text: %s", request_id.c_str(), text.c_str());
+
+    // Create result entry
+    {
+        std::lock_guard<std::mutex> lock(g_request_results_mutex);
+        RequestResult result;
+        result.status = RequestStatus::PENDING;
+        result.created_at_ms = millis();
+        g_request_results[request_id] = result;
+    }
+
+    // Add to conversation history
+    ConversationBuffer::getInstance().addUserMessage(text);
+
+    // Send text directly to transcription queue (bypass STT)
+    std::string* text_copy = new std::string(text);
+    if (xQueueSend(transcriptionQueue_, &text_copy, pdMS_TO_TICKS(1000)) != pdPASS) {
+        LOG_W("Transcription queue full, discarding text");
+        delete text_copy;
+        return false;
+    }
+
+    return true;
+}
+
+bool VoiceAssistant::submitTTS(const std::string& text, std::string& request_id) {
+    if (!initialized_) {
+        LOG_E("VoiceAssistant not initialized");
+        return false;
+    }
+
+    if (text.empty()) {
+        LOG_E("Empty text for TTS");
+        return false;
+    }
+
+    if (WiFi.status() != WL_CONNECTED) {
+        LOG_E("WiFi not connected - cannot submit TTS request");
+        return false;
+    }
+
+    request_id = generateRequestId();
+    LOG_I("Submitting TTS request %s for text: %s", request_id.c_str(), text.c_str());
+
+    // Create result entry and mark as processing (TTS is synchronous)
+    std::string output_file;
+    bool success = makeTTSRequest(text, output_file);
+
+    {
+        std::lock_guard<std::mutex> lock(g_request_results_mutex);
+        RequestResult result;
+        result.status = success ? RequestStatus::COMPLETED : RequestStatus::FAILED;
+        result.output = output_file;
+        result.created_at_ms = millis();
+        result.completed_at_ms = millis();
+        if (!success) {
+            result.error_message = "TTS synthesis failed";
+        }
+        g_request_results[request_id] = result;
+    }
+
+    LOG_I("TTS request %s completed: %s", request_id.c_str(), success ? "SUCCESS" : "FAILED");
+    return success;
+}
+
+bool VoiceAssistant::submitCommand(const std::string& command, const std::vector<std::string>& args, std::string& request_id) {
+    if (!initialized_) {
+        LOG_E("VoiceAssistant not initialized");
+        return false;
+    }
+
+    if (command.empty()) {
+        LOG_E("Empty command name");
+        return false;
+    }
+
+    request_id = generateRequestId();
+    LOG_I("Submitting command request %s: %s", request_id.c_str(), command.c_str());
+
+    // Create result entry
+    {
+        std::lock_guard<std::mutex> lock(g_request_results_mutex);
+        RequestResult result;
+        result.status = RequestStatus::PROCESSING;
+        result.created_at_ms = millis();
+        g_request_results[request_id] = result;
+    }
+
+    // Execute command (synchronous)
+    CommandResult cmd_result;
+    if (command == "lua_script" && !args.empty()) {
+        // Execute as Lua script
+        cmd_result = executeLuaScript(args[0]);
+    } else {
+        // Execute via CommandCenter
+        cmd_result = CommandCenter::getInstance().executeCommand(command, args);
+    }
+
+    // Update result
+    {
+        std::lock_guard<std::mutex> lock(g_request_results_mutex);
+        if (g_request_results.find(request_id) != g_request_results.end()) {
+            g_request_results[request_id].status = cmd_result.success ? RequestStatus::COMPLETED : RequestStatus::FAILED;
+            g_request_results[request_id].output = cmd_result.message;
+            g_request_results[request_id].error_message = cmd_result.success ? "" : cmd_result.message;
+            g_request_results[request_id].completed_at_ms = millis();
+        }
+    }
+
+    LOG_I("Command request %s completed: %s", request_id.c_str(), cmd_result.success ? "SUCCESS" : "FAILED");
+    return cmd_result.success;
+}
+
+bool VoiceAssistant::getRequestStatus(const std::string& request_id, RequestResult& result) {
+    if (request_id.empty()) {
+        LOG_E("Empty request ID");
+        return false;
+    }
+
+    std::lock_guard<std::mutex> lock(g_request_results_mutex);
+    auto it = g_request_results.find(request_id);
+    if (it == g_request_results.end()) {
+        LOG_W("Request ID not found: %s", request_id.c_str());
+        return false;
+    }
+
+    result = it->second;
+    return true;
+}
+
+bool VoiceAssistant::cancelRequest(const std::string& request_id) {
+    if (request_id.empty()) {
+        LOG_E("Empty request ID");
+        return false;
+    }
+
+    std::lock_guard<std::mutex> lock(g_request_results_mutex);
+    auto it = g_request_results.find(request_id);
+    if (it == g_request_results.end()) {
+        LOG_W("Request ID not found: %s", request_id.c_str());
+        return false;
+    }
+
+    if (it->second.status == RequestStatus::PENDING || it->second.status == RequestStatus::PROCESSING) {
+        it->second.status = RequestStatus::FAILED;
+        it->second.error_message = "Request cancelled by user";
+        LOG_I("Request %s cancelled", request_id.c_str());
+        return true;
+    }
+
+    return false;
 }
 
 // Public API for chat interface
@@ -3780,6 +4013,25 @@ int VoiceAssistant::LuaSandbox::lua_webdata_read_data(lua_State* L) {
 
     lua_pushstring(L, data.c_str());
     return 1;
+}
+
+bool VoiceAssistant::getLastTranscription(std::string& transcription, uint32_t timeout_ms) {
+    if (!initialized_) {
+        LOG_E("VoiceAssistant not initialized");
+        return false;
+    }
+
+    std::string* trans = nullptr;
+    if (xQueueReceive(voiceTranscriptionQueue_, &trans, pdMS_TO_TICKS(timeout_ms)) == pdPASS) {
+        if (trans) {
+            transcription = *trans;
+            delete trans;
+            LOG_I("Transcription retrieved: %s", transcription.c_str());
+            return true;
+        }
+    }
+    
+    return false;
 }
 
 int VoiceAssistant::LuaSandbox::lua_webdata_list_files(lua_State* L) {
