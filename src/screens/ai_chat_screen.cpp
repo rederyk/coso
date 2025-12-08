@@ -68,6 +68,10 @@ AiChatScreen::~AiChatScreen() {
         lv_timer_del(poll_timer);
         poll_timer = nullptr;
     }
+    if (tts_status_timer) {
+        lv_timer_del(tts_status_timer);
+        tts_status_timer = nullptr;
+    }
     if (settings_listener_id != 0) {
         SettingsManager::getInstance().removeListener(settings_listener_id);
         settings_listener_id = 0;
@@ -82,6 +86,12 @@ void AiChatScreen::build(lv_obj_t* parent) {
 
     SettingsManager& settings = SettingsManager::getInstance();
     const SettingsSnapshot& snapshot = settings.getSnapshot();
+
+    // Load Lua script for TTS
+    lua_sandbox_.execute("dofile('/memory/scripts/lvgl_tts_chat.lua')");
+
+    // Set initial auto_tts_enabled from settings
+    auto_tts_enabled = settings.getTtsEnabled();
 
     // Ensure VoiceAssistant is initialized if enabled
     if (snapshot.voiceAssistantEnabled && !VoiceAssistant::getInstance().isInitialized()) {
@@ -181,6 +191,24 @@ void AiChatScreen::build(lv_obj_t* parent) {
     lv_checkbox_set_text_static(autosend_checkbox,"Autosend");
     lv_obj_add_event_cb(autosend_checkbox, autosendEvent, LV_EVENT_VALUE_CHANGED, nullptr);
 
+    // Auto TTS toggle as checkbox
+    lv_obj_t* auto_tts_checkbox = lv_checkbox_create(actions_row);
+    lv_checkbox_set_text_static(auto_tts_checkbox, "Auto TTS");
+    lv_obj_add_event_cb(auto_tts_checkbox, [](lv_event_t* e) {
+        AiChatScreen* screen = AiChatScreen::instance;
+        if (screen) {
+            bool enabled = lv_obj_has_state(e->target, LV_STATE_CHECKED);
+            screen->auto_tts_enabled = enabled;
+            SettingsManager::getInstance().setTtsEnabled(enabled);
+            screen->setStatus("Auto TTS " + String(enabled ? "abilitato" : "disabilitato"), lv_color_hex(0x70FFBA));
+        }
+    }, LV_EVENT_VALUE_CHANGED, nullptr);
+
+    // Set initial state from settings
+    if (auto_tts_enabled) {
+        lv_obj_add_state(auto_tts_checkbox, LV_STATE_CHECKED);
+    }
+
     // Memory label below
     memory_label = lv_label_create(input_card);
     lv_label_set_text_static(memory_label, "Buffer: 0 / 30");
@@ -253,6 +281,10 @@ void AiChatScreen::build(lv_obj_t* parent) {
                 case SettingsManager::SettingKey::LayoutOrientation:
                 case SettingsManager::SettingKey::VoiceAssistantEnabled:
                 case SettingsManager::SettingKey::AutosendEnabled:
+                case SettingsManager::SettingKey::TtsEnabled:
+                    if (key == SettingsManager::SettingKey::TtsEnabled) {
+                        auto_tts_enabled = snap.ttsEnabled;
+                    }
                     if (snap.voiceAssistantEnabled && !VoiceAssistant::getInstance().isInitialized()) {
                         if (!VoiceAssistant::getInstance().begin()) {
                             log_e("[AiChatScreen] Failed to initialize VoiceAssistant on settings change");
@@ -290,8 +322,9 @@ void AiChatScreen::onShow() {
     SettingsManager& settings = SettingsManager::getInstance();
     const SettingsSnapshot& snapshot = settings.getSnapshot();
     
-    // Update autosend from settings
+    // Update autosend and TTS from settings
     autosend_enabled = snapshot.autosendEnabled;
+    auto_tts_enabled = settings.getTtsEnabled();
     if (autosend_checkbox) {
         if (autosend_enabled) {
             lv_obj_add_state(autosend_checkbox, LV_STATE_CHECKED);
@@ -528,6 +561,45 @@ void AiChatScreen::appendMessage(const String& role, const String& text, const S
         lv_obj_align(bubble, LV_ALIGN_OUT_LEFT_MID, 0, 0);
         lv_obj_set_style_bg_color(bubble, bg_assistant, 0);
         lv_obj_set_style_border_color(bubble, muted, 0);
+
+        // Optional: Add manual speak button for assistant messages
+        lv_obj_t* speak_btn = lv_btn_create(bubble);
+        lv_obj_set_size(speak_btn, 30, 30);
+        lv_obj_set_style_radius(speak_btn, 50, 0);  // Circle
+        lv_obj_t* icon = lv_label_create(speak_btn);
+        lv_label_set_text(icon, "🔊");  // Speaker emoji or icon
+        lv_obj_add_event_cb(speak_btn, [](lv_event_t* e) {
+            AiChatScreen* screen = AiChatScreen::instance;
+            if (screen) {
+                lv_obj_t* target = lv_event_get_target(e);
+                lv_obj_t* bubble_parent = target->parent;
+                lv_obj_t* content_label = nullptr;
+                uint32_t child_count = lv_obj_get_child_cnt(bubble_parent);
+                for (uint32_t i = 0; i < child_count; i++) {
+                    lv_obj_t* child = lv_obj_get_child(bubble_parent, i);
+                    if (lv_obj_check_type(child, &lv_label_class) && strcmp(lv_label_get_text(child), "🔊") != 0) {
+                        content_label = child;
+                        break;
+                    }
+                }
+                if (content_label) {
+                    const char* text_c = lv_label_get_text(content_label);
+                    String msg_text(text_c);
+                    if (!msg_text.isEmpty()) {
+                        String escaped_text = screen->escapeLuaString(msg_text);
+                        std::string lua_script = "speak_and_play(\"" + std::string(escaped_text.c_str()) + "\")";
+                        CommandResult res = screen->lua_sandbox_.execute(lua_script);
+                        if (res.success) {
+                            screen->setStatus("Parlando...", lv_color_hex(0x7EE7C0));
+                            screen->tts_playing = true;
+                        } else {
+                            screen->setStatus("Errore TTS", lv_color_hex(0xFF7B7B));
+                        }
+                    }
+                }
+            }
+        }, LV_EVENT_CLICKED, nullptr);
+        lv_obj_align(speak_btn, LV_ALIGN_OUT_RIGHT_TOP, -10, 5);
     }
 
     if (meta.length() > 0) {
@@ -548,6 +620,16 @@ void AiChatScreen::appendMessage(const String& role, const String& text, const S
 
     lv_obj_update_layout(chat_container);
     lv_obj_scroll_to_y(root, LV_COORD_MAX, LV_ANIM_OFF); // Scroll root to bottom
+}
+
+String AiChatScreen::escapeLuaString(const String& s) {
+    String escaped = s;
+    escaped.replace("\\", "\\\\");
+    escaped.replace("\"", "\\\"");
+    escaped.replace("\n", "\\n");
+    escaped.replace("\r", "\\r");
+    escaped.replace("\t", "\\t");
+    return escaped;
 }
 
 void AiChatScreen::sendChatMessage() {
@@ -766,7 +848,42 @@ void AiChatScreen::pollRequestTimer(lv_timer_t* timer) {
                     VoiceAssistant::VoiceCommand resp = result.response;
                     String meta = resp.command.empty() ? "" : "Comando: " + String(resp.command.c_str());
                     instance->appendMessage("assistant", resp.text.c_str(), meta, resp.output.c_str());
-                    instance->setStatus("Risposta ricevuta", lv_color_hex(0x70FFBA));
+
+                    // Automatic TTS trigger
+                    if (!resp.text.empty() && instance->auto_tts_enabled) {
+                        String resp_str(resp.text.c_str());
+                        String escaped_text = instance->escapeLuaString(resp_str);
+                        std::string lua_script = "speak_and_play(\"" + std::string(escaped_text.c_str()) + "\")";
+                        CommandResult res = instance->lua_sandbox_.execute(lua_script);
+                        if (res.success) {
+                            instance->setStatus("Parlando risposta...", lv_color_hex(0x7EE7C0));
+                            instance->tts_playing = true;
+                            // Start TTS status timer if not already
+                            if (!instance->tts_status_timer) {
+                                instance->tts_status_timer = lv_timer_create([](lv_timer_t* t) {
+                                    AiChatScreen* screen = static_cast<AiChatScreen*>(t->user_data);
+                                    if (screen && screen->tts_playing) {
+                                        // Call Lua to check radio status
+                                        CommandResult status_res = screen->lua_sandbox_.execute("local _, status = radio.status(); return status");
+                                        if (status_res.success) {
+                                            if (status_res.message.find("ENDED") != std::string::npos || status_res.message.find("STOPPED") != std::string::npos) {
+                                                screen->tts_playing = false;
+                                                screen->setStatus("Risposta completata", lv_color_hex(0x70FFBA));
+                                                if (screen->tts_status_timer) {
+                                                    lv_timer_del(screen->tts_status_timer);
+                                                    screen->tts_status_timer = nullptr;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }, 1000, instance);
+                            }
+                        } else {
+                            instance->setStatus("Errore TTS", lv_color_hex(0xFF7B7B));
+                        }
+                    } else {
+                        instance->setStatus("Risposta ricevuta", lv_color_hex(0x70FFBA));
+                    }
                 } else {
                     String err_msg = "Errore nell'elaborazione.";
                     if (!result.error_message.empty()) {

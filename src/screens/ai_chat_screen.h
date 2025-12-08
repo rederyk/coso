@@ -3,6 +3,7 @@
 #include "core/screen.h"
 #include "core/settings_manager.h"
 #include "core/microphone_manager.h"
+#include "core/voice_assistant.h"
 #include "ui/ui_symbols.h"
 #include <lvgl.h>
 #include <HTTPClient.h>
@@ -39,6 +40,8 @@ private:
     static void inputEvent(lv_event_t* e);
     static void autosendEvent(lv_event_t* e);
 
+    String escapeLuaString(const String& s);
+
     lv_obj_t* root = nullptr;
     lv_obj_t* header_container = nullptr;
     lv_obj_t* status_bar = nullptr;
@@ -67,12 +70,17 @@ private:
 
     lv_timer_t* status_timer = nullptr;
     lv_timer_t* poll_timer = nullptr;
+    lv_timer_t* tts_status_timer = nullptr;
     uint32_t settings_listener_id = 0;
     bool recording = false;
     bool autosend_enabled = true;
+    bool auto_tts_enabled = true;
     bool updating_from_manager = false;
     bool polling_active = false;
+    bool tts_playing = false;
     std::string current_request_id;
+
+    VoiceAssistant::LuaSandbox lua_sandbox_;
 
     void staticInit();
 
