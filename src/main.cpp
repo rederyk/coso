@@ -45,6 +45,7 @@
 #include "screens/audio_effects_screen.h"
 #include "screens/microphone_test_screen.h"
 #include "screens/voice_assistant_settings_screen.h"
+#include "screens/ai_chat_screen.h"
 #include "core/audio_manager.h"
 #include "core/microphone_manager.h"
 #include "core/conversation_buffer.h"
@@ -581,6 +582,7 @@ void setup() {
         static AudioEffectsScreen audio_effects;
         static MicrophoneTestScreen microphone_test;
         static VoiceAssistantSettingsScreen voice_assistant_settings;
+        static AiChatScreen ai_chat;
 
         // Registra le app nel dock
         app_manager->registerApp("dashboard", UI_SYMBOL_HOME, "Home", &dashboard);
@@ -594,6 +596,7 @@ void setup() {
         app_manager->registerApp("web_radio", LV_SYMBOL_WIFI, "Radio", &web_radio);
         app_manager->registerApp("audio_effects", LV_SYMBOL_SETTINGS, "FX", &audio_effects);
         app_manager->registerApp("microphone_test", LV_SYMBOL_AUDIO, "Recorder", &microphone_test);
+        app_manager->registerApp("ai_chat", LV_SYMBOL_LIST, "AI Chat", &ai_chat);
 
         // Registra le schermate supplementari (non nel dock, accessibili solo da Settings)
         app_manager->registerHiddenApp("WiFiSettings", &wifi_settings);
